@@ -52,9 +52,18 @@
 +---------------------+  +-------------------+  +-----------+  +-------------+
 ```
 
+## 📚 Documentation Matrix
+
+| Document | Purpose |
+| :--- | :--- |
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | System architecture, thermal governance, memory model, and process topology. |
+| **[DEPLOYMENT.md](DEPLOYMENT.md)** | Step-by-step phone setup, battery optimization, runit supervision, and troubleshooting. |
+| **[API.md](API.md)** | Complete REST API specification for all 50+ endpoints and streaming protocols. |
+| **[CHANGELOG.md](CHANGELOG.md)** | Detailed release history and evolution milestones. |
+
 ---
 
-## 🚀 Quickstart & Installation (Android Termux)
+## 🚀 Quickstart (Android Termux)
 
 ### 1. Prerequisites (Inside Termux)
 ```bash
@@ -62,40 +71,34 @@ pkg update && pkg upgrade -y
 pkg install -y python git termux-services termux-api openssh yt-dlp ffmpeg p7zip
 ```
 
-### 2. Clone & Install Dependencies
+### 2. Clone Repository
 ```bash
 git clone https://github.com/Voidwalker-AT/NexusNode.git ~/server
 cd ~/server
 pip install -r requirements.txt
 ```
 
-### 3. Install 24/7 Services & Termux:Boot Integration
+### 3. Launch Appliance (SSHD + LocalToNet + NexusNode)
 ```bash
-bash scripts/install_services.sh
+chmod +x start_nexus.sh
+./start_nexus.sh start
 ```
-
-### 4. Service Management
-```bash
-# Start NexusNode server
-sv up nexusnode
-
-# Check status
-sv status nexusnode
-
-# Start optional LocalToNet tunnel
-sv up localtonet
-
-# Start optional Ollama AI engine
-sv up ollama
-```
-
-### 5. Running Standalone (Development Mode)
-```bash
-python app.py
-```
-Default root login: `admin` (Initial password generated on first run or specified via `NEXUS_ADMIN_PASSWORD` environment variable).
+- **Web Console**: Open `http://<PHONE_IP>:5000` (or `http://127.0.0.1:5000`)
+- **SSH Terminal**: `ssh user@<PHONE_IP> -p 8022`
+- **Check Status**: `./start_nexus.sh status`
+- **Live Logs**: `./start_nexus.sh logs`
+- **Stop All**: `./start_nexus.sh stop`
 
 ---
+
+### 4. Production Supervision (`termux-services` / runit)
+For background autostart and automatic crash recovery:
+```bash
+bash scripts/install_services.sh
+sv up nexusnode
+sv up localtonet
+sv up sshd
+```
 
 ## 🧪 Testing & Verification
 
