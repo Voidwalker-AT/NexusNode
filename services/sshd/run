@@ -1,0 +1,18 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Service definition for OpenSSH daemon (runit / termux-services)
+exec 2>&1
+
+export PREFIX="/data/data/com.termux/files/usr"
+export PATH="$PREFIX/bin:$PATH"
+
+sleep 3
+
+# Check if sshd is already listening
+if pgrep -x sshd > /dev/null 2>&1; then
+    echo "[sshd:run] sshd is already active."
+    sleep 10
+    exit 0
+fi
+
+echo "[sshd:run] Starting OpenSSH Daemon on port 8022 (non-daemon mode for runit)..."
+exec sshd -D -p 8022

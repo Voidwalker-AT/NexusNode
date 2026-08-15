@@ -1,0 +1,30 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Service definition for LocalToNet Tunnel (runit / termux-services)
+exec 2>&1
+
+export PREFIX="/data/data/com.termux/files/usr"
+export HOME="/data/data/com.termux/files/home"
+export PATH="$PREFIX/bin:$HOME/.local/bin:$HOME/localtonet:$PATH"
+
+# Prevent restart storm with 5s backoff
+sleep 5
+
+LOCALTONET_BIN=""
+if command -v localtonet > /dev/null 2>&1; then
+    LOCALTONET_BIN="$(command -v localtonet)"
+elif [ -x "$HOME/localtonet/localtonet" ]; then
+    LOCALTONET_BIN="$HOME/localtonet/localtonet"
+elif [ -x "$HOME/localtonet" ]; then
+    LOCALTONET_BIN="$HOME/localtonet"
+elif [ -x "$PREFIX/bin/localtonet" ]; then
+    LOCALTONET_BIN="$PREFIX/bin/localtonet"
+fi
+
+if [ -z "$LOCALTONET_BIN" ] || [ ! -x "$LOCALTONET_BIN" ]; then
+    echo "[localtonet:run] localtonet binary not found or not executable. Retrying in 10s..."
+    sleep 10
+    exit 1
+fi
+
+echo "[localtonet:run] Starting LocalToNet tunnel daemon..."
+exec "$LOCALTONET_BIN"

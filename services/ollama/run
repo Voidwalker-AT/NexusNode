@@ -1,0 +1,30 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Service definition for Optional Ollama Engine (runit / termux-services)
+exec 2>&1
+
+export PREFIX="/data/data/com.termux/files/usr"
+export HOME="/data/data/com.termux/files/home"
+export PATH="$PREFIX/bin:$HOME/.local/bin:$PATH"
+export OLLAMA_HOST="0.0.0.0:11434"
+export OLLAMA_MODELS="$HOME/.ollama/models"
+
+# 8 second restart backoff to protect 4 GB device
+sleep 8
+
+OLLAMA_BIN=$(command -v ollama)
+
+if [ -z "$OLLAMA_BIN" ]; then
+    echo "[ollama:run] ollama binary not found in PATH. Retrying in 15s..."
+    sleep 15
+    exit 1
+fi
+
+# Check if already running to prevent duplicate instances
+if pgrep -f "ollama serve" > /dev/null 2>&1; then
+    echo "[ollama:run] Ollama already active. Sleeping..."
+    sleep 10
+    exit 0
+fi
+
+echo "[ollama:run] Starting Ollama daemon on :11434..."
+exec "$OLLAMA_BIN" serve

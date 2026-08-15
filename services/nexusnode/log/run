@@ -1,0 +1,5 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Log supervisor for nexusnode
+LOG_DIR="/data/data/com.termux/files/home/nexus_logs/nexusnode"
+mkdir -p "$LOG_DIR"
+exec svlogd -tt "$LOG_DIR"

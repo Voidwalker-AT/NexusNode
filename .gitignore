@@ -1,0 +1,70 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# NexusNode Local Vault Data & Backups (Keep folder structure, ignore user data)
+storage_vault/*.db
+storage_vault/*.db-wal
+storage_vault/*.db-shm
+storage_vault/*.json
+storage_vault/*.tmp
+storage_vault/backups/*
+!storage_vault/backups/.gitkeep
+storage_vault/Music/*
+!storage_vault/Music/.gitkeep
+storage_vault/Videos/*
+!storage_vault/Videos/.gitkeep
+storage_vault/Podcasts/*
+!storage_vault/Podcasts/.gitkeep
+storage_vault/Downloads/*
+!storage_vault/Downloads/.gitkeep
+
+# Temporary / Partial download artifacts
+*.part
+*.ytdl
+*.tmp
+*.crdownload
+*.part-Frag
+
+# Logs
+nexus_logs/
+*.log
+
+# Environment variables & secrets
+.env
+.env.local
+server_config.json
+
+# IDE / OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
