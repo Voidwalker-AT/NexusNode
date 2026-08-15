@@ -467,6 +467,18 @@ def require_privilege_or_admin(privilege_name: str):
     return None
 
 
+def require_admin():
+    if not hasattr(g, 'user') or not g.user or g.user.get('role') != 'admin':
+        user_name = g.user.get('user_id') if hasattr(g, 'user') and g.user else 'anonymous'
+        log_event("SECURITY", "AUTH", f"Blocked non-admin '{user_name}' from admin-only route {request.path}")
+        return jsonify({
+            "error": "permission_denied",
+            "message": "Forbidden: Administrator role required.",
+            "required_role": "admin"
+        }), 403
+    return None
+
+
 def sanitize_storage_path(filename: str) -> str:
     """Validates and canonicalizes file path to prevent directory traversal outside STORAGE_DIR."""
     if not filename or '..' in filename or filename.startswith('/') or filename.startswith('\\') or ':' in filename:
@@ -1561,7 +1573,7 @@ def device_telemetry_endpoint():
 # --- Media Center & Streaming Routes ---
 @app.route('/api/media/download', methods=['POST'])
 def start_media_download_advanced():
-    err = require_privilege_or_admin("can_run_tasks")
+    err = require_privilege_or_admin("can_download_media")
     if err:
         return err
 
@@ -1676,6 +1688,9 @@ def stream_media_endpoint(filepath):
 # --- Temporary Secure Share Links ---
 @app.route('/api/shares', methods=['GET'])
 def list_shares():
+    err = require_privilege_or_admin("can_create_shares")
+    if err:
+        return err
     with DB_LOCK:
         conn = get_db_connection()
         try:
@@ -1892,7 +1907,7 @@ def storage_intelligence_endpoint():
 
 @app.route('/api/vault/rename', methods=['POST'])
 def vault_rename():
-    err = require_privilege_or_admin("can_upload_files")
+    err = require_privilege_or_admin("can_manage_files")
     if err:
         return err
 
@@ -1918,7 +1933,7 @@ def vault_rename():
 
 @app.route('/api/vault/move', methods=['POST'])
 def vault_move():
-    err = require_privilege_or_admin("can_upload_files")
+    err = require_privilege_or_admin("can_manage_files")
     if err:
         return err
 
@@ -1965,7 +1980,7 @@ def vault_checksum(filename):
 
 @app.route('/api/vault/clean-temp', methods=['POST'])
 def clean_temp_files():
-    err = require_privilege_or_admin("can_delete_files")
+    err = require_privilege_or_admin("can_manage_files")
     if err:
         return err
 
@@ -1977,6 +1992,9 @@ def clean_temp_files():
 # --- Backup & Restore Routes ---
 @app.route('/api/backups', methods=['GET'])
 def list_backups():
+    err = require_privilege_or_admin("can_manage_backups")
+    if err:
+        return err
     with DB_LOCK:
         conn = get_db_connection()
         try:
@@ -2014,7 +2032,7 @@ def download_backup(backup_id):
 
 @app.route('/api/backups/restore', methods=['POST'])
 def restore_backup():
-    err = require_privilege_or_admin("can_manage_backups")
+    err = require_admin()
     if err:
         return err
 
@@ -2198,6 +2216,9 @@ def get_incidents():
 # --- Scheduled Automation Routes ---
 @app.route('/api/automation/jobs', methods=['GET'])
 def list_scheduled_jobs():
+    err = require_privilege_or_admin("can_manage_automation")
+    if err:
+        return err
     with DB_LOCK:
         conn = get_db_connection()
         try:
@@ -2256,6 +2277,9 @@ def trigger_scheduled_job_now(job_id):
 # --- System Settings Routes ---
 @app.route('/api/settings', methods=['GET'])
 def get_system_settings():
+    err = require_privilege_or_admin("can_manage_settings")
+    if err:
+        return err
     return jsonify({
         "version": getattr(config, 'VERSION', '2.2.0'),
         "port": config.PORT,
@@ -2330,7 +2354,7 @@ def estimate_model_resources():
 
 @app.route('/api/models/<model_name>', methods=['DELETE'])
 def delete_ollama_model(model_name):
-    err = require_privilege_or_admin("can_manage_engine")
+    err = require_privilege_or_admin("can_manage_models")
     if err:
         return err
 
@@ -2392,7 +2416,7 @@ def trigger_rag_rebuild():
 
 @app.route('/api/models/pull', methods=['POST'])
 def pull_model_endpoint():
-    err = require_privilege_or_admin("can_manage_engine")
+    err = require_privilege_or_admin("can_manage_models")
     if err:
         return err
 
@@ -2475,7 +2499,7 @@ def list_available_models():
 
 @app.route('/start', methods=['GET', 'POST'])
 def start_engine():
-    err = require_privilege_or_admin("can_manage_engine")
+    err = require_privilege_or_admin("can_control_services")
     if err:
         return err
 
@@ -2505,7 +2529,7 @@ def start_engine():
 
 @app.route('/stop', methods=['GET', 'POST'])
 def stop_engine():
-    err = require_privilege_or_admin("can_manage_engine")
+    err = require_privilege_or_admin("can_control_services")
     if err:
         return err
 
@@ -2580,7 +2604,7 @@ def preview_file(filename):
 
 @app.route('/files/<path:filename>', methods=['DELETE'])
 def delete_file(filename):
-    err = require_privilege_or_admin("can_delete_files")
+    err = require_privilege_or_admin("can_manage_files")
     if err:
         return err
 
@@ -2611,7 +2635,9 @@ def start_media_download_legacy():
 
 @app.route('/api/tasks/<task_id>/cancel', methods=['POST'])
 def cancel_task_endpoint(task_id):
-    err = require_privilege_or_admin("can_run_tasks")
+    # Any user with media download or file management privileges or admin can cancel
+    if not (has_privilege("can_download_media") or has_privilege("can_manage_files")):
+        return require_admin()
     if err:
         return err
     success = task_runner.cancel_task(task_id)
@@ -2620,7 +2646,7 @@ def cancel_task_endpoint(task_id):
 
 @app.route('/api/archive/extract', methods=['POST'])
 def extract_archive_endpoint():
-    err = require_privilege_or_admin("can_run_tasks")
+    err = require_privilege_or_admin("can_manage_files")
     if err:
         return err
 
@@ -2705,6 +2731,9 @@ def run_archive_extract_job(task_obj: dict, archive_filename: str, extract_to_fo
 # --- Chat & AI Streaming ---
 @app.route('/api/chats', methods=['GET'])
 def get_user_chats():
+    err = require_privilege_or_admin("can_use_ai")
+    if err:
+        return err
     with DB_LOCK:
         conn = get_db_connection()
         try:
@@ -2722,6 +2751,9 @@ def get_user_chats():
 
 @app.route('/api/chats', methods=['POST'])
 def save_user_chats():
+    err = require_privilege_or_admin("can_use_ai")
+    if err:
+        return err
     data = request.get_json(force=True, silent=True) or {}
     messages = data.get('messages', [])
     user_id = g.user.get('user_id')
@@ -2744,6 +2776,9 @@ def save_user_chats():
 
 @app.route('/api/chats', methods=['DELETE'])
 def clear_user_chats():
+    err = require_privilege_or_admin("can_use_ai")
+    if err:
+        return err
     user_id = g.user.get('user_id')
     with DB_LOCK:
         conn = get_db_connection()
@@ -2757,6 +2792,9 @@ def clear_user_chats():
 
 @app.route('/chat/stream', methods=['POST'])
 def chat_stream():
+    err = require_privilege_or_admin("can_use_ai")
+    if err:
+        return err
     data = request.get_json(force=True, silent=True) or {}
     prompt = str(data.get('prompt', '')).strip()
     model = str(data.get('model', ''))
@@ -2810,7 +2848,7 @@ def chat_stream():
 # --- Live Logs SSE Stream ---
 @app.route('/api/logs/stream', methods=['GET'])
 def live_logs_stream():
-    err = require_privilege_or_admin("can_view_logs")
+    err = require_privilege_or_admin("can_view_system_logs")
     if err:
         return err
 
@@ -2879,7 +2917,7 @@ def admin_create_user():
 
 @app.route('/api/admin/users/update-privileges', methods=['POST'])
 def admin_update_privileges():
-    err = require_privilege_or_admin("can_manage_users")
+    err = require_admin()
     if err:
         return err
 
@@ -2906,7 +2944,7 @@ def admin_update_privileges():
 
 @app.route('/api/admin/users/reset-password', methods=['POST'])
 def admin_reset_password():
-    err = require_privilege_or_admin("can_manage_users")
+    err = require_admin()
     if err:
         return err
 
@@ -2932,7 +2970,7 @@ def admin_reset_password():
 
 @app.route('/api/admin/users/<user_id>', methods=['DELETE'])
 def admin_delete_user(user_id):
-    err = require_privilege_or_admin("can_manage_users")
+    err = require_admin()
     if err:
         return err
 
@@ -2953,7 +2991,7 @@ def admin_delete_user(user_id):
 
 @app.route('/api/admin/stats', methods=['GET'])
 def admin_stats():
-    err = require_privilege_or_admin("can_manage_users")
+    err = require_admin()
     if err:
         return err
 
@@ -2984,7 +3022,7 @@ def admin_stats():
 
 @app.route('/api/admin/db/tables', methods=['GET'])
 def admin_db_tables():
-    err = require_privilege_or_admin("can_manage_users")
+    err = require_admin()
     if err:
         return err
 
@@ -3005,7 +3043,7 @@ def admin_db_tables():
 
 @app.route('/api/admin/db/query', methods=['GET'])
 def admin_db_query():
-    err = require_privilege_or_admin("can_manage_users")
+    err = require_admin()
     if err:
         return err
 

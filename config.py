@@ -72,16 +72,18 @@ OLLAMA_AUTO_RESTART = os.environ.get("NEXUS_OLLAMA_AUTO_RESTART", "false").lower
 MAX_DB_LOGS_RETENTION = int(os.environ.get("NEXUS_MAX_LOGS_RETENTION", 5000))
 LOG_BROADCAST_QUEUE_SIZE = 100
 
-# Permissions Registry
+# Permissions Registry (Principle of Least Privilege)
 ALL_PRIVILEGES = [
-    "can_view_logs",
-    "can_delete_files",
     "can_upload_files",
-    "can_manage_engine",
-    "can_run_tasks",
-    "can_use_rag",
-    "can_manage_users",
+    "can_manage_files",
     "can_create_shares",
+    "can_download_media",
+    "can_use_ai",
+    "can_use_rag",
+    "can_control_services",
+    "can_manage_models",
+    "can_view_system_logs",
+    "can_manage_users",
     "can_manage_backups",
     "can_manage_automation",
     "can_manage_settings"
@@ -89,14 +91,18 @@ ALL_PRIVILEGES = [
 
 ADMIN_DEFAULT_PRIVILEGES = {p: True for p in ALL_PRIVILEGES}
 USER_DEFAULT_PRIVILEGES = {
-    "can_view_logs": False,
-    "can_delete_files": False,
+    # Core User capabilities (permitted by default)
     "can_upload_files": True,
-    "can_manage_engine": False,
-    "can_run_tasks": True,
+    "can_manage_files": True,
+    "can_create_shares": False,
+    "can_download_media": True,
+    "can_use_ai": True,
     "can_use_rag": True,
+    # Infrastructure & Admin capabilities (strictly disabled by default)
+    "can_control_services": False,
+    "can_manage_models": False,
+    "can_view_system_logs": False,
     "can_manage_users": False,
-    "can_create_shares": True,
     "can_manage_backups": False,
     "can_manage_automation": False,
     "can_manage_settings": False

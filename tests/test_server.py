@@ -632,6 +632,168 @@ class TestNexusNodeServer(unittest.TestCase):
         self.assertEqual(data_small["estimated_mb"], 350)
         self.assertIn(data_small["decision"], ["SAFE", "BLOCKED"])
 
+    def test_35_logout_clears_session_state(self):
+        """Verify POST /api/auth/logout destroys server-side session token."""
+        import secrets
+        temp_token = secrets.token_hex(32)
+        with server_app.SESSIONS_LOCK:
+            server_app.SESSIONS[temp_token] = {
+                "user_id": "test_logout_user",
+                "role": "user",
+                "privileges": config.USER_DEFAULT_PRIVILEGES,
+                "created_at": time.time(),
+                "expires_at": time.time() + 3600
+            }
+
+        # Verify active
+        res_me = self.client.get('/api/auth/me', headers={'Authorization': f'Bearer {temp_token}'})
+        self.assertEqual(res_me.status_code, 200)
+
+        # Logout
+        res_logout = self.client.post('/api/auth/logout', headers={'Authorization': f'Bearer {temp_token}'})
+        self.assertEqual(res_logout.status_code, 200)
+
+        # Token must no longer exist in SESSIONS
+        with server_app.SESSIONS_LOCK:
+            self.assertNotIn(temp_token, server_app.SESSIONS)
+
+        # Subsequent call with revoked token returns 401
+        res_after = self.client.get('/api/auth/me', headers={'Authorization': f'Bearer {temp_token}'})
+        self.assertEqual(res_after.status_code, 401)
+
+    def test_36_admin_logout_then_user_login_isolation(self):
+        """Verify complete privilege isolation when switching from admin to normal user."""
+        import secrets
+
+        # 1. Admin login/token
+        admin_tok = secrets.token_hex(32)
+        with server_app.SESSIONS_LOCK:
+            server_app.SESSIONS[admin_tok] = {
+                "user_id": "admin",
+                "role": "admin",
+                "privileges": config.ADMIN_DEFAULT_PRIVILEGES,
+                "created_at": time.time(),
+                "expires_at": time.time() + 3600
+            }
+
+        # Admin can access admin stats
+        res_admin = self.client.get('/api/admin/stats', headers={'Authorization': f'Bearer {admin_tok}'})
+        self.assertEqual(res_admin.status_code, 200)
+
+        # Admin logs out
+        self.client.post('/api/auth/logout', headers={'Authorization': f'Bearer {admin_tok}'})
+
+        # 2. Normal user logs in
+        user_tok = secrets.token_hex(32)
+        with server_app.SESSIONS_LOCK:
+            server_app.SESSIONS[user_tok] = {
+                "user_id": "alice",
+                "role": "user",
+                "privileges": config.USER_DEFAULT_PRIVILEGES,
+                "created_at": time.time(),
+                "expires_at": time.time() + 3600
+            }
+
+        # Normal user cannot access admin stats (HTTP 403)
+        res_user_admin = self.client.get('/api/admin/stats', headers={'Authorization': f'Bearer {user_tok}'})
+        self.assertEqual(res_user_admin.status_code, 403)
+
+        # Normal user cannot access DB query (HTTP 403)
+        res_user_db = self.client.get('/api/admin/db/query?table=users', headers={'Authorization': f'Bearer {user_tok}'})
+        self.assertEqual(res_user_db.status_code, 403)
+
+    def test_37_user_cannot_access_live_system_logs(self):
+        """Verify normal user without can_view_system_logs is blocked from /api/logs/stream."""
+        import secrets
+        user_tok = secrets.token_hex(32)
+        with server_app.SESSIONS_LOCK:
+            server_app.SESSIONS[user_tok] = {
+                "user_id": "bob",
+                "role": "user",
+                "privileges": config.USER_DEFAULT_PRIVILEGES,
+                "created_at": time.time(),
+                "expires_at": time.time() + 3600
+            }
+
+        res = self.client.get('/api/logs/stream', headers={'Authorization': f'Bearer {user_tok}'})
+        self.assertEqual(res.status_code, 403)
+
+    def test_38_user_cannot_control_ollama(self):
+        """Verify normal user cannot start or stop Ollama engine."""
+        import secrets
+        user_tok = secrets.token_hex(32)
+        with server_app.SESSIONS_LOCK:
+            server_app.SESSIONS[user_tok] = {
+                "user_id": "charlie",
+                "role": "user",
+                "privileges": config.USER_DEFAULT_PRIVILEGES,
+                "created_at": time.time(),
+                "expires_at": time.time() + 3600
+            }
+
+        res_start = self.client.post('/start', headers={'Authorization': f'Bearer {user_tok}'})
+        self.assertEqual(res_start.status_code, 403)
+
+        res_stop = self.client.post('/stop', headers={'Authorization': f'Bearer {user_tok}'})
+        self.assertEqual(res_stop.status_code, 403)
+
+    def test_39_user_cannot_manage_models(self):
+        """Verify normal user cannot pull or delete Ollama models."""
+        import secrets
+        user_tok = secrets.token_hex(32)
+        with server_app.SESSIONS_LOCK:
+            server_app.SESSIONS[user_tok] = {
+                "user_id": "dave",
+                "role": "user",
+                "privileges": config.USER_DEFAULT_PRIVILEGES,
+                "created_at": time.time(),
+                "expires_at": time.time() + 3600
+            }
+
+        res_pull = self.client.post('/api/models/pull', headers={'Authorization': f'Bearer {user_tok}'}, json={"model": "smollm:135m"})
+        self.assertEqual(res_pull.status_code, 403)
+
+        res_del = self.client.delete('/api/models/smollm:135m', headers={'Authorization': f'Bearer {user_tok}'})
+        self.assertEqual(res_del.status_code, 403)
+
+    def test_40_session_expiration_returns_401(self):
+        """Verify expired session token returns HTTP 401."""
+        import secrets
+        exp_tok = secrets.token_hex(32)
+        with server_app.SESSIONS_LOCK:
+            server_app.SESSIONS[exp_tok] = {
+                "user_id": "expired_user",
+                "role": "user",
+                "privileges": config.USER_DEFAULT_PRIVILEGES,
+                "created_at": time.time() - 7200,
+                "expires_at": time.time() - 3600 # Expired 1 hour ago
+            }
+
+        res = self.client.get('/api/auth/me', headers={'Authorization': f'Bearer {exp_tok}'})
+        self.assertEqual(res.status_code, 401)
+
+    def test_41_forbidden_returns_403_without_destroying_session(self):
+        """Verify HTTP 403 on restricted route does not destroy valid user session."""
+        import secrets
+        user_tok = secrets.token_hex(32)
+        with server_app.SESSIONS_LOCK:
+            server_app.SESSIONS[user_tok] = {
+                "user_id": "eve",
+                "role": "user",
+                "privileges": config.USER_DEFAULT_PRIVILEGES,
+                "created_at": time.time(),
+                "expires_at": time.time() + 3600
+            }
+
+        # Attempt forbidden admin action
+        res_403 = self.client.get('/api/admin/stats', headers={'Authorization': f'Bearer {user_tok}'})
+        self.assertEqual(res_403.status_code, 403)
+
+        # Session should still be intact and authorized for permitted endpoints
+        res_permitted = self.client.get('/files', headers={'Authorization': f'Bearer {user_tok}'})
+        self.assertEqual(res_permitted.status_code, 200)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.1] - 2026-08-15
+
+### 🛡️ UX, Navigation & Session Isolation Security Pass
+
+#### Added
+- **Single Source of Truth Auth State**: Centralized reactive frontend `authState` store ensuring clean session management, token storage, and instantaneous privilege reactivity.
+- **Granular Least-Privilege RBAC Matrix**:
+  - Distinguishes Core Users from Administrators.
+  - Granular privileges: `can_upload_files`, `can_manage_files`, `can_create_shares`, `can_download_media`, `can_use_ai`, `can_use_rag`, `can_control_services`, `can_manage_models`, `can_view_system_logs`, `can_manage_users`, `can_manage_backups`, `can_manage_automation`, `can_manage_settings`.
+- **Streamlined Navigation & Collapsible More Menu**:
+  - Redesigned Desktop Header to 5 primary destinations (`[Dashboard]`, `[Vault]`, `[Media]`, `[Tasks]`, `[AI Studio]`) + `[☰ More]` dropdown.
+  - Mobile bottom dock (`[Dash]`, `[Vault]`, `[Media]`, `[Tasks]`, `[AI]`, `[More]`) with bottom action sheet drawer.
+  - Touch targets calibrated $\ge 44\text{px}$ across mobile breakpoints (375px, 390px, 412px).
+- **Toast Notification Engine**: Non-blocking user notifications for HTTP 403 access denials and action confirmations.
+- **Expanded Test Suite (41 Tests Passing)**: Added automated test coverage for session revocation on logout, admin-to-user isolation, forbidden endpoint access without session destruction, and expired token 401 handling.
+
+#### Fixed
+- **Admin Hub Leak Isolation**: Fixed issue where Admin Hub or admin DOM state could linger after an admin logged out. Logout now purges all client-side auth tokens, resets active views to `dashboard`, closes all background streams, and strictly disables privileged DOM nodes.
+- **Differentiated 401 vs 403 API Handling**: Forbidden actions (403) now notify the user without destroying valid active sessions, while invalid/expired tokens (401) trigger a clean session reset.
+
+---
+
 ## [2.2.0] - 2026-08-15
 
 ### 🚀 Personal Mobile Server Appliance Evolution
