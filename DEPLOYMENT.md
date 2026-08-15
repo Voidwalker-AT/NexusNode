@@ -39,57 +39,61 @@ pip install -r requirements.txt
 
 ---
 
-## 4. Operational Modes (Choose One)
+## 4. Production Service Supervision (runit / termux-services)
 
-### Mode A: All-in-One CLI Launcher (`start_nexus.sh`) — Easiest
+NexusNode uses **`runit`** as the single authoritative process supervisor for all background daemons.
 
-The all-in-one launcher manages **OpenSSH (port 8022)**, **LocalToNet tunnel**, and **NexusNode server (port 5000)** simultaneously with automatic Android CPU WakeLock:
-
+### Step 1: Install runit Service Definitions
 ```bash
 cd ~/server
+bash scripts/install_services.sh
+```
+
+### Step 2: Control Services via `start_nexus.sh` (Convenience CLI)
+`start_nexus.sh` provides unified commands to control `runit` services with automatic WakeLock management:
+
+```bash
 chmod +x start_nexus.sh
 
-# Start all services in background
+# Start services via runit with WakeLock (sv up sshd, localtonet, nexusnode)
 ./start_nexus.sh start
 
-# Check live appliance status and URLs
+# Check live service states (sv status) and connection URLs
 ./start_nexus.sh status
 
-# Run in foreground (view live output directly)
-./start_nexus.sh run
-
-# Stream logs from all 3 services
+# Follow authoritative svlogd logs
 ./start_nexus.sh logs
 
-# Stop all services gracefully
-./start_nexus.sh stop
+# Follow logs for a specific service
+./start_nexus.sh logs nexusnode
 
-# Restart all services
+# Restart runit services
 ./start_nexus.sh restart
+
+# Stop all services and release WakeLock
+./start_nexus.sh stop
 ```
 
 ---
 
-### Mode B: `termux-services` (runit) Supervision — Production
-
-For system-level automatic process restarts upon crash:
+### Step 3: Direct `sv` Command Control (Alternative)
+You can also interact directly with `runit` using standard `sv` commands:
 
 ```bash
-cd ~/server
-bash scripts/install_services.sh
-
-# Start / enable services
+# Start individual services
 sv up nexusnode
 sv up localtonet
 sv up sshd
 
-# Check status
+# Check service status
 sv status nexusnode
 sv status localtonet
 sv status sshd
 
-# Stop services
+# Stop individual services
 sv down nexusnode
+sv down localtonet
+sv down sshd
 ```
 
 ---

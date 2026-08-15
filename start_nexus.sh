@@ -1,30 +1,27 @@
 #!/data/data/com.termux/files/usr/bin/sh
 # ==============================================================================
-# 🚀 NexusNode All-in-One Appliance Launcher & Supervisor
-# Starts: OpenSSH Daemon (port 8022), LocalToNet Tunnel, and NexusNode Server
-# Target: Android 13 Termux (~4 GB RAM) & Linux / POSIX Environments
+# 📱 NexusNode Appliance Control CLI (runit / termux-services wrapper)
+# Single Authoritative Process Manager: runit (sv)
+# Does NOT spawn competing processes; delegates 100% to termux-services / runsv
 # ==============================================================================
 
-# Strict paths for Termux / POSIX
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 HOME="${HOME:-/data/data/com.termux/files/home}"
-export PATH="$PREFIX/bin:$HOME/.local/bin:$HOME/localtonet:$PATH"
-export PYTHONPATH="$HOME/server:$PYTHONPATH"
+export PATH="$PREFIX/bin:$HOME/.local/bin:$PATH"
 
 SERVER_DIR="$(cd "$(dirname "$0")" && pwd)"
-LOG_DIR="$HOME/nexus_logs"
-PID_DIR="$SERVER_DIR/.pids"
+export PYTHONPATH="$SERVER_DIR:$PYTHONPATH"
 
-mkdir -p "$LOG_DIR"
-mkdir -p "$PID_DIR"
+# Resolve runit service directory ($PREFIX/var/service or ~/.nexus_sv)
+if [ -d "$PREFIX/var/service" ]; then
+    export SVDIR="$PREFIX/var/service"
+elif [ -d "$HOME/.nexus_sv" ]; then
+    export SVDIR="$HOME/.nexus_sv"
+else
+    export SVDIR="$PREFIX/var/service"
+fi
 
-APP_LOG="$LOG_DIR/nexusnode.log"
-SSH_LOG="$LOG_DIR/sshd.log"
-TUNNEL_LOG="$LOG_DIR/localtonet.log"
-
-APP_PID_FILE="$PID_DIR/app.pid"
-SSH_PID_FILE="$PID_DIR/sshd.pid"
-TUNNEL_PID_FILE="$PID_DIR/localtonet.pid"
+LOG_BASE="$HOME/nexus_logs"
 
 # Colors for terminal output
 C_RESET="\033[0m"
@@ -42,7 +39,7 @@ C_DIM="\033[2m"
 acquire_wakelock() {
     if command -v termux-wake-lock > /dev/null 2>&1; then
         termux-wake-lock
-        echo -e " ${C_GREEN}✔${C_RESET} Acquired Android CPU WakeLock (prevents sleep during lockscreen)"
+        echo -e " ${C_GREEN}✔${C_RESET} Acquired Android CPU WakeLock"
     fi
 }
 
@@ -64,224 +61,203 @@ get_local_ip() {
     echo "${ip:-127.0.0.1}"
 }
 
-find_localtonet_bin() {
-    if command -v localtonet > /dev/null 2>&1; then
-        command -v localtonet
-    elif [ -x "$HOME/localtonet/localtonet" ]; then
-        echo "$HOME/localtonet/localtonet"
-    elif [ -x "$HOME/localtonet" ]; then
-        echo "$HOME/localtonet"
-    elif [ -x "$PREFIX/bin/localtonet" ]; then
-        echo "$PREFIX/bin/localtonet"
-    else
-        echo ""
-    fi
-}
-
-# ------------------------------------------------------------------------------
-# Start Subsystems
-# ------------------------------------------------------------------------------
-
-start_sshd() {
-    echo -e "${C_CYAN}[1/3] Starting OpenSSH Daemon (port 8022)...${C_RESET}"
-    if pgrep -x sshd > /dev/null 2>&1; then
-        echo -e " ${C_GREEN}✔${C_RESET} SSHD is already running on port 8022 (PID: $(pgrep -x sshd | head -n 1))"
-    else
-        if command -v sshd > /dev/null 2>&1; then
-            sshd -p 8022 >> "$SSH_LOG" 2>&1
-            sleep 1
-            if pgrep -x sshd > /dev/null 2>&1; then
-                pgrep -x sshd | head -n 1 > "$SSH_PID_FILE"
-                echo -e " ${C_GREEN}✔${C_RESET} SSHD started successfully on port 8022"
-            else
-                echo -e " ${C_RED}✖${C_RESET} Failed to start SSHD. Check $SSH_LOG"
-            fi
-        else
-            echo -e " ${C_YELLOW}⚠${C_RESET} 'sshd' binary not found. Install with: pkg install openssh"
+ensure_services_installed() {
+    if [ ! -d "$SVDIR/nexusnode" ] || [ ! -d "$SVDIR/localtonet" ]; then
+        echo -e "${C_CYAN}[*] Installing runit service definitions into $SVDIR...${C_RESET}"
+        if [ -f "$SERVER_DIR/scripts/install_services.sh" ]; then
+            sh "$SERVER_DIR/scripts/install_services.sh" > /dev/null 2>&1 || true
         fi
     fi
 }
 
-start_localtonet() {
-    echo -e "${C_CYAN}[2/3] Starting LocalToNet Tunnel Daemon...${C_RESET}"
-    if pgrep -f "localtonet" > /dev/null 2>&1; then
-        echo -e " ${C_GREEN}✔${C_RESET} LocalToNet tunnel is already running (PID: $(pgrep -f localtonet | head -n 1))"
-    else
-        LOCALTONET_BIN="$(find_localtonet_bin)"
-        if [ -n "$LOCALTONET_BIN" ] && [ -x "$LOCALTONET_BIN" ]; then
-            nohup "$LOCALTONET_BIN" >> "$TUNNEL_LOG" 2>&1 &
-            echo $! > "$TUNNEL_PID_FILE"
-            sleep 2
-            if kill -0 $(cat "$TUNNEL_PID_FILE" 2>/dev/null) 2>/dev/null; then
-                echo -e " ${C_GREEN}✔${C_RESET} LocalToNet tunnel started in background (PID: $(cat "$TUNNEL_PID_FILE"))"
-            else
-                echo -e " ${C_YELLOW}⚠${C_RESET} LocalToNet exited early. Check logs: $TUNNEL_LOG"
-            fi
-        else
-            echo -e " ${C_YELLOW}⚠${C_RESET} LocalToNet binary not found. (Optional: tunnel for remote internet access)"
-        fi
+check_sv_command() {
+    if ! command -v sv > /dev/null 2>&1; then
+        echo -e "${C_RED}✖ Error: 'sv' command (runit / termux-services) not found.${C_RESET}"
+        echo -e "  Please install termux-services in Termux:"
+        echo -e "  ${C_BOLD}pkg install termux-services${C_RESET}"
+        return 1
     fi
-}
-
-start_nexusnode() {
-    local mode="$1"
-    echo -e "${C_CYAN}[3/3] Starting NexusNode WSGI Server (port 5000)...${C_RESET}"
-    
-    if pgrep -f "python.*app.py" > /dev/null 2>&1; then
-        echo -e " ${C_GREEN}✔${C_RESET} NexusNode server is already running (PID: $(pgrep -f "python.*app.py" | head -n 1))"
-    else
-        cd "$SERVER_DIR" || exit 1
-        if [ "$mode" = "foreground" ]; then
-            echo -e " ${C_GREEN}✔${C_RESET} Launching NexusNode in foreground (Press Ctrl+C to terminate)..."
-            echo "------------------------------------------------------------"
-            exec python app.py
-        else
-            nohup python app.py >> "$APP_LOG" 2>&1 &
-            echo $! > "$APP_PID_FILE"
-            sleep 2
-            if kill -0 $(cat "$APP_PID_FILE" 2>/dev/null) 2>/dev/null; then
-                echo -e " ${C_GREEN}✔${C_RESET} NexusNode server started in background (PID: $(cat "$APP_PID_FILE"))"
-            else
-                echo -e " ${C_RED}✖${C_RESET} NexusNode failed to start. Check logs: $APP_LOG"
-            fi
-        fi
-    fi
+    return 0
 }
 
 # ------------------------------------------------------------------------------
-# Stop Subsystems
+# Actions (All delegated strictly to runit 'sv')
 # ------------------------------------------------------------------------------
 
-stop_all() {
-    echo -e "${C_BOLD}Shutting down NexusNode Mobile Server Appliance...${C_RESET}"
+start_appliance() {
+    echo -e "${C_BOLD}============================================================${C_RESET}"
+    echo -e " ${C_GREEN}🚀 Starting NexusNode Appliance via runit supervisor...${C_RESET}"
+    echo -e "${C_BOLD}============================================================${C_RESET}"
 
-    # 1. Stop NexusNode
-    if pgrep -f "python.*app.py" > /dev/null 2>&1; then
+    acquire_wakelock
+    ensure_services_installed
+
+    if check_sv_command; then
+        # Enable services in termux-services if command available
+        if command -v sv-enable > /dev/null 2>&1; then
+            sv-enable sshd > /dev/null 2>&1 || true
+            sv-enable localtonet > /dev/null 2>&1 || true
+            sv-enable nexusnode > /dev/null 2>&1 || true
+        fi
+
+        echo -n " • Starting SSHD service... "
+        sv up sshd 2>/dev/null && echo -e "${C_GREEN}OK${C_RESET}" || echo -e "${C_YELLOW}STANDBY${C_RESET}"
+
+        echo -n " • Starting LocalToNet tunnel service... "
+        sv up localtonet 2>/dev/null && echo -e "${C_GREEN}OK${C_RESET}" || echo -e "${C_YELLOW}STANDBY${C_RESET}"
+
+        echo -n " • Starting NexusNode server service... "
+        sv up nexusnode 2>/dev/null && echo -e "${C_GREEN}OK${C_RESET}" || echo -e "${C_RED}FAIL${C_RESET}"
+    fi
+
+    show_status
+}
+
+stop_appliance() {
+    echo -e "${C_BOLD}============================================================${C_RESET}"
+    echo -e " ${C_YELLOW}🛑 Stopping NexusNode Appliance services (runit)...${C_RESET}"
+    echo -e "${C_BOLD}============================================================${C_RESET}"
+
+    if check_sv_command; then
         echo -n " • Stopping NexusNode server... "
-        pkill -f "python.*app.py" || true
-        echo -e "${C_GREEN}Done${C_RESET}"
-    fi
-    rm -f "$APP_PID_FILE"
+        sv down nexusnode 2>/dev/null && echo -e "${C_GREEN}Down${C_RESET}" || echo -e "${C_DIM}Off${C_RESET}"
 
-    # 2. Stop LocalToNet
-    if pgrep -f "localtonet" > /dev/null 2>&1; then
         echo -n " • Stopping LocalToNet tunnel... "
-        pkill -f "localtonet" || true
-        echo -e "${C_GREEN}Done${C_RESET}"
-    fi
-    rm -f "$TUNNEL_PID_FILE"
+        sv down localtonet 2>/dev/null && echo -e "${C_GREEN}Down${C_RESET}" || echo -e "${C_DIM}Off${C_RESET}"
 
-    # 3. Stop SSHD (optional confirmation)
-    if pgrep -x sshd > /dev/null 2>&1; then
-        echo -n " • Stopping SSHD daemon... "
-        pkill -x sshd || true
-        echo -e "${C_GREEN}Done${C_RESET}"
+        echo -n " • Stopping OpenSSH daemon... "
+        sv down sshd 2>/dev/null && echo -e "${C_GREEN}Down${C_RESET}" || echo -e "${C_DIM}Off${C_RESET}"
+
+        # Stop optional Ollama if active
+        if [ -d "$SVDIR/ollama" ]; then
+            sv down ollama > /dev/null 2>&1 || true
+        fi
     fi
-    rm -f "$SSH_PID_FILE"
 
     release_wakelock
-    echo -e "${C_GREEN}All NexusNode appliance services stopped.${C_RESET}"
+    echo -e "${C_GREEN}Appliance services stopped.${C_RESET}"
 }
 
-# ------------------------------------------------------------------------------
-# Status Dashboard
-# ------------------------------------------------------------------------------
+restart_appliance() {
+    echo -e "${C_BOLD}============================================================${C_RESET}"
+    echo -e " ${C_CYAN}🔄 Restarting NexusNode Appliance services (runit)...${C_RESET}"
+    echo -e "${C_BOLD}============================================================${C_RESET}"
+
+    acquire_wakelock
+    ensure_services_installed
+
+    if check_sv_command; then
+        echo -n " • Restarting SSHD service... "
+        sv restart sshd 2>/dev/null && echo -e "${C_GREEN}OK${C_RESET}" || sv up sshd 2>/dev/null || true
+
+        echo -n " • Restarting LocalToNet tunnel... "
+        sv restart localtonet 2>/dev/null && echo -e "${C_GREEN}OK${C_RESET}" || sv up localtonet 2>/dev/null || true
+
+        echo -n " • Restarting NexusNode server... "
+        sv restart nexusnode 2>/dev/null && echo -e "${C_GREEN}OK${C_RESET}" || sv up nexusnode 2>/dev/null || true
+    fi
+
+    show_status
+}
 
 show_status() {
     local local_ip="$(get_local_ip)"
 
     echo ""
     echo -e "${C_BOLD}============================================================${C_RESET}"
-    echo -e " ${C_CYAN}📱 NexusNode Personal Mobile Server Appliance Status${C_RESET}"
+    echo -e " ${C_CYAN}📱 NexusNode Mobile Server Appliance Status${C_RESET}"
     echo -e "${C_BOLD}============================================================${C_RESET}"
+    echo -e " Supervisor       : ${C_BOLD}runit / termux-services${C_RESET} ($SVDIR)"
 
-    # 1. NexusNode
-    if pgrep -f "python.*app.py" > /dev/null 2>&1; then
-        local app_pid=$(pgrep -f "python.*app.py" | head -n 1)
-        echo -e "  NexusNode Core : ${C_GREEN}ONLINE${C_RESET} (PID: $app_pid, Port: 5000)"
-        echo -e "  Local URL      : ${C_BOLD}http://$local_ip:5000${C_RESET}"
-        echo -e "  Loopback URL   : ${C_DIM}http://127.0.0.1:5000${C_RESET}"
-    else
-        echo -e "  NexusNode Core : ${C_RED}OFFLINE${C_RESET}"
+    if check_sv_command; then
+        echo ""
+        echo -e " ${C_BOLD}Service States (sv status):${C_RESET}"
+        
+        # 1. NexusNode
+        echo -n "  • nexusnode   : "
+        sv status nexusnode 2>&1 || echo "not installed"
+
+        # 2. SSHD
+        echo -n "  • sshd        : "
+        sv status sshd 2>&1 || echo "not installed"
+
+        # 3. LocalToNet
+        echo -n "  • localtonet  : "
+        sv status localtonet 2>&1 || echo "not installed"
+
+        # 4. Ollama
+        if [ -d "$SVDIR/ollama" ]; then
+            echo -n "  • ollama      : "
+            sv status ollama 2>&1 || echo "down (optional)"
+        fi
     fi
 
-    # 2. SSHD
-    if pgrep -x sshd > /dev/null 2>&1; then
-        local ssh_pid=$(pgrep -x sshd | head -n 1)
-        echo -e "  OpenSSH Daemon : ${C_GREEN}ONLINE${C_RESET} (PID: $ssh_pid, Port: 8022)"
-        echo -e "  SSH Access     : ${C_BOLD}ssh $(whoami 2>/dev/null || echo user)@$local_ip -p 8022${C_RESET}"
-    else
-        echo -e "  OpenSSH Daemon : ${C_RED}OFFLINE${C_RESET}"
-    fi
-
-    # 3. LocalToNet
-    if pgrep -f "localtonet" > /dev/null 2>&1; then
-        local tunnel_pid=$(pgrep -f "localtonet" | head -n 1)
-        echo -e "  LocalToNet     : ${C_GREEN}ONLINE${C_RESET} (PID: $tunnel_pid)"
-    else
-        echo -e "  LocalToNet     : ${C_YELLOW}OFFLINE / STANDBY${C_RESET}"
-    fi
-
+    echo ""
+    echo -e " ${C_BOLD}Access Endpoints:${C_RESET}"
+    echo -e "  • Web Console : ${C_BOLD}http://$local_ip:5000${C_RESET} ${C_DIM}(Local Wi-Fi)${C_RESET}"
+    echo -e "  • Loopback    : ${C_DIM}http://127.0.0.1:5000${C_RESET}"
+    echo -e "  • SSH Access  : ${C_BOLD}ssh $(whoami 2>/dev/null || echo user)@$local_ip -p 8022${C_RESET}"
     echo -e "${C_BOLD}============================================================${C_RESET}"
-    echo -e " Log files directory: ${C_CYAN}$LOG_DIR${C_RESET}"
+    echo -e " Authoritative Logs: ${C_CYAN}$LOG_BASE/<service>/current${C_RESET}"
     echo ""
 }
 
+show_logs() {
+    local svc="${1:-}"
+    if [ -n "$svc" ]; then
+        local log_file="$LOG_BASE/$svc/current"
+        if [ -f "$log_file" ]; then
+            echo -e "${C_CYAN}Streaming authoritative svlogd logs for [$svc] ($log_file)...${C_RESET}"
+            tail -n 50 -f "$log_file"
+        elif [ -f "$LOG_BASE/$svc.log" ]; then
+            tail -n 50 -f "$LOG_BASE/$svc.log"
+        else
+            echo -e "${C_YELLOW}No logs found for service '$svc' in $LOG_BASE${C_RESET}"
+        fi
+    else
+        echo -e "${C_CYAN}Streaming authoritative appliance service logs (Ctrl+C to exit)...${C_RESET}"
+        tail -n 30 -f \
+            "$LOG_BASE/nexusnode/current" \
+            "$LOG_BASE/localtonet/current" \
+            "$LOG_BASE/sshd/current" \
+            "$LOG_BASE/nexusnode.log" \
+            "$LOG_BASE/localtonet.log" \
+            "$LOG_BASE/sshd.log" 2>/dev/null || echo "No active logs found yet. Start services with './start_nexus.sh start'"
+    fi
+}
+
 # ------------------------------------------------------------------------------
-# Command Dispatcher
+# Dispatcher
 # ------------------------------------------------------------------------------
 
 ACTION="${1:-start}"
+SERVICE="${2:-}"
 
 case "$ACTION" in
     start)
-        echo -e "${C_BOLD}============================================================${C_RESET}"
-        echo -e " ${C_GREEN}🚀 Starting NexusNode 24/7 Mobile Server Appliance...${C_RESET}"
-        echo -e "${C_BOLD}============================================================${C_RESET}"
-        acquire_wakelock
-        start_sshd
-        start_localtonet
-        start_nexusnode "background"
-        show_status
-        ;;
-    run|foreground)
-        echo -e "${C_BOLD}============================================================${C_RESET}"
-        echo -e " ${C_GREEN}🚀 Starting NexusNode in Foreground Mode...${C_RESET}"
-        echo -e "${C_BOLD}============================================================${C_RESET}"
-        acquire_wakelock
-        start_sshd
-        start_localtonet
-        start_nexusnode "foreground"
+        start_appliance
         ;;
     stop)
-        stop_all
+        stop_appliance
         ;;
     restart)
-        stop_all
-        sleep 2
-        acquire_wakelock
-        start_sshd
-        start_localtonet
-        start_nexusnode "background"
-        show_status
+        restart_appliance
         ;;
     status)
         show_status
         ;;
     logs)
-        echo -e "${C_CYAN}Streaming live NexusNode appliance logs (Ctrl+C to exit)...${C_RESET}"
-        tail -n 50 -f "$APP_LOG" "$SSH_LOG" "$TUNNEL_LOG" 2>/dev/null || tail -n 50 -f "$APP_LOG"
+        show_logs "$SERVICE"
         ;;
     *)
-        echo "Usage: $0 {start|run|stop|restart|status|logs}"
+        echo "Usage: $0 {start|stop|restart|status|logs [service]}"
         echo ""
-        echo "Commands:"
-        echo "  start       - Start SSHD, LocalToNet, and NexusNode in background (default)"
-        echo "  run         - Start SSHD & LocalToNet, then run NexusNode in foreground"
-        echo "  stop        - Gracefully stop all 3 services and release wakelock"
-        echo "  restart     - Restart all 3 services"
-        echo "  status      - Display current appliance health and connection URLs"
-        echo "  logs        - Stream live logs from all subsystems"
+        echo "Commands (delegated to runit / termux-services):"
+        echo "  start           - Acquire WakeLock and start runit services (sshd, localtonet, nexusnode)"
+        echo "  stop            - Stop runit services and release WakeLock"
+        echo "  restart         - Restart runit services"
+        echo "  status          - Query 'sv status' and display network URLs"
+        echo "  logs [service]  - Follow authoritative svlogd logs (e.g. ./start_nexus.sh logs nexusnode)"
         exit 1
         ;;
 esac

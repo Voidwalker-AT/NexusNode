@@ -2,7 +2,6 @@
 # Service definition for NexusNode WSGI Server (runit / termux-services)
 exec 2>&1
 
-# Environment setup
 export PREFIX="/data/data/com.termux/files/usr"
 export HOME="/data/data/com.termux/files/home"
 export PATH="$PREFIX/bin:$HOME/.local/bin:$PATH"
@@ -10,20 +9,13 @@ export PYTHONPATH="$HOME/server:$PYTHONPATH"
 
 SERVER_DIR="$HOME/server"
 if [ ! -d "$SERVER_DIR" ]; then
-    SERVER_DIR="$HOME"
+    SERVER_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 fi
 
 cd "$SERVER_DIR" || exit 1
 
-# Prevent tight restart loop (Backoff: 3s)
-sleep 3
+# Prevent tight restart storm (Backoff: 2s)
+sleep 2
 
-# Check if already running on port 5000
-if pgrep -f "app.py" > /dev/null 2>&1; then
-    echo "[nexusnode:run] Process already active. Avoiding duplicate spawn."
-    sleep 5
-    exit 0
-fi
-
-echo "[nexusnode:run] Starting NexusNode Production Server on :5000..."
+echo "[nexusnode:run] Starting NexusNode WSGI Server on port 5000..."
 exec python "$SERVER_DIR/app.py"

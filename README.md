@@ -61,9 +61,26 @@
 | **[API.md](API.md)** | Complete REST API specification for all 50+ endpoints and streaming protocols. |
 | **[CHANGELOG.md](CHANGELOG.md)** | Detailed release history and evolution milestones. |
 
+## 🚀 Production Deployment Flow (Single Authoritative Supervisor)
+
+NexusNode enforces a single authoritative supervision model via **`runit` / `termux-services`**:
+
+```
+Termux:Boot (Autostart on Phone Power-On)
+    ↓
+termux-wake-lock (Acquires Android CPU Lock)
+    ↓
+runit / termux-services (sv / runsvdir)
+    ↓
+├── sshd          (OpenSSH Daemon on :8022)
+├── localtonet    (Encrypted Public Internet Tunnel)
+├── nexusnode     (Waitress WSGI Personal Cloud Server on :5000)
+└── ollama        (Optional Local AI Engine, down by default)
+```
+
 ---
 
-## 🚀 Quickstart (Android Termux)
+## ⚡ Quickstart (Android Termux)
 
 ### 1. Prerequisites (Inside Termux)
 ```bash
@@ -71,33 +88,34 @@ pkg update && pkg upgrade -y
 pkg install -y python git termux-services termux-api openssh yt-dlp ffmpeg p7zip
 ```
 
-### 2. Clone Repository
+### 2. Clone & Install
 ```bash
 git clone https://github.com/Voidwalker-AT/NexusNode.git ~/server
 cd ~/server
 pip install -r requirements.txt
+bash scripts/install_services.sh
 ```
 
-### 3. Launch Appliance (SSHD + LocalToNet + NexusNode)
+### 3. Appliance Control (`start_nexus.sh` - runit CLI Wrapper)
+`start_nexus.sh` is a convenience CLI that controls `runit` services without spawning competing processes:
+
 ```bash
 chmod +x start_nexus.sh
+
+# Start services via runit with WakeLock (sv up sshd, localtonet, nexusnode)
 ./start_nexus.sh start
-```
-- **Web Console**: Open `http://<PHONE_IP>:5000` (or `http://127.0.0.1:5000`)
-- **SSH Terminal**: `ssh user@<PHONE_IP> -p 8022`
-- **Check Status**: `./start_nexus.sh status`
-- **Live Logs**: `./start_nexus.sh logs`
-- **Stop All**: `./start_nexus.sh stop`
 
----
+# Query runit service status, local Wi-Fi IP, and SSH access
+./start_nexus.sh status
 
-### 4. Production Supervision (`termux-services` / runit)
-For background autostart and automatic crash recovery:
-```bash
-bash scripts/install_services.sh
-sv up nexusnode
-sv up localtonet
-sv up sshd
+# Follow authoritative svlogd logs
+./start_nexus.sh logs
+
+# Restart runit services
+./start_nexus.sh restart
+
+# Stop all services and release WakeLock
+./start_nexus.sh stop
 ```
 
 ## 🧪 Testing & Verification
