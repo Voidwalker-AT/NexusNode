@@ -1,6 +1,6 @@
 """
 NexusNode CLI — Terminal Output & Table Formatting Utilities
-Zero-dependency compact table formatter, byte/time formatters, and JSON serialization.
+Zero-dependency compact table formatter, byte/time formatters, panels, and ASCII banner.
 """
 
 import sys
@@ -15,7 +15,7 @@ def print_json(data: any):
 
 def print_error(msg: str):
     """Prints formatted error message to stderr."""
-    print(f"[!] Error: {msg}", file=sys.stderr)
+    print(f"[ERROR] {msg}", file=sys.stderr)
 
 
 def print_success(msg: str):
@@ -31,6 +31,50 @@ def print_warning(msg: str):
 def print_info(msg: str):
     """Prints informational message to stdout."""
     print(f"[-] {msg}")
+
+
+def print_banner():
+    """Prints the compact, polished NexusNode application banner with ASCII fallback."""
+    unicode_banner = (
+        "╔════════════════════════════════════════════════════╗\n"
+        "║                  N E X U S N O D E                 ║\n"
+        "║             MOBILE SERVER APPLIANCE                ║\n"
+        "╚════════════════════════════════════════════════════╝"
+    )
+    ascii_banner = (
+        "+----------------------------------------------------+\n"
+        "|                  N E X U S N O D E                 |\n"
+        "|             MOBILE SERVER APPLIANCE                |\n"
+        "+----------------------------------------------------+"
+    )
+    try:
+        print(unicode_banner)
+    except UnicodeEncodeError:
+        print(ascii_banner)
+
+
+def print_step(name: str, status: str = "OK", total_width: int = 24):
+    """Prints aligned connection progress step (e.g. 'Endpoint ............. OK')."""
+    dots_count = max(2, total_width - len(name))
+    dots = "." * dots_count
+    try:
+        print(f"{name} {dots} {status}")
+    except UnicodeEncodeError:
+        print(f"{name} {'.' * dots_count} {status}")
+
+
+def print_panel(title: str, items: list[tuple[str, str]], width: int = 40):
+    """Prints a clean key-value panel block."""
+    print()
+    print(title)
+    try:
+        print("─" * width)
+    except UnicodeEncodeError:
+        print("-" * width)
+
+    for k, v in items:
+        print(f"{k:<12}: {v}")
+    print()
 
 
 def format_bytes(b: int | float | None) -> str:
@@ -68,11 +112,12 @@ def format_duration(seconds: float | int | None) -> str:
     elif s < 3600:
         mins = s // 60
         secs = s % 60
-        return f"{mins}m {secs}s"
+        return f"{mins:02d}:{secs:02d}"
     else:
         hrs = s // 3600
         mins = (s % 3600) // 60
-        return f"{hrs}h {mins}m"
+        secs = s % 60
+        return f"{hrs:02d}:{mins:02d}:{secs:02d}"
 
 
 def format_timestamp(ts: float | int | str | None) -> str:
@@ -85,7 +130,6 @@ def format_timestamp(ts: float | int | str | None) -> str:
         except Exception:
             return str(ts)
     if isinstance(ts, str):
-        # Truncate ISO T/Z for readability if desired
         return ts.replace("T", " ").replace("Z", "")
     return str(ts)
 

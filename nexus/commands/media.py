@@ -9,7 +9,7 @@ from ..client import NexusClient, NexusConnectionError
 
 def cmd_media(client: NexusClient, args, as_json: bool = False) -> int:
     """Dispatcher for 'nexus media' subcommands."""
-    subaction = getattr(args, "media_action", None) or "library"
+    subaction = getattr(args, "media_action", None) or "queue"
 
     if subaction == "download":
         return cmd_media_download(client, args, as_json)
@@ -70,7 +70,7 @@ def cmd_media_download(client: NexusClient, args, as_json: bool = False) -> int:
     print(f"  Format:      {fmt.upper()} ({quality})")
     print(f"  Destination: Vault -> {dest}/")
     print(f"  Status:      {resp.get('status', 'QUEUED').upper()}")
-    print("Use 'nexus tasks' to track progress.\n")
+    print("Use 'nexus media queue' or 'nexus tasks' to track progress.\n")
     return 0
 
 
@@ -124,7 +124,7 @@ def cmd_media_queue(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_error("Permission denied.")
         return 1
     if status_code != 200 or not isinstance(resp, (list, dict)):
-        output.print_error(f"Failed to fetch task queue (HTTP {status_code})")
+        output.print_error(f"Failed to fetch media task queue (HTTP {status_code})")
         return 1
 
     tasks = resp if isinstance(resp, list) else resp.get("tasks", [])
@@ -135,26 +135,54 @@ def cmd_media_queue(client: NexusClient, args, as_json: bool = False) -> int:
         return 0
 
     if not media_tasks:
-        print("\nNo media download tasks in queue.\n")
+        print("\nNo active or queued media operations.\n")
         return 0
 
-    headers = ["TASK ID", "STATUS", "PROGRESS", "TITLE", "CREATED"]
-    rows = []
-    for t in media_tasks:
-        prog = f"{t.get('progress', 0):.0f}%"
-        raw_status = (t.get("status") or t.get("state") or "UNKNOWN").upper()
-        raw_stage = (t.get("stage") or "").upper()
-        status_disp = f"{raw_status} ({raw_stage})" if raw_stage and raw_stage != raw_status else raw_status
-        raw_id = (t.get("id") or t.get("task_id", ""))[:14]
-        title = t.get("title") or t.get("description") or "Media Download"
-        rows.append([
-            raw_id,
-            status_disp,
-            prog,
-            title[:35],
-            output.format_timestamp(t.get("created_at"))
-        ])
+    active_tasks = [t for t in media_tasks if (t.get("status") or t.get("state", "")).upper() in ["RUNNING", "STARTING", "POST_PROCESSING", "VERIFYING"]]
+    queued_tasks = [t for t in media_tasks if (t.get("status") or t.get("state", "")).upper() == "QUEUED"]
+    other_tasks = [t for t in media_tasks if t not in active_tasks and t not in queued_tasks]
 
-    print("\n--- ACTIVE MEDIA DOWNLOADS ---")
-    output.print_table(headers, rows)
+    print()
+    if active_tasks:
+        print("ACTIVE")
+        try:
+            print("─" * 40)
+        except UnicodeEncodeError:
+            print("-" * 40)
+        for t in active_tasks:
+            title = t.get("title") or t.get("description") or "Media Download"
+            st = (t.get("stage") or t.get("status") or "RUNNING").upper()
+            prog = t.get("progress", 0)
+            print(f"Download: {title}")
+            print(f"{st:<16} {prog:.0f}%")
+            if t.get("speed_bps"):
+                spd_mb = round(t["speed_bps"] / (1024 * 1024), 2)
+                print(f"Speed            {spd_mb} MB/s")
+            if t.get("eta_seconds"):
+                print(f"ETA              {output.format_duration(t['eta_seconds'])}")
+            print()
+
+    if queued_tasks:
+        print("QUEUED")
+        try:
+            print("─" * 40)
+        except UnicodeEncodeError:
+            print("-" * 40)
+        for t in queued_tasks:
+            title = t.get("title") or t.get("description") or "Media Download"
+            print(f"Download: {title}")
+            print("QUEUED\n")
+
+    if not active_tasks and not queued_tasks and other_tasks:
+        headers = ["TASK ID", "STATUS", "TITLE", "CREATED"]
+        rows = []
+        for t in other_tasks[:10]:
+            rows.append([
+                (t.get("id") or t.get("task_id", ""))[:14],
+                (t.get("status") or "COMPLETED").upper(),
+                (t.get("title") or "Media Download")[:35],
+                output.format_timestamp(t.get("created_at"))
+            ])
+        output.print_table(headers, rows)
+
     return 0

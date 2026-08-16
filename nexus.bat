@@ -1,3 +1,4 @@
 @echo off
-REM NexusNode Universal Remote CLI Client Launcher (Windows)
+setlocal
 python -m nexus %*
+exit /b %ERRORLEVEL%

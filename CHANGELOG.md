@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.3] - 2026-08-16
+
+### 💻 Universal Remote CLI Redesign & Polished Terminal Experience
+
+#### Added & Improved
+- **Dedicated Worldwide Connection UX (`nexus connect <url>`)**:
+  - Primary connection flow connects to remote NexusNode servers across any network (Wi-Fi, mobile data, CGNAT, LocalToNet HTTPS tunnel) with zero SSH or Termux dependency.
+  - Interactive connection sequence features a compact ASCII/Unicode header banner, step-by-step progress verification (`Endpoint`, `TLS`, `API`), and a real-time server metadata panel with roundtrip ping latency in milliseconds.
+  - Smart login prompt: directly prompts for `Password:` when `--user` is provided, avoiding redundant username prompts.
+- **HTTP 200 Bug Fix & Robust Response Handling**:
+  - Eliminated the client-side `[!] Error: HTTP 200` bug by safely parsing session tokens and user identity from both root-level dictionaries and nested `resp["user"]` structures.
+  - Implemented explicit HTML / WAF detection: if a public proxy or tunnel serves HTML instead of expected JSON, the CLI reports actionable diagnostic hints rather than generic status code errors.
+  - Applied LocalToNet tunnel bypass headers (`localtonet-skip-warning: true`) only when connecting to verified LocalToNet domains.
+- **Polished Application REPL (`nexus>` Shell)**:
+  - Role-aware command categorization in `help` (SYSTEM, STORAGE, MEDIA, TASKS, AI, RAG, ACCOUNT, and ADMIN for administrators).
+  - Dynamic tab autocompletion (`complete_*`) scoped by user permissions.
+  - Clear rejection of arbitrary OS shell commands (`bash`, `rm`, `ls`) with helpful command guidance.
+- **Task & Media Queue Integration**:
+  - Integrated authoritative SQLite task state machine displaying real-time stages (`QUEUED`, `STARTING`, `RUNNING`, `POST_PROCESSING`, `VERIFYING`, `COMPLETED`, `CANCELLED`).
+  - Active download status displays formatted speed (`MB/s`) and estimated completion time (`ETA`).
+- **Cross-Platform Convenience Launchers**:
+  - Added `nexus.bat` for Windows and `nexus_launcher` / `bin/nexus` POSIX scripts for Linux, macOS, and Termux.
+- **Expanded Test Suite (155 Tests Passing)**:
+  - Added 34 dedicated unit tests in `tests/test_nexus_client.py` covering token extraction, URL normalization, WAF detection, 401/403/429/500 error responses, tab completion, and task lifecycle rendering.
+
+---
+
 ## [2.3.2] - 2026-08-16
 
 ### 🛡️ Deep Task Queue & Vault Internal Files Security Repair

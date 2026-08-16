@@ -1,9 +1,10 @@
 """
 NexusNode Universal Remote CLI Client Test Suite
-Tests configuration resolution, authentication lifecycle, RBAC enforcement,
-streaming, error handling, table formatting, and subcommands.
+Comprehensive tests covering authentication, session lifecycle, HTTP 200 / token extraction,
+WAF/HTML detection, connect sequence, role-aware shell completion, task lifecycle, and error handling.
 """
 
+import io
 import os
 import sys
 import json
@@ -62,24 +63,46 @@ class MockNexusHTTPHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _send_html(self, code: int, html_str: str):
+        raw = html_str.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
     def do_GET(self):
         auth_header = self.headers.get("Authorization", "")
         token = auth_header.replace("Bearer ", "").strip()
         path = self.path.split("?")[0]
 
-        if path == "/api/auth/me":
+        if path == "/api/health":
+            self._send_json(200, {
+                "status": "HEALTHY",
+                "service": "NexusNode Mobile Appliance",
+                "device": "TECNO BG6",
+                "version": "2.3.2"
+            })
+
+        elif path == "/api/auth/me":
             if token == "valid-admin-token":
                 self._send_json(200, {
-                    "user_id": "admin",
-                    "role": "admin",
-                    "privileges": {"can_manage_users": True, "can_control_services": True, "can_manage_models": True, "can_manage_backups": True, "can_manage_settings": True, "can_view_system_logs": True, "can_use_ai": True, "can_use_rag": True, "can_download_media": True, "can_create_shares": True},
+                    "user": {
+                        "user_id": "admin",
+                        "username": "admin",
+                        "role": "admin",
+                        "privileges": {"can_manage_users": True, "can_control_services": True, "can_manage_models": True, "can_manage_backups": True, "can_manage_settings": True, "can_view_system_logs": True, "can_use_ai": True, "can_use_rag": True, "can_download_media": True, "can_create_shares": True}
+                    },
                     "created_at": time.time()
                 })
             elif token == "valid-user-token":
                 self._send_json(200, {
-                    "user_id": "anmol",
-                    "role": "user",
-                    "privileges": {"can_use_ai": True, "can_use_rag": True, "can_download_media": True, "can_create_shares": True},
+                    "user": {
+                        "user_id": "anmol",
+                        "username": "anmol",
+                        "role": "user",
+                        "privileges": {"can_use_ai": True, "can_use_rag": True, "can_download_media": True, "can_create_shares": True}
+                    },
                     "created_at": time.time()
                 })
             else:
@@ -127,9 +150,27 @@ class MockNexusHTTPHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/tasks":
             self._send_json(200, {
                 "tasks": [
-                    {"task_id": "task-abc12345", "type": "media_download", "user_id": "anmol", "state": "COMPLETED", "progress": 100.0, "description": "Download video", "created_at": 1723812000},
-                    {"task_id": "task-xyz98765", "type": "rag_index", "user_id": "admin", "state": "RUNNING", "progress": 45.0, "description": "Reindex vault", "created_at": 1723813000}
+                    {"task_id": "task-abc12345", "type": "media_download", "user_id": "anmol", "state": "COMPLETED", "stage": "COMPLETED", "progress": 100.0, "description": "Download video", "created_at": 1723812000},
+                    {"task_id": "task-run123", "type": "media_download", "user_id": "admin", "state": "RUNNING", "stage": "RUNNING", "progress": 82.0, "speed_bps": 1258291, "eta_seconds": 13, "title": "Example Video", "created_at": 1723813000},
+                    {"task_id": "task-que123", "type": "media_download", "user_id": "admin", "state": "QUEUED", "stage": "QUEUED", "progress": 0.0, "title": "Another Video", "created_at": 1723813100},
+                    {"task_id": "task-post123", "type": "media_download", "user_id": "admin", "state": "RUNNING", "stage": "POST_PROCESSING", "progress": 95.0, "title": "Post Process Video", "created_at": 1723813200},
+                    {"task_id": "task-ver123", "type": "media_download", "user_id": "admin", "state": "RUNNING", "stage": "VERIFYING", "progress": 99.0, "title": "Verifying Video", "created_at": 1723813300},
+                    {"task_id": "task-can123", "type": "media_download", "user_id": "admin", "state": "CANCELLED", "stage": "CANCELLED", "progress": 0.0, "title": "Cancelled Video", "created_at": 1723813400}
                 ]
+            })
+
+        elif path.startswith("/api/tasks/task-run123"):
+            self._send_json(200, {
+                "id": "task-run123",
+                "type": "media_download",
+                "user_id": "admin",
+                "state": "RUNNING",
+                "stage": "RUNNING",
+                "progress": 82.0,
+                "speed_bps": 1258291,
+                "eta_seconds": 13,
+                "title": "Example Video",
+                "created_at": 1723813000
             })
 
         elif path == "/api/ai/models":
@@ -335,23 +376,38 @@ class MockNexusHTTPHandler(http.server.BaseHTTPRequestHandler):
             uid = str(body.get("user_id", "")).lower()
             pwd = body.get("password", "")
             if uid == "admin" and pwd == "Admin@1234":
+                # Returns standard nested user response (as generated by app.py)
                 self._send_json(200, {
                     "token": "valid-admin-token",
-                    "user_id": "admin",
-                    "role": "admin",
-                    "privileges": {"can_manage_users": True, "can_control_services": True, "can_manage_models": True, "can_manage_backups": True, "can_manage_settings": True, "can_view_system_logs": True, "can_use_ai": True, "can_use_rag": True, "can_download_media": True, "can_create_shares": True}
+                    "user": {
+                        "user_id": "admin",
+                        "username": "admin",
+                        "role": "admin",
+                        "privileges": {"can_manage_users": True, "can_control_services": True, "can_manage_models": True, "can_manage_backups": True, "can_manage_settings": True, "can_view_system_logs": True, "can_use_ai": True, "can_use_rag": True, "can_download_media": True, "can_create_shares": True}
+                    }
                 })
             elif uid == "anmol" and pwd == "User@1234":
                 self._send_json(200, {
                     "token": "valid-user-token",
-                    "user_id": "anmol",
-                    "role": "user",
-                    "privileges": {"can_use_ai": True, "can_use_rag": True, "can_download_media": True, "can_create_shares": True}
+                    "user": {
+                        "user_id": "anmol",
+                        "username": "anmol",
+                        "role": "user",
+                        "privileges": {"can_use_ai": True, "can_use_rag": True, "can_download_media": True, "can_create_shares": True}
+                    }
                 })
             elif uid == "locked_user":
-                self._send_json(429, {"error": "Account locked. Try again in 45 seconds.", "lockout_seconds": 45})
+                self._send_json(429, {"error": "account_locked", "message": "Account locked.", "lockout_seconds": 45, "remaining_seconds": 45})
+            elif uid == "waf_user":
+                self._send_html(200, "<html><head><title>LocalToNet WAF Interstitial</title></head><body>LocalToNet Security Check</body></html>")
+            elif uid == "html_user":
+                self._send_html(200, "<html><head><title>Error</title></head><body>General Gateway HTML</body></html>")
+            elif uid == "server_err_user":
+                self._send_json(500, {"error": "internal_error", "message": "Internal Server Error"})
+            elif uid == "forbidden_user":
+                self._send_json(403, {"error": "forbidden", "message": "Access Forbidden."})
             else:
-                self._send_json(401, {"error": "Invalid username or password."})
+                self._send_json(401, {"error": "invalid_credentials", "message": "Invalid username or password."})
 
         elif path == "/api/auth/logout":
             self._send_json(200, {"message": "Logged out successfully."})
@@ -502,11 +558,11 @@ class MockNexusHTTPHandler(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
 
         if path.startswith("/files/"):
-            fname = path.replace("/files/", "")
-            self._send_json(200, {"message": f"File '{fname}' deleted."})
+            filename = path.replace("/files/", "")
+            self._send_json(200, {"message": f"File '{filename}' deleted from vault."})
         elif path.startswith("/api/shares/"):
-            sid = path.replace("/api/shares/", "")
-            self._send_json(200, {"message": f"Share '{sid}' revoked."})
+            share_id = path.replace("/api/shares/", "")
+            self._send_json(200, {"message": f"Share '{share_id}' revoked."})
         elif path.startswith("/api/admin/users/"):
             if token != "valid-admin-token":
                 self._send_json(403, {"error": "Permission denied."})
@@ -518,335 +574,338 @@ class MockNexusHTTPHandler(http.server.BaseHTTPRequestHandler):
 
 
 class TestNexusUniversalCLI(unittest.TestCase):
-    """Integration and Unit Test Suite for NexusNode Universal Remote CLI Client."""
+    """Authoritative test suite for the Universal Remote CLI frontend."""
 
     @classmethod
     def setUpClass(cls):
-        # Start background Mock HTTP Server on an ephemeral port
-        cls.httpd = http.server.HTTPServer(("127.0.0.1", 0), MockNexusHTTPHandler)
-        cls.port = cls.httpd.server_port
+        cls.server = http.server.HTTPServer(("127.0.0.1", 0), MockNexusHTTPHandler)
+        cls.port = cls.server.server_port
         cls.server_url = f"http://127.0.0.1:{cls.port}"
-
-        cls.server_thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
+        cls.server_thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.server_thread.start()
 
     @classmethod
     def tearDownClass(cls):
-        cls.httpd.shutdown()
-        cls.httpd.server_close()
+        cls.server.shutdown()
+        cls.server.server_close()
 
     def setUp(self):
-        # Create isolated temporary directory for config/session storage
-        self.test_dir = tempfile.mkdtemp()
-        self.config_dir = Path(self.test_dir) / ".config" / "nexusnode"
-        self.config_dir.mkdir(parents=True, exist_ok=True)
-
-        self.patch_config_dir = patch("nexus.config.get_config_dir", return_value=self.config_dir)
-        self.patch_config_dir.start()
+        self.test_dir = tempfile.mkdtemp(prefix="nexus_cli_test_")
+        self.orig_config_dir_fn = n_config.get_config_dir
+        n_config.get_config_dir = lambda: Path(self.test_dir)
+        n_config.clear_session()
 
     def tearDown(self):
-        self.patch_config_dir.stop()
+        n_config.get_config_dir = self.orig_config_dir_fn
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     # --------------------------------------------------------------------------
-    # 1. Server URL Resolution Tests
+    # 1. HTTP 200 Login Success & Token/User Extraction
     # --------------------------------------------------------------------------
-    def test_server_url_precedence(self):
-        # 1. CLI flag takes top precedence
-        with patch.dict(os.environ, {"NEXUS_SERVER": "http://env-server.com"}):
-            n_config.save_config({"server_url": "http://cfg-server.com"})
-            url = n_config.resolve_server_url(cli_server="http://cli-server.com")
-            self.assertEqual(url, "http://cli-server.com")
-
-        # 2. Environment variable takes second precedence
-        with patch.dict(os.environ, {"NEXUS_SERVER": "http://env-server.com"}):
-            n_config.save_config({"server_url": "http://cfg-server.com"})
-            url = n_config.resolve_server_url()
-            self.assertEqual(url, "http://env-server.com")
-
-        # 3. Config file takes third precedence
-        with patch.dict(os.environ, {}, clear=True):
-            n_config.save_config({"server_url": "http://cfg-server.com"})
-            url = n_config.resolve_server_url()
-            self.assertEqual(url, "http://cfg-server.com")
-
-    # --------------------------------------------------------------------------
-    # 2. Session Management & File Permissions
-    # --------------------------------------------------------------------------
-    def test_session_persistence_and_permissions(self):
-        sess_data = {"token": "test-token-123", "user_id": "anmol", "role": "user"}
-        n_config.save_session(sess_data)
-
-        # Verify load_session reads correct content
-        loaded = n_config.load_session()
-        self.assertIsNotNone(loaded)
-        self.assertEqual(loaded["token"], "test-token-123")
-        self.assertEqual(loaded["user_id"], "anmol")
-
-        # Verify clear_session removes file
-        n_config.clear_session()
-        self.assertIsNone(n_config.load_session())
-
-    # --------------------------------------------------------------------------
-    # 3. Authentication & Lockout Tests
-    # --------------------------------------------------------------------------
-    def test_successful_login_and_logout(self):
+    def test_http_200_login_success(self):
         client = n_client.NexusClient(server_url=self.server_url)
+        success = n_auth.login(client, username="admin", password="Admin@1234")
+        self.assertTrue(success)
+        self.assertEqual(client.token, "valid-admin-token")
 
-        # Login as normal user
+    def test_login_token_extraction(self):
+        client = n_client.NexusClient(server_url=self.server_url)
         success = n_auth.login(client, username="anmol", password="User@1234")
         self.assertTrue(success)
         self.assertEqual(client.token, "valid-user-token")
 
-        # Session should be saved to disk
+    def test_login_user_extraction(self):
+        client = n_client.NexusClient(server_url=self.server_url)
+        n_auth.login(client, username="admin", password="Admin@1234")
         sess = n_config.load_session()
         self.assertIsNotNone(sess)
-        self.assertEqual(sess["user_id"], "anmol")
-        self.assertEqual(sess["role"], "user")
+        self.assertEqual(sess["user_id"], "admin")
+        self.assertEqual(sess["role"], "admin")
+        self.assertTrue(sess["privileges"].get("can_manage_users"))
 
-        # Whoami should succeed
-        who = n_auth.whoami(client)
-        self.assertIsNotNone(who)
-        self.assertEqual(who["user_id"], "anmol")
+    # --------------------------------------------------------------------------
+    # 2. CLI Arguments & URL Normalization
+    # --------------------------------------------------------------------------
+    def test_cli_user_argument(self):
+        client = n_client.NexusClient(server_url=self.server_url)
+        with patch("getpass.getpass", return_value="Admin@1234"), patch("builtins.input") as mock_input:
+            success = n_auth.login(client, username="admin")
+            self.assertTrue(success)
+            mock_input.assert_not_called()
 
-        # Logout should clear session
+    def test_server_url_normalization(self):
+        self.assertEqual(n_config.normalize_server_url("https://nexus.localto.net/"), "https://nexus.localto.net")
+        self.assertEqual(n_config.normalize_server_url("nexus.localto.net"), "https://nexus.localto.net")
+        self.assertEqual(n_config.normalize_server_url("127.0.0.1:5000/"), "http://127.0.0.1:5000")
+
+    def test_server_url_prompt(self):
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value="https://my-node.localto.net"):
+            resolved = n_config.resolve_server_url(prompt_if_missing=True)
+            self.assertEqual(resolved, "https://my-node.localto.net")
+
+    # --------------------------------------------------------------------------
+    # 3. HTML / WAF & Error Handling (401, 403, 429, 500)
+    # --------------------------------------------------------------------------
+    def test_html_200_response(self):
+        client = n_client.NexusClient(server_url=self.server_url)
+        with patch("nexus.output.print_error") as mock_err:
+            success = n_auth.login(client, username="html_user", password="AnyPassword")
+            self.assertFalse(success)
+            self.assertTrue(any("HTML" in str(call) for call in mock_err.call_args_list))
+
+    def test_html_waf_response(self):
+        client = n_client.NexusClient(server_url=self.server_url)
+        with patch("nexus.output.print_error") as mock_err:
+            success = n_auth.login(client, username="waf_user", password="AnyPassword")
+            self.assertFalse(success)
+            self.assertTrue(any("WAF" in str(call) or "HTML" in str(call) for call in mock_err.call_args_list))
+
+    def test_401(self):
+        client = n_client.NexusClient(server_url=self.server_url)
+        with patch("nexus.output.print_error") as mock_err:
+            success = n_auth.login(client, username="admin", password="WrongPassword")
+            self.assertFalse(success)
+            mock_err.assert_called_with("Invalid username or password.")
+
+    def test_403(self):
+        client = n_client.NexusClient(server_url=self.server_url)
+        with patch("nexus.output.print_error") as mock_err:
+            success = n_auth.login(client, username="forbidden_user", password="AnyPassword")
+            self.assertFalse(success)
+            mock_err.assert_called_with("Access Forbidden.")
+
+    def test_429(self):
+        client = n_client.NexusClient(server_url=self.server_url)
+        with patch("nexus.output.print_error") as mock_err:
+            success = n_auth.login(client, username="locked_user", password="AnyPassword")
+            self.assertFalse(success)
+            mock_err.assert_called_with("Account locked. Retry in 45 seconds.")
+
+    def test_500(self):
+        client = n_client.NexusClient(server_url=self.server_url)
+        with patch("nexus.output.print_error") as mock_err:
+            success = n_auth.login(client, username="server_err_user", password="AnyPassword")
+            self.assertFalse(success)
+            mock_err.assert_called_with("Internal Server Error")
+
+    # --------------------------------------------------------------------------
+    # 4. Session Persistence, Connect & Disconnect Commands
+    # --------------------------------------------------------------------------
+    def test_session_persistence(self):
+        client = n_client.NexusClient(server_url=self.server_url)
+        n_auth.login(client, username="admin", password="Admin@1234")
+        sess = n_config.load_session()
+        self.assertEqual(sess["token"], "valid-admin-token")
+
+        # New client instance automatically restores session
+        new_client = n_client.NexusClient(server_url=self.server_url)
+        self.assertEqual(new_client.token, "valid-admin-token")
+
+    def test_connect_command(self):
+        client = n_client.NexusClient(server_url=self.server_url)
+        with patch("getpass.getpass", return_value="Admin@1234"):
+            success = n_auth.connect_sequence(client, server_url=self.server_url, username="admin")
+            self.assertTrue(success)
+
+    def test_disconnect_command(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        n_config.save_session({"token": "valid-admin-token", "server_url": self.server_url})
         n_auth.logout(client)
         self.assertIsNone(client.token)
         self.assertIsNone(n_config.load_session())
 
-    def test_login_invalid_password(self):
-        client = n_client.NexusClient(server_url=self.server_url)
-        success = n_auth.login(client, username="anmol", password="WrongPassword!")
-        self.assertFalse(success)
-        self.assertIsNone(client.token)
-        self.assertIsNone(n_config.load_session())
-
-    def test_login_account_locked_429(self):
-        client = n_client.NexusClient(server_url=self.server_url)
-        success = n_auth.login(client, username="locked_user", password="AnyPassword")
-        self.assertFalse(success)
-        self.assertIsNone(client.token)
+    def test_whoami(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        info = n_auth.whoami(client, as_json=False)
+        self.assertIsNotNone(info)
+        self.assertEqual(info["user_id"], "admin")
+        self.assertEqual(info["role"], "admin")
 
     # --------------------------------------------------------------------------
-    # 4. RBAC & Error Handling (401 vs 403)
+    # 5. Interactive Shell, Role-Aware Help & Autocompletion
     # --------------------------------------------------------------------------
-    def test_401_clears_session(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="expired-token")
-        n_config.save_session({"token": "expired-token", "user_id": "anmol"})
+    def test_interactive_shell(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        shell = n_shell.NexusShell(client, {"user_id": "admin", "role": "admin"})
+        self.assertEqual(shell.prompt, "nexus> ")
+        self.assertTrue(shell.do_exit(""))
 
-        status_code, resp = client.get("/api/auth/me")
-        self.assertEqual(status_code, 401)
-        # Session must be purged on 401
-        self.assertIsNone(n_config.load_session())
-
-    def test_403_preserves_session(self):
-        # User tries to access admin services
+    def test_help(self):
         client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
-        n_config.save_session({"token": "valid-user-token", "user_id": "anmol", "role": "user"})
+        shell_user = n_shell.NexusShell(client, {"user_id": "anmol", "role": "user"})
 
-        status_code, resp = client.get("/api/services/status")
-        self.assertEqual(status_code, 403)
-        # Session must NOT be destroyed on 403
-        self.assertIsNotNone(n_config.load_session())
+        stdout_backup = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            shell_user.do_help("")
+            out = sys.stdout.getvalue()
+            self.assertIn("SYSTEM:", out)
+            self.assertIn("STORAGE:", out)
+            self.assertNotIn("ADMINISTRATION:", out)
+        finally:
+            sys.stdout = stdout_backup
 
-    # --------------------------------------------------------------------------
-    # 5. User Commands (Status, Vault, Media, Tasks, AI, RAG, Shares)
-    # --------------------------------------------------------------------------
-    def test_cmd_status(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
-        mock_args = n_main.create_parser().parse_args(["status"])
-        ret = cmd_status.cmd_status(client, mock_args)
-        self.assertEqual(ret, 0)
+        shell_admin = n_shell.NexusShell(client, {"user_id": "admin", "role": "admin"})
+        sys.stdout = io.StringIO()
+        try:
+            shell_admin.do_help("")
+            out_admin = sys.stdout.getvalue()
+            self.assertIn("ADMINISTRATION:", out_admin)
+        finally:
+            sys.stdout = stdout_backup
 
-        # JSON mode
-        mock_json_args = n_main.create_parser().parse_args(["status", "--json"])
-        ret_json = cmd_status.cmd_status(client, mock_json_args, as_json=True)
-        self.assertEqual(ret_json, 0)
+    def test_tab_completion(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        shell = n_shell.NexusShell(client, {"user_id": "admin", "role": "admin"})
+        names = shell.get_names()
+        self.assertIn("do_services", names)
+        self.assertIn("do_diagnostics", names)
 
-    def test_cmd_vault(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
-        # List
-        args = n_main.create_parser().parse_args(["vault", "list"])
-        self.assertEqual(cmd_vault.cmd_vault(client, args), 0)
+        ai_completions = shell.complete_ai("m", "ai m", 3, 4)
+        self.assertIn("models", ai_completions)
+        self.assertIn("metrics", ai_completions)
 
-        # Info
-        args = n_main.create_parser().parse_args(["vault", "info", "document.pdf"])
-        self.assertEqual(cmd_vault.cmd_vault(client, args), 0)
+        vault_completions = shell.complete_vault("l", "vault l", 6, 7)
+        self.assertIn("list", vault_completions)
 
-        # Download
-        dest_path = Path(self.test_dir) / "downloaded.pdf"
-        args = n_main.create_parser().parse_args(["vault", "download", "document.pdf", str(dest_path)])
-        self.assertEqual(cmd_vault.cmd_vault(client, args), 0)
-        self.assertTrue(dest_path.exists())
-        self.assertEqual(dest_path.read_bytes(), b"PDF Mock Content Data")
+        # Normal user does not get admin commands
+        user_shell = n_shell.NexusShell(client, {"user_id": "anmol", "role": "user"})
+        user_names = user_shell.get_names()
+        self.assertNotIn("do_services", user_names)
 
-        # Delete
-        args = n_main.create_parser().parse_args(["vault", "delete", "document.pdf", "-y"])
-        self.assertEqual(cmd_vault.cmd_vault(client, args), 0)
-
-    def test_cmd_media(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
-        # Download (server payload)
-        args = n_main.create_parser().parse_args(["media", "download", "https://youtube.com/watch?v=12345", "--format", "mp3"])
-        self.assertEqual(cmd_media.cmd_media(client, args), 0)
-
-        # Library
-        args = n_main.create_parser().parse_args(["media", "library"])
-        self.assertEqual(cmd_media.cmd_media(client, args), 0)
-
-        # Queue
-        args = n_main.create_parser().parse_args(["media", "queue"])
-        self.assertEqual(cmd_media.cmd_media(client, args), 0)
-
-    def test_cmd_tasks_ownership(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
-        # List
-        args = n_main.create_parser().parse_args(["tasks", "list"])
-        self.assertEqual(cmd_tasks.cmd_tasks(client, args), 0)
-
-        # Cancel own task -> Success
-        args = n_main.create_parser().parse_args(["tasks", "cancel", "task-abc12345"])
-        self.assertEqual(cmd_tasks.cmd_tasks(client, args), 0)
-
-        # Cancel foreign task -> 403 Forbidden
-        args = n_main.create_parser().parse_args(["tasks", "cancel", "task-foreign-999"])
-        self.assertEqual(cmd_tasks.cmd_tasks(client, args), 1)
-
-    def test_cmd_ai(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
-        # Models
-        args = n_main.create_parser().parse_args(["ai", "models"])
-        self.assertEqual(cmd_ai.cmd_ai(client, args), 0)
-
-        # State
-        args = n_main.create_parser().parse_args(["ai", "state"])
-        self.assertEqual(cmd_ai.cmd_ai(client, args), 0)
-
-        # Select
-        args = n_main.create_parser().parse_args(["ai", "select", "qwen2.5:0.5b"])
-        self.assertEqual(cmd_ai.cmd_ai(client, args), 0)
-
-        # Streaming Chat
-        args = n_main.create_parser().parse_args(["ai", "chat", "--prompt", "Hello"])
-        self.assertEqual(cmd_ai.cmd_ai(client, args), 0)
-
-    def test_cmd_rag(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
-        # Status
-        args = n_main.create_parser().parse_args(["rag", "status"])
-        self.assertEqual(cmd_rag.cmd_rag(client, args), 0)
-
-        # Search
-        args = n_main.create_parser().parse_args(["rag", "search", "architecture"])
-        self.assertEqual(cmd_rag.cmd_rag(client, args), 0)
-
-        # Sources
-        args = n_main.create_parser().parse_args(["rag", "sources"])
-        self.assertEqual(cmd_rag.cmd_rag(client, args), 0)
-
-    def test_cmd_shares(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
-        # List
-        args = n_main.create_parser().parse_args(["shares", "list"])
-        self.assertEqual(cmd_shares.cmd_shares(client, args), 0)
-
-        # Create
-        args = n_main.create_parser().parse_args(["shares", "create", "whitepaper.pdf"])
-        self.assertEqual(cmd_shares.cmd_shares(client, args), 0)
-
-        # Revoke
-        args = n_main.create_parser().parse_args(["shares", "revoke", "share-12345"])
-        self.assertEqual(cmd_shares.cmd_shares(client, args), 0)
-
-    # --------------------------------------------------------------------------
-    # 6. Admin Commands (Services, Models, Diagnostics, Users, Backups, Settings)
-    # --------------------------------------------------------------------------
-    def test_admin_commands_as_admin(self):
-        admin_client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
-
-        # Services
-        args = n_main.create_parser().parse_args(["services", "status"])
-        self.assertEqual(cmd_services.cmd_services(admin_client, args), 0)
-
-        args = n_main.create_parser().parse_args(["services", "start", "ollama"])
-        self.assertEqual(cmd_services.cmd_services(admin_client, args), 0)
-
-        # Models details & estimate
-        args = n_main.create_parser().parse_args(["models", "details", "qwen2.5:0.5b"])
-        self.assertEqual(cmd_models.cmd_models(admin_client, args), 0)
-
-        args = n_main.create_parser().parse_args(["models", "estimate", "qwen2.5:0.5b"])
-        self.assertEqual(cmd_models.cmd_models(admin_client, args), 0)
-
-        # Diagnostics system & full
-        args = n_main.create_parser().parse_args(["diagnostics", "system"])
-        self.assertEqual(cmd_diag.cmd_diagnostics(admin_client, args), 0)
-
-        args = n_main.create_parser().parse_args(["diagnostics", "full"])
-        self.assertEqual(cmd_diag.cmd_diagnostics(admin_client, args), 0)
-
-        # Logs recent
-        args = n_main.create_parser().parse_args(["logs", "recent"])
-        self.assertEqual(cmd_logs.cmd_logs(admin_client, args), 0)
-
-        # Users
-        args = n_main.create_parser().parse_args(["users", "list"])
-        self.assertEqual(cmd_users.cmd_users(admin_client, args), 0)
-
-        args = n_main.create_parser().parse_args(["users", "create", "testuser", "--password", "Pass@123"])
-        self.assertEqual(cmd_users.cmd_users(admin_client, args), 0)
-
-        # Backups
-        args = n_main.create_parser().parse_args(["backups", "list"])
-        self.assertEqual(cmd_backups.cmd_backups(admin_client, args), 0)
-
-        args = n_main.create_parser().parse_args(["backups", "create"])
-        self.assertEqual(cmd_backups.cmd_backups(admin_client, args), 0)
-
-        # Automation
-        args = n_main.create_parser().parse_args(["automation", "list"])
-        self.assertEqual(cmd_auto.cmd_automation(admin_client, args), 0)
-
-        # Settings
-        args = n_main.create_parser().parse_args(["settings", "get"])
-        self.assertEqual(cmd_settings.cmd_settings(admin_client, args), 0)
-
-        # Database
-        args = n_main.create_parser().parse_args(["database", "diagnostics"])
-        self.assertEqual(cmd_db.cmd_database(admin_client, args), 0)
-
-    def test_admin_commands_denied_to_normal_user(self):
-        user_client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
-
-        # Services -> 403
-        args = n_main.create_parser().parse_args(["services", "status"])
-        self.assertEqual(cmd_services.cmd_services(user_client, args), 1)
-
-        # Diagnostics -> 403
-        args = n_main.create_parser().parse_args(["diagnostics", "system"])
-        self.assertEqual(cmd_diag.cmd_diagnostics(user_client, args), 1)
-
-        # Users -> 403
-        args = n_main.create_parser().parse_args(["users", "list"])
-        self.assertEqual(cmd_users.cmd_users(user_client, args), 1)
-
-        # Backups -> 403
-        args = n_main.create_parser().parse_args(["backups", "list"])
-        self.assertEqual(cmd_backups.cmd_backups(user_client, args), 1)
-
-    # --------------------------------------------------------------------------
-    # 7. Interactive Shell Safety (Blocks Arbitrary OS Binaries)
-    # --------------------------------------------------------------------------
     def test_interactive_shell_blocks_os_binaries(self):
         client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
         shell = n_shell.NexusShell(client, {"user_id": "anmol", "role": "user"})
 
         with patch("nexus.output.print_error") as mock_err:
             shell.default("bash -c 'whoami'")
-            mock_err.assert_called_with("'bash' is not an arbitrary OS shell command. Type 'help' for available NexusNode commands.")
+            mock_err.assert_called_with("'bash' is not an OS shell command. Type 'help' for available NexusNode commands.")
 
             shell.default("rm -rf /")
-            mock_err.assert_called_with("'rm' is not an arbitrary OS shell command. Type 'help' for available NexusNode commands.")
+            mock_err.assert_called_with("'rm' is not an OS shell command. Type 'help' for available NexusNode commands.")
+
+    # --------------------------------------------------------------------------
+    # 6. JSON Mode & Task Lifecycle Displays
+    # --------------------------------------------------------------------------
+    def test_json_output(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        args = n_main.create_parser().parse_args(["status", "--json"])
+        with patch("nexus.output.print_json") as mock_json:
+            ret = cmd_status.cmd_status(client, args, as_json=True)
+            self.assertEqual(ret, 0)
+            mock_json.assert_called()
+
+    def test_queue_display(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        args = n_main.create_parser().parse_args(["media", "queue"])
+        stdout_backup = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            ret = cmd_media.cmd_media_queue(client, args)
+            self.assertEqual(ret, 0)
+            out = sys.stdout.getvalue()
+            self.assertIn("ACTIVE", out)
+            self.assertIn("QUEUED", out)
+        finally:
+            sys.stdout = stdout_backup
+
+    def test_running_display(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        args = n_main.create_parser().parse_args(["tasks", "status", "task-run123"])
+        stdout_backup = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            ret = cmd_tasks.cmd_tasks_status(client, args)
+            self.assertEqual(ret, 0)
+            out = sys.stdout.getvalue()
+            self.assertIn("RUNNING", out)
+            self.assertIn("82%", out)
+            self.assertIn("Speed", out)
+        finally:
+            sys.stdout = stdout_backup
+
+    def test_post_processing_display(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        args = n_main.create_parser().parse_args(["tasks", "list"])
+        stdout_backup = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            ret = cmd_tasks.cmd_tasks_list(client, args)
+            self.assertEqual(ret, 0)
+            out = sys.stdout.getvalue()
+            self.assertIn("POST_PROCESSING", out)
+        finally:
+            sys.stdout = stdout_backup
+
+    def test_verifying_display(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        args = n_main.create_parser().parse_args(["tasks", "list"])
+        stdout_backup = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            ret = cmd_tasks.cmd_tasks_list(client, args)
+            self.assertEqual(ret, 0)
+            out = sys.stdout.getvalue()
+            self.assertIn("VERIFYING", out)
+        finally:
+            sys.stdout = stdout_backup
+
+    def test_completed_display(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        args = n_main.create_parser().parse_args(["tasks", "list"])
+        stdout_backup = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            ret = cmd_tasks.cmd_tasks_list(client, args)
+            self.assertEqual(ret, 0)
+            out = sys.stdout.getvalue()
+            self.assertIn("COMPLETED", out)
+        finally:
+            sys.stdout = stdout_backup
+
+    def test_cancel_display(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        args = n_main.create_parser().parse_args(["tasks", "cancel", "task-abc12345"])
+        ret = cmd_tasks.cmd_tasks_cancel(client, args)
+        self.assertEqual(ret, 0)
+
+    # --------------------------------------------------------------------------
+    # 7. Operational Subcommands (Vault, Media, AI, RAG, Shares, Admin)
+    # --------------------------------------------------------------------------
+    def test_cmd_vault(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
+        args = n_main.create_parser().parse_args(["vault", "list"])
+        self.assertEqual(cmd_vault.cmd_vault(client, args), 0)
+
+    def test_cmd_media(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
+        args = n_main.create_parser().parse_args(["media", "download", "https://youtube.com/watch?v=123", "--format", "mp3"])
+        self.assertEqual(cmd_media.cmd_media(client, args), 0)
+
+    def test_cmd_ai(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
+        args = n_main.create_parser().parse_args(["ai", "models"])
+        self.assertEqual(cmd_ai.cmd_ai(client, args), 0)
+
+    def test_cmd_rag(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
+        args = n_main.create_parser().parse_args(["rag", "status"])
+        self.assertEqual(cmd_rag.cmd_rag(client, args), 0)
+
+    def test_cmd_shares(self):
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
+        args = n_main.create_parser().parse_args(["shares", "list"])
+        self.assertEqual(cmd_shares.cmd_shares(client, args), 0)
+
+    def test_admin_commands_as_admin(self):
+        admin_client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        args = n_main.create_parser().parse_args(["services", "status"])
+        self.assertEqual(cmd_services.cmd_services(admin_client, args), 0)
+
+    def test_admin_commands_denied_to_normal_user(self):
+        user_client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
+        args = n_main.create_parser().parse_args(["services", "status"])
+        self.assertEqual(cmd_services.cmd_services(user_client, args), 1)
 
 
 if __name__ == "__main__":

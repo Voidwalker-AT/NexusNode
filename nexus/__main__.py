@@ -10,7 +10,7 @@ from . import __version__
 from . import config
 from . import auth
 from . import output
-from .client import NexusClient
+from .client import NexusClient, NexusError, NexusConnectionError
 from .shell import NexusShell
 from .commands import (
     status as cmd_status_mod,
@@ -36,20 +36,29 @@ from .commands import (
 def create_parser() -> argparse.ArgumentParser:
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument("--server", help="NexusNode remote server URL (e.g. https://...)", default=None)
-    common_parser.add_argument("--user", help="NexusNode username", default=None)
+    common_parser.add_argument("--user", help="NexusNode username / user ID", default=None)
     common_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON format")
+    common_parser.add_argument("--debug", action="store_true", help="Enable verbose debug exception logs")
 
     parser = argparse.ArgumentParser(
         prog="nexus",
         description="NexusNode Universal Remote CLI Client - Authoritative HTTPS Frontend",
-        epilog="For interactive mode, run 'nexus' or 'nexus shell'.",
+        epilog="For interactive connection, run 'nexus connect <url>' or simply 'nexus'.",
         parents=[common_parser]
     )
     parser.add_argument("--version", action="version", version=f"NexusNode CLI v{__version__}")
 
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
-    # --- Core Auth Commands ---
+    # --- Primary Connection Commands ---
+    p_connect = subparsers.add_parser("connect", help="Connect interactively to NexusNode server", parents=[common_parser])
+    p_connect.add_argument("url", nargs="?", default=None, help="Remote server URL (e.g. https://nexus.localto.net)")
+    p_connect.add_argument("--password", help="User password (hidden prompt if omitted)", default=None)
+
+    subparsers.add_parser("disconnect", help="Revoke session and disconnect", parents=[common_parser])
+    subparsers.add_parser("session", help="Inspect current authenticated session", parents=[common_parser])
+
+    # --- Legacy / Direct Auth Commands ---
     p_login = subparsers.add_parser("login", help="Log in to NexusNode server", parents=[common_parser])
     p_login.add_argument("--password", help="User password (hidden prompt if omitted)", default=None)
 
@@ -71,7 +80,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     # --- media ---
     p_media = subparsers.add_parser("media", help="Media downloads & library", parents=[common_parser])
-    p_media.add_argument("media_action", nargs="?", default="library", choices=["download", "library", "queue"], help="Action")
+    p_media.add_argument("media_action", nargs="?", default="queue", choices=["download", "library", "queue"], help="Action")
     p_media.add_argument("url", nargs="?", default=None, help="Media URL to download (e.g. YouTube)")
     p_media.add_argument("--format", choices=["mp4", "mp3", "m4a", "webm"], default="mp4", help="Download format")
     p_media.add_argument("--quality", default="best", help="Video/Audio quality")
@@ -170,87 +179,148 @@ def main(argv=None) -> int:
     parser = create_parser()
     args = parser.parse_args(argv)
 
-    # 1. Resolve Server URL
-    server_url = config.resolve_server_url(cli_server=args.server, prompt_if_missing=(args.command is None or args.command == "login"))
+    # 1. Resolve target server URL
+    target_server = args.server
+    if args.command == "connect" and getattr(args, "url", None):
+        target_server = args.url
+
+    server_url = config.resolve_server_url(cli_server=target_server, prompt_if_missing=(args.command is None or args.command == "connect" or args.command == "login"))
     client = NexusClient(server_url=server_url)
 
     as_json = getattr(args, "json", False)
+    debug = getattr(args, "debug", False)
 
-    # 2. If no command specified, default to interactive shell
-    if not args.command or args.command == "shell":
-        if not auth.ensure_authenticated(client):
+    try:
+        # 2. If no command specified, default to interactive session/connect
+        if not args.command:
+            # Check if valid session exists
+            if client.token:
+                try:
+                    status_code, resp = client.get("/api/auth/me")
+                    if status_code == 200 and isinstance(resp, dict):
+                        user_info = resp.get("user") if isinstance(resp.get("user"), dict) else resp
+                        shell = NexusShell(client, session_info=user_info)
+                        shell.cmdloop()
+                        return 0
+                except Exception:
+                    pass
+
+            # Fallback to connect sequence
+            if auth.connect_sequence(client, username=args.user, password=getattr(args, "password", None)):
+                sess_info = auth.whoami(client, as_json=False)
+                shell = NexusShell(client, session_info=sess_info)
+                shell.cmdloop()
+                return 0
             return 1
-        sess_info = auth.whoami(client, as_json=False)
-        shell = NexusShell(client, session_info=sess_info)
-        shell.cmdloop()
-        return 0
 
-    # 3. Handle explicit core auth commands
-    if args.command == "login":
-        return 0 if auth.login(client, username=args.user, password=getattr(args, "password", None), as_json=as_json) else 1
-    elif args.command == "logout":
-        return 0 if auth.logout(client, as_json=as_json) else 1
-    elif args.command == "whoami":
-        return 0 if auth.whoami(client, as_json=as_json) else 1
-
-    # 4. Check for active session before executing commands
-    if not client.token:
-        # Check if saved session exists
-        sess = config.load_session()
-        if not sess:
-            output.print_error("Authentication required. Run 'nexus login' first.")
+        # 3. Handle Connect Command
+        if args.command == "connect":
+            if auth.connect_sequence(client, server_url=target_server, username=args.user, password=getattr(args, "password", None)):
+                sess_info = auth.whoami(client, as_json=False)
+                shell = NexusShell(client, session_info=sess_info)
+                shell.cmdloop()
+                return 0
             return 1
-        client.set_token(sess.get("token"))
 
-    # 5. Dispatch commands
-    cmd = args.command
-    if cmd == "status":
-        return cmd_status_mod.cmd_status(client, args, as_json)
-    elif cmd == "vault":
-        return cmd_vault_mod.cmd_vault(client, args, as_json)
-    elif cmd == "media":
-        return cmd_media_mod.cmd_media(client, args, as_json)
-    elif cmd == "tasks":
-        return cmd_tasks_mod.cmd_tasks(client, args, as_json)
-    elif cmd == "ai":
-        # Map positional argument if needed
-        if getattr(args, "model_or_prompt", None):
-            if args.ai_action == "select":
-                args.model = args.model_or_prompt
-            elif args.ai_action == "chat":
-                args.prompt = args.model_or_prompt
-        return cmd_ai_mod.cmd_ai(client, args, as_json)
-    elif cmd == "rag":
-        return cmd_rag_mod.cmd_rag(client, args, as_json)
-    elif cmd == "shares":
-        if getattr(args, "filename_or_id", None):
-            if args.shares_action in ["create", "add"]:
-                args.filename = args.filename_or_id
-            elif args.shares_action in ["revoke", "delete", "rm"]:
-                args.share_id = args.filename_or_id
-        return cmd_shares_mod.cmd_shares(client, args, as_json)
-    elif cmd == "account":
-        return cmd_account_mod.cmd_account(client, args, as_json)
-    elif cmd == "services":
-        return cmd_services_mod.cmd_services(client, args, as_json)
-    elif cmd == "models":
-        return cmd_models_mod.cmd_models(client, args, as_json)
-    elif cmd == "diagnostics":
-        return cmd_diag_mod.cmd_diagnostics(client, args, as_json)
-    elif cmd == "logs":
-        return cmd_logs_mod.cmd_logs(client, args, as_json)
-    elif cmd == "users":
-        return cmd_users_mod.cmd_users(client, args, as_json)
-    elif cmd == "backups":
-        return cmd_backups_mod.cmd_backups(client, args, as_json)
-    elif cmd == "automation":
-        return cmd_auto_mod.cmd_automation(client, args, as_json)
-    elif cmd == "settings":
-        return cmd_settings_mod.cmd_settings(client, args, as_json)
-    elif cmd == "database":
-        return cmd_db_mod.cmd_database(client, args, as_json)
-    else:
-        output.print_error(f"Unknown command '{cmd}'. Run 'nexus --help'.")
+        # 4. Handle Disconnect / Logout
+        if args.command in ["disconnect", "logout"]:
+            return 0 if auth.logout(client, as_json=as_json) else 1
+
+        # 5. Handle Session / Whoami
+        if args.command in ["session", "whoami"]:
+            return 0 if auth.whoami(client, as_json=as_json) else 1
+
+        # 6. Handle Login (Direct/Legacy)
+        if args.command == "login":
+            return 0 if auth.login(client, username=args.user, password=getattr(args, "password", None), as_json=as_json) else 1
+
+        # 7. Shell Command
+        if args.command == "shell":
+            if not auth.ensure_authenticated(client):
+                return 1
+            sess_info = auth.whoami(client, as_json=False)
+            shell = NexusShell(client, session_info=sess_info)
+            shell.cmdloop()
+            return 0
+
+        # 8. Check for active session before executing operational subcommands
+        if not client.token:
+            sess = config.load_session()
+            if not sess:
+                output.print_error("Authentication required. Run 'nexus connect <url>' or 'nexus login' first.")
+                return 1
+            client.set_token(sess.get("token"))
+
+        # 9. Dispatch commands
+        cmd = args.command
+        if cmd == "status":
+            return cmd_status_mod.cmd_status(client, args, as_json)
+        elif cmd == "vault":
+            return cmd_vault_mod.cmd_vault(client, args, as_json)
+        elif cmd == "media":
+            return cmd_media_mod.cmd_media(client, args, as_json)
+        elif cmd == "tasks":
+            return cmd_tasks_mod.cmd_tasks(client, args, as_json)
+        elif cmd == "ai":
+            if getattr(args, "model_or_prompt", None):
+                if args.ai_action == "select":
+                    args.model = args.model_or_prompt
+                elif args.ai_action == "chat":
+                    args.prompt = args.model_or_prompt
+            return cmd_ai_mod.cmd_ai(client, args, as_json)
+        elif cmd == "rag":
+            return cmd_rag_mod.cmd_rag(client, args, as_json)
+        elif cmd == "shares":
+            if getattr(args, "filename_or_id", None):
+                if args.shares_action in ["create", "add"]:
+                    args.filename = args.filename_or_id
+                elif args.shares_action in ["revoke", "delete", "rm"]:
+                    args.share_id = args.filename_or_id
+            return cmd_shares_mod.cmd_shares(client, args, as_json)
+        elif cmd == "account":
+            return cmd_account_mod.cmd_account(client, args, as_json)
+        elif cmd == "services":
+            return cmd_services_mod.cmd_services(client, args, as_json)
+        elif cmd == "models":
+            return cmd_models_mod.cmd_models(client, args, as_json)
+        elif cmd == "diagnostics":
+            return cmd_diag_mod.cmd_diagnostics(client, args, as_json)
+        elif cmd == "logs":
+            return cmd_logs_mod.cmd_logs(client, args, as_json)
+        elif cmd == "users":
+            return cmd_users_mod.cmd_users(client, args, as_json)
+        elif cmd == "backups":
+            return cmd_backups_mod.cmd_backups(client, args, as_json)
+        elif cmd == "automation":
+            return cmd_auto_mod.cmd_automation(client, args, as_json)
+        elif cmd == "settings":
+            return cmd_settings_mod.cmd_settings(client, args, as_json)
+        elif cmd == "database":
+            return cmd_db_mod.cmd_database(client, args, as_json)
+        else:
+            output.print_error(f"Unknown command '{cmd}'. Run 'nexus --help'.")
+            return 1
+
+    except KeyboardInterrupt:
+        print("\nOperation cancelled.")
+        return 130
+    except NexusConnectionError as e:
+        output.print_error(str(e))
+        if debug:
+            import traceback
+            traceback.print_exc()
+        return 1
+    except NexusError as e:
+        output.print_error(str(e))
+        if debug:
+            import traceback
+            traceback.print_exc()
+        return 1
+    except Exception as e:
+        output.print_error(f"Unexpected error: {e}")
+        if debug:
+            import traceback
+            traceback.print_exc()
         return 1
 
 

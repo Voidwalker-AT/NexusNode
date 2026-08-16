@@ -1,6 +1,6 @@
 """
-NexusNode CLI — Interactive REPL Shell
-Dedicated application shell with command autocompletion and error handling.
+NexusNode CLI — Interactive REPL Application Shell
+Dedicated application terminal with role-aware command grouping, autocompletion, and error handling.
 Does NOT execute arbitrary OS commands.
 """
 
@@ -35,7 +35,7 @@ from .commands import (
 
 class NexusShell(cmd.Cmd):
     """
-    Interactive application shell for NexusNode.
+    Authoritative interactive application terminal for NexusNode.
     """
     prompt = "nexus> "
 
@@ -43,19 +43,25 @@ class NexusShell(cmd.Cmd):
         super().__init__()
         self.client = client
         self.session_info = session_info or {}
-        user_id = self.session_info.get("user_id", "user")
-        role = self.session_info.get("role", "user")
-        self.intro = (
-            f"\nNexusNode Interactive CLI\n"
-            f"Server:   {self.client.server_url}\n"
-            f"User:     {user_id} (Role: {role.upper()})\n"
-            f"Type 'help' or '?' to list commands. Type 'exit' to quit.\n"
-        )
+        self.user_id = self.session_info.get("user_id", "user")
+        self.role = (self.session_info.get("role") or "user").lower()
+        self.intro = ""
+
+    def get_names(self):
+        """Filters available command names by user role for tab completion and help."""
+        names = super().get_names()
+        if self.role != "admin":
+            admin_cmds = [
+                "do_services", "do_models", "do_diagnostics", "do_logs",
+                "do_users", "do_backups", "do_automation", "do_settings", "do_database"
+            ]
+            names = [n for n in names if n not in admin_cmds]
+        return names
 
     def default(self, line):
         cmd_name = line.strip().split()[0] if line.strip() else ""
-        if cmd_name in ["bash", "sh", "python", "python3", "powershell", "cmd", "rm", "cd", "ls", "cat", "chmod"]:
-            output.print_error(f"'{cmd_name}' is not an arbitrary OS shell command. Type 'help' for available NexusNode commands.")
+        if cmd_name in ["bash", "sh", "python", "python3", "powershell", "cmd", "rm", "cd", "ls", "cat", "chmod", "curl", "wget"]:
+            output.print_error(f"'{cmd_name}' is not an OS shell command. Type 'help' for available NexusNode commands.")
         else:
             output.print_error(f"Unknown command '{cmd_name}'. Type 'help' for available commands.")
 
@@ -63,12 +69,12 @@ class NexusShell(cmd.Cmd):
         pass
 
     def do_exit(self, arg):
-        """Exit the NexusNode interactive CLI."""
-        print("Goodbye.")
+        """Exit the NexusNode interactive CLI terminal."""
+        print("Session disconnected. Goodbye.")
         return True
 
     def do_quit(self, arg):
-        """Exit the NexusNode interactive CLI."""
+        """Exit the NexusNode interactive CLI terminal."""
         return self.do_exit(arg)
 
     def do_logout(self, arg):
@@ -76,9 +82,83 @@ class NexusShell(cmd.Cmd):
         auth.logout(self.client)
         return True
 
+    def do_disconnect(self, arg):
+        """Disconnect and revoke current session."""
+        return self.do_logout(arg)
+
     def do_whoami(self, arg):
         """Show current authenticated user and session details."""
         auth.whoami(self.client)
+
+    def do_session(self, arg):
+        """Show current session details."""
+        auth.whoami(self.client)
+
+    def do_help(self, arg):
+        """List available commands categorized by subsystem."""
+        if arg:
+            # Delegate to standard cmd help for specific command
+            super().do_help(arg)
+            return
+
+        print("\nNexusNode Application Commands")
+        try:
+            print("─" * 50)
+        except UnicodeEncodeError:
+            print("-" * 50)
+
+        print("\nSYSTEM:")
+        print("  status                Appliance health, RAM, thermals & services")
+
+        print("\nSTORAGE:")
+        print("  vault list            List files in vault storage")
+        print("  vault search <term>   Search files by keyword")
+        print("  vault download <file> Download file to local machine")
+        print("  vault delete <file>   Delete file from vault")
+
+        print("\nMEDIA:")
+        print("  media queue           View active & queued media operations")
+        print("  media download <url>  Queue background media download (yt-dlp)")
+        print("  media library         List downloaded media files")
+
+        print("\nTASKS:")
+        print("  tasks list            List all background tasks and states")
+        print("  tasks status <id>     Detailed progress for specific task")
+        print("  tasks cancel <id>     Safely cancel a running task")
+
+        print("\nAI:")
+        print("  ai models             List installed Ollama LLM models")
+        print("  ai state              Inspect active LLM inference engine state")
+        print("  ai select <model>     Switch active model")
+        print("  ai chat <prompt>      Run interactive prompt inference")
+
+        print("\nRAG:")
+        print("  rag status            View SQLite FTS5 RAG index stats")
+        print("  rag search <query>    Execute full-text semantic search")
+
+        print("\nSHARES:")
+        print("  shares list           List active public temporary links")
+        print("  shares create <file>  Generate temporary download share")
+        print("  shares revoke <id>    Revoke an active share link")
+
+        print("\nACCOUNT:")
+        print("  whoami / session      Show active session identity & role")
+        print("  disconnect / logout   Revoke session and exit")
+        print("  exit / quit           Close terminal session")
+
+        if self.role == "admin":
+            print("\nADMINISTRATION:")
+            print("  services [status|start|stop|restart] <svc>")
+            print("  models   [list|details|estimate] <model>")
+            print("  diagnostics [system|full|network]")
+            print("  logs     [recent|stream]")
+            print("  users    [list|create|delete|privileges]")
+            print("  backups  [list|create|restore|download]")
+            print("  automation [list|run|toggle]")
+            print("  settings [get|set] <key> [val]")
+            print("  database [diagnostics|query] <table>")
+
+        print()
 
     # --- User Commands ---
     def do_status(self, arg):
@@ -87,7 +167,7 @@ class NexusShell(cmd.Cmd):
         cmd_status_mod.cmd_status(self.client, args_mock)
 
     def do_vault(self, arg):
-        """Vault storage management: vault [list|info|download|delete|checksum|clean-temp]"""
+        """Vault storage management: vault [list|search|info|download|delete|checksum|clean-temp]"""
         parts = shlex.split(arg) if arg else []
         action = parts[0] if parts else "list"
         args_mock = argparse.Namespace(
@@ -108,7 +188,7 @@ class NexusShell(cmd.Cmd):
     def do_media(self, arg):
         """Media center operations: media [download|library|queue]"""
         parts = shlex.split(arg) if arg else []
-        action = parts[0] if parts else "library"
+        action = parts[0] if parts else "queue"
         args_mock = argparse.Namespace(
             media_action=action,
             url=parts[1] if len(parts) > 1 else None,
@@ -190,6 +270,9 @@ class NexusShell(cmd.Cmd):
     # --- Admin Commands ---
     def do_services(self, arg):
         """Admin: System services supervision: services [status|start|stop|restart] <svc>"""
+        if self.role != "admin":
+            output.print_error("Permission denied: services management requires administrator role.")
+            return
         parts = shlex.split(arg) if arg else []
         action = parts[0] if parts else "status"
         args_mock = argparse.Namespace(
@@ -200,11 +283,16 @@ class NexusShell(cmd.Cmd):
         cmd_services_mod.cmd_services(self.client, args_mock)
 
     def complete_services(self, text, line, begidx, endidx):
+        if self.role != "admin":
+            return []
         subcmds = ["status", "start", "stop", "restart"]
         return [s for s in subcmds if s.startswith(text)]
 
     def do_models(self, arg):
         """Admin: AI Model management & memory estimation: models [list|details|estimate]"""
+        if self.role != "admin":
+            output.print_error("Permission denied: model management requires administrator role.")
+            return
         parts = shlex.split(arg) if arg else []
         action = parts[0] if parts else "list"
         args_mock = argparse.Namespace(
@@ -217,11 +305,16 @@ class NexusShell(cmd.Cmd):
         cmd_models_mod.cmd_models(self.client, args_mock)
 
     def complete_models(self, text, line, begidx, endidx):
+        if self.role != "admin":
+            return []
         subcmds = ["list", "details", "estimate"]
         return [s for s in subcmds if s.startswith(text)]
 
     def do_diagnostics(self, arg):
         """Admin: Technical diagnostics & root-cause report: diagnostics [system|full|profile|network]"""
+        if self.role != "admin":
+            output.print_error("Permission denied: diagnostics requires administrator role.")
+            return
         parts = shlex.split(arg) if arg else []
         action = parts[0] if parts else "system"
         args_mock = argparse.Namespace(
@@ -232,11 +325,16 @@ class NexusShell(cmd.Cmd):
         cmd_diag_mod.cmd_diagnostics(self.client, args_mock)
 
     def complete_diagnostics(self, text, line, begidx, endidx):
+        if self.role != "admin":
+            return []
         subcmds = ["system", "full", "profile", "network"]
         return [s for s in subcmds if s.startswith(text)]
 
     def do_logs(self, arg):
         """Admin: Query or stream system logs: logs [recent|stream]"""
+        if self.role != "admin":
+            output.print_error("Permission denied: log viewing requires administrator role.")
+            return
         parts = shlex.split(arg) if arg else []
         action = parts[0] if parts else "recent"
         args_mock = argparse.Namespace(
@@ -249,11 +347,16 @@ class NexusShell(cmd.Cmd):
         cmd_logs_mod.cmd_logs(self.client, args_mock)
 
     def complete_logs(self, text, line, begidx, endidx):
+        if self.role != "admin":
+            return []
         subcmds = ["recent", "stream"]
         return [s for s in subcmds if s.startswith(text)]
 
     def do_users(self, arg):
         """Admin: User accounts & RBAC management: users [list|create|delete|privileges]"""
+        if self.role != "admin":
+            output.print_error("Permission denied: user management requires administrator role.")
+            return
         parts = shlex.split(arg) if arg else []
         action = parts[0] if parts else "list"
         args_mock = argparse.Namespace(
@@ -269,11 +372,16 @@ class NexusShell(cmd.Cmd):
         cmd_users_mod.cmd_users(self.client, args_mock)
 
     def complete_users(self, text, line, begidx, endidx):
+        if self.role != "admin":
+            return []
         subcmds = ["list", "create", "delete", "privileges"]
         return [s for s in subcmds if s.startswith(text)]
 
     def do_backups(self, arg):
         """Admin: System backup archives & restore: backups [list|create|restore|download]"""
+        if self.role != "admin":
+            output.print_error("Permission denied: backup management requires administrator role.")
+            return
         parts = shlex.split(arg) if arg else []
         action = parts[0] if parts else "list"
         args_mock = argparse.Namespace(
@@ -286,11 +394,16 @@ class NexusShell(cmd.Cmd):
         cmd_backups_mod.cmd_backups(self.client, args_mock)
 
     def complete_backups(self, text, line, begidx, endidx):
+        if self.role != "admin":
+            return []
         subcmds = ["list", "create", "restore", "download"]
         return [s for s in subcmds if s.startswith(text)]
 
     def do_automation(self, arg):
         """Admin: Scheduled background jobs: automation [list|run|toggle]"""
+        if self.role != "admin":
+            output.print_error("Permission denied: automation management requires administrator role.")
+            return
         parts = shlex.split(arg) if arg else []
         action = parts[0] if parts else "list"
         args_mock = argparse.Namespace(
@@ -301,11 +414,16 @@ class NexusShell(cmd.Cmd):
         cmd_auto_mod.cmd_automation(self.client, args_mock)
 
     def complete_automation(self, text, line, begidx, endidx):
+        if self.role != "admin":
+            return []
         subcmds = ["list", "run", "toggle"]
         return [s for s in subcmds if s.startswith(text)]
 
     def do_settings(self, arg):
         """Admin: View or change appliance settings: settings [get|set] <key> [val]"""
+        if self.role != "admin":
+            output.print_error("Permission denied: settings management requires administrator role.")
+            return
         parts = shlex.split(arg) if arg else []
         action = parts[0] if parts else "get"
         args_mock = argparse.Namespace(
@@ -317,11 +435,16 @@ class NexusShell(cmd.Cmd):
         cmd_settings_mod.cmd_settings(self.client, args_mock)
 
     def complete_settings(self, text, line, begidx, endidx):
+        if self.role != "admin":
+            return []
         subcmds = ["get", "set"]
         return [s for s in subcmds if s.startswith(text)]
 
     def do_database(self, arg):
         """Admin: SQLite database inspection: database [diagnostics|query]"""
+        if self.role != "admin":
+            output.print_error("Permission denied: database management requires administrator role.")
+            return
         parts = shlex.split(arg) if arg else []
         action = parts[0] if parts else "diagnostics"
         args_mock = argparse.Namespace(
@@ -333,5 +456,7 @@ class NexusShell(cmd.Cmd):
         cmd_db_mod.cmd_database(self.client, args_mock)
 
     def complete_database(self, text, line, begidx, endidx):
+        if self.role != "admin":
+            return []
         subcmds = ["diagnostics", "query"]
         return [s for s in subcmds if s.startswith(text)]

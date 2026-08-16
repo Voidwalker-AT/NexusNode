@@ -100,7 +100,7 @@ def cmd_tasks_status(client: NexusClient, args, as_json: bool = False) -> int:
     print(f"  Type:        {target.get('type') or target.get('task_type')}")
     print(f"  Owner:       {target.get('owner_user_id') or target.get('owner') or target.get('user_id')}")
     print(f"  Status:      {status_disp}")
-    print(f"  Progress:    {target.get('progress', 0)}%")
+    print(f"  Progress:    {target.get('progress', 0):.0f}%")
     if target.get("speed_bps"):
         spd_mb = round(target["speed_bps"] / (1024 * 1024), 2)
         print(f"  Speed:       {spd_mb} MB/s")

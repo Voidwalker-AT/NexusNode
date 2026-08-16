@@ -6,6 +6,7 @@ Handles server URL resolution, local client settings, and secure session persist
 import os
 import sys
 import json
+import urllib.parse
 from pathlib import Path
 
 
@@ -101,18 +102,36 @@ def clear_session() -> None:
             pass
 
 
+def normalize_server_url(url_str: str) -> str:
+    """
+    Normalizes server URL string to a clean base origin with protocol scheme.
+    Preserves LocalToNet queries or parameters if needed, but ensures standard URL root.
+    """
+    if not url_str:
+        return ""
+    clean = url_str.strip()
+    if not clean.startswith("http://") and not clean.startswith("https://"):
+        if "127.0.0.1" in clean or "localhost" in clean:
+            clean = f"http://{clean}"
+        else:
+            clean = f"https://{clean}"
+
+    # Remove trailing slash
+    return clean.rstrip("/")
+
+
 def resolve_server_url(cli_server: str = None, prompt_if_missing: bool = False) -> str | None:
     """
     Resolves the remote NexusNode server URL with strict precedence:
-    1. CLI argument (--server)
+    1. CLI argument (--server or positional connect url)
     2. Environment variable (NEXUS_SERVER)
-    3. Stored config file (~/.config/nexusnode/config.json)
-    4. Interactive prompt (if prompt_if_missing=True and stdin is a tty)
+    3. Stored session file (last connected server)
+    4. Stored config file (~/.config/nexusnode/config.json)
+    5. Interactive prompt (if prompt_if_missing=True and stdin is a tty)
     """
-    # 1. CLI flag
+    # 1. CLI parameter
     if cli_server and cli_server.strip():
-        url = cli_server.strip().rstrip("/")
-        # Update config cache if valid
+        url = normalize_server_url(cli_server)
         cfg = load_config()
         cfg["server_url"] = url
         save_config(cfg)
@@ -121,24 +140,30 @@ def resolve_server_url(cli_server: str = None, prompt_if_missing: bool = False) 
     # 2. Environment Variable
     env_server = os.environ.get("NEXUS_SERVER")
     if env_server and env_server.strip():
-        return env_server.strip().rstrip("/")
+        return normalize_server_url(env_server)
 
-    # 3. Local Config File
+    # 3. Active/Saved Session
+    sess = load_session()
+    if sess and sess.get("server_url"):
+        return normalize_server_url(sess.get("server_url"))
+
+    # 4. Local Config File
     cfg = load_config()
     cfg_server = cfg.get("server_url")
     if cfg_server and str(cfg_server).strip():
-        return str(cfg_server).strip().rstrip("/")
+        return normalize_server_url(str(cfg_server))
 
-    # 4. Interactive prompt
+    # 5. Interactive prompt
     if prompt_if_missing:
         try:
             if sys.stdin.isatty():
                 print("NexusNode Server URL has not been configured.")
-                entered = input("Enter NexusNode Server URL (e.g. https://...): ").strip().rstrip("/")
+                entered = input("Enter NexusNode Server URL (e.g. https://...): ").strip()
                 if entered:
-                    cfg["server_url"] = entered
+                    norm = normalize_server_url(entered)
+                    cfg["server_url"] = norm
                     save_config(cfg)
-                    return entered
+                    return norm
         except (KeyboardInterrupt, EOFError):
             return None
 

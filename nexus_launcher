@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# NexusNode Universal CLI Launcher for Linux, macOS, and Termux
+
+if command -v python3 >/dev/null 2>&1; then
+    exec python3 -m nexus "$@"
+elif command -v python >/dev/null 2>&1; then
+    exec python -m nexus "$@"
+else
+    echo "[ERROR] Python 3 is required to run the NexusNode CLI." >&2
+    exit 1
+fi
