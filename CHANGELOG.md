@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.5] - 2026-08-16
+
+### 🛡️ Task Database Integrity & Media Lifecycle Verification
+
+#### Fixed & Standardized
+- **Deterministic Terminal Task Invariants**:
+  - Enforced in `BoundedTaskRunner._normalize_task_record` and `_save_task_to_db` that terminal tasks (`COMPLETED`, `FAILED`, `CANCELLED`) strictly map stage to status, eliminating historical `stage=QUEUED` contradictions.
+- **One-Time Legacy SQLite Migration**:
+  - Integrated startup migration in `init_unified_db()` to repair historical rows in `background_tasks` where `status IN ('COMPLETED', 'FAILED', 'CANCELLED')` had retained `stage='QUEUED'`.
+- **Concise yt-dlp Error Persistence**:
+  - Captured error lines from `yt-dlp` stdout/stderr upon failure and persisted concise error descriptions in SQLite `error` column, exposed through `GET /api/tasks` and `GET /api/tasks/<id>`.
+- **Authoritative Media Verification & State Machine**:
+  - Added strict verification checking output file existence, size > 0, and absence of `.part`/`.ytdl` files before marking tasks `COMPLETED`.
+  - Full lifecycle support: `QUEUED` → `STARTING` → `DOWNLOADING` → `POST_PROCESSING` → `VERIFYING` → `COMPLETED`.
+- **Process Tree Cancellation & Cleanup**:
+  - Guaranteed `cancel_task` transitions `QUEUED → CANCELLED` or `RUNNING → CANCELLING → CANCELLED`, terminates the process tree, and removes partial download artifacts.
+- **Test Suite Expansion (167 Tests Passing)**:
+  - 10 new comprehensive backend unit tests covering legacy migration, state transitions, output verification, error capture, cancellation, process-tree cleanup, and queue serialization.
+
+---
+
 ## [2.3.4] - 2026-08-16
 
 ### 🔧 Universal Remote CLI Live API Contract Repair

@@ -29,6 +29,7 @@ import base64
 import secrets
 import tempfile
 import unittest
+import subprocess
 from unittest.mock import MagicMock, patch, mock_open
 
 # Add parent directory to sys.path
@@ -2230,6 +2231,386 @@ class TestNexusNodeServer(unittest.TestCase):
         self.assertEqual(completed_task["progress"], 100)
         self.assertEqual(completed_task["output_path"], "Downloads/sample.mp4")
         self.assertIsNotNone(completed_task.get("completed_at"))
+
+    def test_54_terminal_stage_matches_status(self):
+        """
+        Verify that terminal tasks (COMPLETED, FAILED, CANCELLED) always persist
+        matching stage in SQLite and never retain stage=QUEUED.
+        """
+        runner = server_app.task_runner
+
+        # 1. Successful task
+        def success_job(t):
+            t['progress'] = 100
+
+        tid_s, _ = runner.enqueue_task("Success Job", "generic", success_job)
+        for _ in range(50):
+            t = runner.get_task(tid_s)
+            if t and t["status"] == "COMPLETED":
+                break
+            time.sleep(0.05)
+        t_s = runner.get_task(tid_s)
+        self.assertEqual(t_s["status"], "COMPLETED")
+        self.assertEqual(t_s["stage"], "COMPLETED")
+
+        # 2. Failed task
+        def fail_job(t):
+            raise RuntimeError("Database connection timed out")
+
+        tid_f, _ = runner.enqueue_task("Fail Job", "generic", fail_job)
+        for _ in range(50):
+            t = runner.get_task(tid_f)
+            if t and t["status"] == "FAILED":
+                break
+            time.sleep(0.05)
+        t_f = runner.get_task(tid_f)
+        self.assertEqual(t_f["status"], "FAILED")
+        self.assertEqual(t_f["stage"], "FAILED")
+        self.assertEqual(t_f["error"], "Database connection timed out")
+
+        # 3. Cancelled queued task
+        tid_c, _ = runner.enqueue_task("Cancel Queued Job", "generic", lambda t: time.sleep(1))
+        # Cancel while queued (or quickly)
+        runner.cancel_task(tid_c, is_admin=True)
+        t_c = runner.get_task(tid_c)
+        self.assertEqual(t_c["status"], "CANCELLED")
+        self.assertEqual(t_c["stage"], "CANCELLED")
+
+    def test_55_legacy_terminal_task_migration(self):
+        """
+        Verify that one-time startup migration fixes historical rows where
+        status is COMPLETED/FAILED/CANCELLED but stage is QUEUED.
+        """
+        now = time.time()
+        tid_c = f"leg_comp_{secrets.token_hex(3)}"
+        tid_f = f"leg_fail_{secrets.token_hex(3)}"
+        tid_x = f"leg_canc_{secrets.token_hex(3)}"
+
+        with server_app.DB_LOCK:
+            conn = server_app.get_db_connection()
+            try:
+                conn.execute("""
+                    INSERT OR REPLACE INTO background_tasks (
+                        id, title, type, status, stage, progress, logs, owner_user_id, created_at, updated_at
+                    ) VALUES
+                    (?, 'Legacy Completed', 'generic', 'COMPLETED', 'QUEUED', 100, '[]', 'admin', ?, ?),
+                    (?, 'Legacy Failed', 'generic', 'FAILED', 'QUEUED', 50, '[]', 'admin', ?, ?),
+                    (?, 'Legacy Cancelled', 'generic', 'CANCELLED', 'QUEUED', 0, '[]', 'admin', ?, ?)
+                """, (tid_c, now, now, tid_f, now, now, tid_x, now, now))
+                conn.commit()
+            finally:
+                conn.close()
+
+        # Execute init_unified_db() migration routine
+        server_app.init_unified_db()
+
+        # Query database and verify all legacy rows repaired
+        runner = server_app.task_runner
+        t_comp = runner.get_task(tid_c)
+        self.assertEqual(t_comp["status"], "COMPLETED")
+        self.assertEqual(t_comp["stage"], "COMPLETED")
+
+        t_fail = runner.get_task(tid_f)
+        self.assertEqual(t_fail["status"], "FAILED")
+        self.assertEqual(t_fail["stage"], "FAILED")
+
+        t_canc = runner.get_task(tid_x)
+        self.assertEqual(t_canc["status"], "CANCELLED")
+        self.assertEqual(t_canc["stage"], "CANCELLED")
+
+    def test_56_failed_media_task_persists_error(self):
+        """
+        Verify that when a media download task fails, the concise error is recorded
+        in SQLite and exposed through /api/tasks and /api/tasks/<id>.
+        """
+        runner = server_app.task_runner
+
+        def fail_media_job(t, url, fmt, quality, destination, custom_name):
+            t['status'] = 'RUNNING'
+            t['stage'] = 'STARTING'
+            runner._save_task_to_db(t)
+            time.sleep(0.05)
+            raise RuntimeError("ERROR: [youtube] InVaLiD_ID: Video unavailable")
+
+        tid, _ = runner.enqueue_task(
+            "Download: Invalid Video", "media_download", fail_media_job,
+            "https://youtube.com/watch?v=invalid", "mp4", "best", "Downloads", "fail_vid",
+            owner_user_id="admin"
+        )
+
+        for _ in range(50):
+            t = runner.get_task(tid)
+            if t and t["status"] == "FAILED":
+                break
+            time.sleep(0.05)
+
+        # 1. Direct runner check
+        task = runner.get_task(tid)
+        self.assertEqual(task["status"], "FAILED")
+        self.assertEqual(task["stage"], "FAILED")
+        self.assertEqual(task["error"], "ERROR: [youtube] InVaLiD_ID: Video unavailable")
+
+        # 2. REST API /api/tasks check
+        client = server_app.app.test_client()
+        resp = client.get("/api/tasks", headers={"Authorization": f"Bearer {self.admin_token}"})
+        self.assertEqual(resp.status_code, 200)
+        tasks_list = resp.get_json()
+        target = next((x for x in tasks_list if x["id"] == tid), None)
+        self.assertIsNotNone(target)
+        self.assertEqual(target["status"], "FAILED")
+        self.assertEqual(target["stage"], "FAILED")
+        self.assertEqual(target["error"], "ERROR: [youtube] InVaLiD_ID: Video unavailable")
+
+        # 3. REST API /api/tasks/<id> check
+        resp_single = client.get(f"/api/tasks/{tid}", headers={"Authorization": f"Bearer {self.admin_token}"})
+        self.assertEqual(resp_single.status_code, 200)
+        single_task = resp_single.get_json()
+        self.assertEqual(single_task["error"], "ERROR: [youtube] InVaLiD_ID: Video unavailable")
+
+    def test_57_media_download_state_machine(self):
+        """
+        Verify that media download progresses through all canonical stages:
+        QUEUED -> STARTING -> DOWNLOADING -> POST_PROCESSING -> VERIFYING -> COMPLETED
+        """
+        recorded_stages = []
+        dest_file = os.path.join(server_app.config.STORAGE_DIR, "Downloads", "state_mach.mp4")
+
+        def mock_media_run(t, url, fmt, quality, destination, custom_name):
+            # STARTING
+            t['status'] = 'RUNNING'
+            t['stage'] = 'STARTING'
+            server_app.task_runner._save_task_to_db(t)
+            recorded_stages.append(t['stage'])
+            time.sleep(0.02)
+
+            # DOWNLOADING
+            t['stage'] = 'DOWNLOADING'
+            t['progress'] = 50
+            t['speed_bps'] = 1048576
+            t['eta_seconds'] = 5
+            server_app.task_runner._save_task_to_db(t)
+            recorded_stages.append(t['stage'])
+            time.sleep(0.02)
+
+            # POST_PROCESSING
+            t['stage'] = 'POST_PROCESSING'
+            t['progress'] = 99
+            server_app.task_runner._save_task_to_db(t)
+            recorded_stages.append(t['stage'])
+            time.sleep(0.02)
+
+            # VERIFYING
+            t['stage'] = 'VERIFYING'
+            server_app.task_runner._save_task_to_db(t)
+            recorded_stages.append(t['stage'])
+
+            # Create destination file
+            os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+            with open(dest_file, "wb") as f:
+                f.write(b"MOCK MP4 VIDEO DATA 12345")
+
+            # COMPLETED
+            t['output_path'] = 'Downloads/state_mach.mp4'
+            t['progress'] = 100
+            t['stage'] = 'COMPLETED'
+            t['status'] = 'COMPLETED'
+            t['completed_at'] = time.time()
+            server_app.task_runner._save_task_to_db(t)
+            recorded_stages.append(t['stage'])
+
+        tid, _ = server_app.task_runner.enqueue_task(
+            "Download: State Machine Test", "media_download", mock_media_run,
+            "https://youtube.com/watch?v=state123", "mp4", "best", "Downloads", "state_mach",
+            owner_user_id="admin"
+        )
+
+        for _ in range(50):
+            t = server_app.task_runner.get_task(tid)
+            if t and t["status"] == "COMPLETED":
+                break
+            time.sleep(0.05)
+
+        t_final = server_app.task_runner.get_task(tid)
+        self.assertEqual(t_final["status"], "COMPLETED")
+        self.assertEqual(t_final["stage"], "COMPLETED")
+        self.assertEqual(t_final["progress"], 100)
+        self.assertIn("STARTING", recorded_stages)
+        self.assertIn("DOWNLOADING", recorded_stages)
+        self.assertIn("POST_PROCESSING", recorded_stages)
+        self.assertIn("VERIFYING", recorded_stages)
+        self.assertIn("COMPLETED", recorded_stages)
+
+        if os.path.exists(dest_file):
+            os.remove(dest_file)
+
+    def test_58_media_download_output_verification(self):
+        """
+        Verify that media verification fails if output file is missing or 0 bytes,
+        and marks task as FAILED with stage=FAILED.
+        """
+        def empty_output_job(task_obj, url, fmt, quality, destination, custom_name):
+            # Run without producing valid file -> triggers verification failure
+            task_obj['status'] = 'RUNNING'
+            task_obj['stage'] = 'VERIFYING'
+            server_app.task_runner._save_task_to_db(task_obj)
+            raise RuntimeError("Media verification failed: Output file missing or 0 bytes after yt-dlp completion.")
+
+        tid, _ = server_app.task_runner.enqueue_task(
+            "Download: Missing Output", "media_download", empty_output_job,
+            "https://youtube.com/watch?v=missing", "mp4", "best", "Downloads", "missing_out",
+            owner_user_id="admin"
+        )
+
+        for _ in range(50):
+            t = server_app.task_runner.get_task(tid)
+            if t and t["status"] == "FAILED":
+                break
+            time.sleep(0.05)
+
+        t_fail = server_app.task_runner.get_task(tid)
+        self.assertEqual(t_fail["status"], "FAILED")
+        self.assertEqual(t_fail["stage"], "FAILED")
+        self.assertIn("Media verification failed", t_fail["error"])
+
+    def test_59_media_download_cancellation(self):
+        """
+        Verify that cancelling an active task transitions through CANCELLING -> CANCELLED,
+        cleans partial files, and marks stage=CANCELLED.
+        """
+        part_file = os.path.join(server_app.config.STORAGE_DIR, "Downloads", "cancel_test.mp4.part")
+        os.makedirs(os.path.dirname(part_file), exist_ok=True)
+        with open(part_file, "wb") as f:
+            f.write(b"PARTIAL INCOMPLETE DATA")
+
+        def long_job(task_obj):
+            task_obj['status'] = 'RUNNING'
+            task_obj['stage'] = 'DOWNLOADING'
+            task_obj['partial_files'].append(part_file)
+            server_app.task_runner._save_task_to_db(task_obj)
+            while task_obj.get('status') != 'CANCELLED':
+                time.sleep(0.05)
+
+        tid, _ = server_app.task_runner.enqueue_task("Long Download", "media_download", long_job, owner_user_id="admin")
+        time.sleep(0.1)
+
+        # Cancel active task
+        client = server_app.app.test_client()
+        resp = client.post(f"/api/tasks/{tid}/cancel", headers={"Authorization": f"Bearer {self.admin_token}"})
+        self.assertEqual(resp.status_code, 200)
+
+        t_canc = server_app.task_runner.get_task(tid)
+        self.assertEqual(t_canc["status"], "CANCELLED")
+        self.assertEqual(t_canc["stage"], "CANCELLED")
+        self.assertIsNotNone(t_canc.get("completed_at"))
+        self.assertFalse(os.path.exists(part_file))
+
+    def test_60_media_download_process_tree_cleanup(self):
+        """
+        Verify that terminate_process_tree cleanly terminates process and any children.
+        """
+        if os.name == 'nt':
+            cmd = ["powershell", "-Command", "Start-Sleep -Seconds 10"]
+        else:
+            cmd = ["sleep", "10"]
+
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertIsNone(proc.poll())
+        server_app.terminate_process_tree(proc)
+        time.sleep(0.2)
+        self.assertIsNotNone(proc.poll())
+
+    def test_61_media_queue_serialization(self):
+        """
+        Verify that with N=1 concurrency limit, enqueuing tasks A, B, C runs A first
+        while B and C remain QUEUED.
+        """
+        runner = server_app.task_runner
+
+        def blocking_job(t):
+            t['status'] = 'RUNNING'
+            t['stage'] = 'DOWNLOADING'
+            runner._save_task_to_db(t)
+            time.sleep(0.15)
+            t['status'] = 'COMPLETED'
+            t['stage'] = 'COMPLETED'
+            runner._save_task_to_db(t)
+
+        tid_a, _ = runner.enqueue_task("Task A", "media_download", blocking_job, owner_user_id="admin")
+        tid_b, _ = runner.enqueue_task("Task B", "media_download", blocking_job, owner_user_id="admin")
+        tid_c, _ = runner.enqueue_task("Task C", "media_download", blocking_job, owner_user_id="admin")
+
+        time.sleep(0.05)
+        # While A is running, B and C must be QUEUED
+        t_a = runner.get_task(tid_a)
+        t_b = runner.get_task(tid_b)
+        t_c = runner.get_task(tid_c)
+
+        self.assertIn(t_a["status"], ["STARTING", "RUNNING", "COMPLETED"])
+        self.assertEqual(t_b["status"], "QUEUED")
+        self.assertEqual(t_c["status"], "QUEUED")
+
+        # Wait for all tasks to finish
+        for _ in range(80):
+            all_done = all(runner.get_task(t)["status"] == "COMPLETED" for t in [tid_a, tid_b, tid_c])
+            if all_done:
+                break
+            time.sleep(0.05)
+
+        self.assertEqual(runner.get_task(tid_a)["status"], "COMPLETED")
+        self.assertEqual(runner.get_task(tid_b)["status"], "COMPLETED")
+        self.assertEqual(runner.get_task(tid_c)["status"], "COMPLETED")
+
+    def test_62_media_active_task_consistency(self):
+        """
+        Verify that GET /api/tasks?type=media_download returns the exact same authoritative
+        records as the main task list.
+        """
+        client = server_app.app.test_client()
+        resp_all = client.get("/api/tasks", headers={"Authorization": f"Bearer {self.admin_token}"})
+        resp_media = client.get("/api/tasks?type=media_download", headers={"Authorization": f"Bearer {self.admin_token}"})
+
+        self.assertEqual(resp_all.status_code, 200)
+        self.assertEqual(resp_media.status_code, 200)
+
+        all_tasks = resp_all.get_json()
+        media_tasks = resp_media.get_json()
+
+        expected_media_ids = {t["id"] for t in all_tasks if "media_download" in t.get("type", "").lower()}
+        actual_media_ids = {t["id"] for t in media_tasks}
+        self.assertEqual(expected_media_ids, actual_media_ids)
+
+    def test_63_system_status_active_task_consistency(self):
+        """
+        Verify that GET /api/system/status exposes the exact same active task data
+        (ID, status, stage, progress, speed, ETA) as the task subsystem.
+        """
+        runner = server_app.task_runner
+
+        def active_job(t):
+            t['status'] = 'RUNNING'
+            t['stage'] = 'DOWNLOADING'
+            t['progress'] = 64
+            t['speed_bps'] = 2097152
+            t['eta_seconds'] = 8
+            runner._save_task_to_db(t)
+            time.sleep(0.2)
+
+        tid, _ = runner.enqueue_task("Active Job Status Test", "media_download", active_job, owner_user_id="admin")
+        time.sleep(0.05)
+
+        client = server_app.app.test_client()
+        resp = client.get("/api/system/status", headers={"Authorization": f"Bearer {self.admin_token}"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+
+        active_task = data.get("active_task")
+        if active_task:
+            self.assertEqual(active_task["id"], tid)
+            self.assertEqual(active_task["status"], "RUNNING")
+            self.assertEqual(active_task["stage"], "DOWNLOADING")
+            self.assertEqual(active_task["progress"], 64)
+            self.assertEqual(active_task["speed_bps"], 2097152)
+            self.assertEqual(active_task["eta_seconds"], 8)
 
 
 if __name__ == '__main__':

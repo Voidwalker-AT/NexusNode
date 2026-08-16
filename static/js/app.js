@@ -1202,7 +1202,10 @@ function renderTasksTable(tasks) {
       <tr>
         <td><span class="font-label-caps" style="color: ${statusClass};">${displayStatus}</span></td>
         <td><span class="node-badge">${escapeHtml(t.type || t.task_type || 'TASK')}</span></td>
-        <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(t.title || 'Task #' + rawId)}</td>
+        <td style="color: var(--on-surface-bright); font-weight: 500;">
+          ${escapeHtml(t.title || 'Task #' + rawId)}
+          ${t.error ? `<div class="font-data-sm" style="color: var(--status-critical); font-size: 11px; margin-top: 3px; font-weight: normal;">${escapeHtml(t.error)}</div>` : ''}
+        </td>
         <td class="font-data-sm">${t.progress || 0}%</td>
         <td class="font-data-sm">${escapeHtml(t.owner || t.owner_user_id || 'system')}</td>
         <td class="font-data-sm" style="color: var(--on-surface-variant);">${created}</td>

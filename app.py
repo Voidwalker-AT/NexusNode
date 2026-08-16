@@ -179,6 +179,21 @@ def init_unified_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON background_tasks(status);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_updated ON background_tasks(updated_at);")
 
+            # One-time legacy repair for deterministic terminal-state contradictions
+            cur.execute("""
+                UPDATE background_tasks
+                SET stage = status, updated_at = ?
+                WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED')
+                  AND (stage = 'QUEUED' OR stage IS NULL OR stage = '');
+            """, (time.time(),))
+            repaired_count = cur.rowcount
+            if repaired_count > 0:
+                conn.commit()
+                if "log_event" in globals():
+                    log_event("INFO", "DB", f"Repaired {repaired_count} legacy background tasks with stage contradictions.")
+                else:
+                    print(f"[*] Repaired {repaired_count} legacy background tasks with stage contradictions.")
+
             # 4. Temporary Share Links table with owner_user_id
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS shares (
@@ -341,6 +356,9 @@ def init_unified_db():
 
     # Initialize RAG Database Tables
     init_rag_db()
+
+
+init_db = init_unified_db
 
 
 def init_rag_db():
@@ -1340,6 +1358,11 @@ class BoundedTaskRunner:
         task_type = str(t.get("type") or t.get("task_type") or "generic")
         status = str(t.get("status") or "QUEUED").upper()
         stage = str(t.get("stage") or status).upper()
+
+        # Enforce canonical consistency: terminal status MUST NEVER have stage=QUEUED
+        if status in ["COMPLETED", "FAILED", "CANCELLED"] and stage == "QUEUED":
+            stage = status
+
         owner = str(t.get("owner_user_id") or t.get("owner") or t.get("user_id") or "admin")
         
         created_at = t.get("created_at")
@@ -1473,6 +1496,7 @@ class BoundedTaskRunner:
                         task_obj['status'] = 'FAILED'
                         task_obj['stage'] = 'FAILED'
                         task_obj['error'] = str(e)
+                        task_obj['completed_at'] = now
                         task_obj['updated_at'] = now
                         task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task failed: {str(e)}")
                         self._cleanup_partial_files(task_obj)
@@ -1502,18 +1526,21 @@ class BoundedTaskRunner:
                 return False, f"Task already {current_status.lower()}."
 
             if current_status == 'QUEUED':
+                now = time.time()
                 task['status'] = 'CANCELLED'
                 task['stage'] = 'CANCELLED'
-                task['updated_at'] = time.time()
+                task['completed_at'] = now
+                task['updated_at'] = now
                 task['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Queued task cancelled by user.")
                 self._save_task_to_db(task)
                 log_event("WARN", "TASK", f"Queued task '{task['title']}' cancelled by '{requesting_user_id or 'admin'}'.")
                 return True, "Task cancelled successfully."
 
             # Active task (STARTING, RUNNING, POST_PROCESSING, VERIFYING)
+            now = time.time()
             task['status'] = 'CANCELLING'
             task['stage'] = 'CANCELLING'
-            task['updated_at'] = time.time()
+            task['updated_at'] = now
             task['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task cancellation requested.")
             self._save_task_to_db(task)
 
@@ -1522,9 +1549,11 @@ class BoundedTaskRunner:
 
             self._cleanup_partial_files(task)
 
+            now = time.time()
             task['status'] = 'CANCELLED'
             task['stage'] = 'CANCELLED'
-            task['updated_at'] = time.time()
+            task['completed_at'] = now
+            task['updated_at'] = now
             task['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task cancelled and partial files cleaned.")
             self._save_task_to_db(task)
 
@@ -1532,6 +1561,7 @@ class BoundedTaskRunner:
         return True, "Task cancelled successfully."
 
     def _cleanup_partial_files(self, task: dict):
+        # 1. Clean registered partial files
         for p in task.get('partial_files', []):
             try:
                 if os.path.exists(p):
@@ -1542,8 +1572,28 @@ class BoundedTaskRunner:
             except Exception:
                 pass
 
+        # 2. Clean temporary artifacts from destination if specified
+        dest_dir = task.get('metadata', {}).get('destination_dir') if isinstance(task.get('metadata'), dict) else None
+        if dest_dir and os.path.isdir(dest_dir):
+            try:
+                for f in os.listdir(dest_dir):
+                    if f.endswith(('.part', '.ytdl', '.tmp', '.crdownload')):
+                        fp = os.path.join(dest_dir, f)
+                        try:
+                            if os.path.isfile(fp):
+                                os.remove(fp)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
     def _save_task_to_db(self, task: dict):
         try:
+            status_val = str(task.get("status", "QUEUED")).upper()
+            stage_val = str(task.get("stage", status_val)).upper()
+            if status_val in ["COMPLETED", "FAILED", "CANCELLED"] and stage_val == "QUEUED":
+                stage_val = status_val
+
             with DB_LOCK:
                 conn = get_db_connection()
                 try:
@@ -1569,11 +1619,11 @@ class BoundedTaskRunner:
                             output_path=excluded.output_path,
                             started_at=coalesce(excluded.started_at, background_tasks.started_at),
                             updated_at=excluded.updated_at,
-                            completed_at=excluded.completed_at;
+                            completed_at=coalesce(excluded.completed_at, background_tasks.completed_at);
                     """, (
                         task["id"], task["title"], task.get("type", "generic"),
-                        str(task.get("status", "QUEUED")).upper(),
-                        str(task.get("stage", "QUEUED")).upper(),
+                        status_val,
+                        stage_val,
                         int(task.get("progress", 0)),
                         json.dumps(task.get("logs", [])),
                         task.get("error"),
@@ -3149,10 +3199,13 @@ def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, des
     task_obj['status'] = 'RUNNING'
     task_obj['stage'] = 'STARTING'
     task_obj['updated_at'] = time.time()
-    task_runner._save_task_to_db(task_obj)
-
+    if not isinstance(task_obj.get('metadata'), dict):
+        task_obj['metadata'] = {}
     dest_dir = os.path.join(config.STORAGE_DIR, destination)
     os.makedirs(dest_dir, exist_ok=True)
+    task_obj['metadata']['destination_dir'] = dest_dir
+
+    task_runner._save_task_to_db(task_obj)
 
     out_tmpl = os.path.join(dest_dir, f"{custom_name}.%(ext)s" if custom_name else "%(title)s.%(ext)s")
 
@@ -3189,6 +3242,7 @@ def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, des
     task_runner._save_task_to_db(task_obj)
 
     last_db_save = time.time()
+    error_lines = []
 
     for line in proc.stdout:
         if str(task_obj.get('status', '')).upper() in ['CANCELLED', 'CANCELLING']:
@@ -3202,6 +3256,9 @@ def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, des
         task_obj['logs'].append(line_str)
         if len(task_obj['logs']) > 150:
             task_obj['logs'] = task_obj['logs'][-150:]
+
+        if "ERROR:" in line_str or "[error]" in line_str.lower():
+            error_lines.append(line_str)
 
         # Parse download percentage
         m_pct = re.search(r'(?:download:\s*|\[download\]\s*)(\d+(?:\.\d+)?)%', line_str)
@@ -3235,7 +3292,13 @@ def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, des
         return
 
     if proc.returncode != 0:
-        raise RuntimeError(f"yt-dlp exited with code {proc.returncode}")
+        concise_err = f"yt-dlp exited with code {proc.returncode}"
+        if error_lines:
+            last_err = error_lines[-1].strip()
+            clean_err = re.sub(r'\x1b\[[0-9;]*m', '', last_err).strip()
+            if clean_err:
+                concise_err = clean_err
+        raise RuntimeError(concise_err)
 
     # Stage: VERIFYING output file
     task_obj['stage'] = 'VERIFYING'
