@@ -789,6 +789,7 @@ class OllamaModelRegistry:
 
 
 ollama_registry = OllamaModelRegistry()
+ollama_mgr = ollama_registry
 
 # ==============================================================================
 # 5. STORAGE-BACKED SQLITE FTS5 RAG ENGINE
@@ -1316,6 +1317,78 @@ class BoundedTaskRunner:
                     conn.close()
         except Exception:
             pass
+
+    def get_task(self, task_id: str) -> dict | None:
+        """Fetch task metadata by ID from memory or SQLite."""
+        with self.lock:
+            if task_id in self.tasks:
+                t = dict(self.tasks[task_id])
+                t["task_id"] = t.get("id", task_id)
+                t["task_type"] = t.get("type", "task")
+                return t
+        try:
+            with DB_LOCK:
+                conn = get_db_connection()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, title, type, status, progress, logs, owner_user_id, created_at, updated_at FROM background_tasks WHERE id = ?", (task_id,))
+                    row = cur.fetchone()
+                    if row:
+                        return {
+                            "id": row["id"],
+                            "task_id": row["id"],
+                            "title": row["title"],
+                            "type": row["type"],
+                            "task_type": row["type"],
+                            "status": row["status"],
+                            "progress": row["progress"],
+                            "logs": json.loads(row["logs"]) if row["logs"] else [],
+                            "owner_user_id": row["owner_user_id"],
+                            "created_at": row["created_at"],
+                            "updated_at": row["updated_at"]
+                        }
+                finally:
+                    conn.close()
+        except Exception:
+            pass
+        return None
+
+    def get_all_tasks(self) -> list[dict]:
+        """Fetch all recent background tasks with owner user metadata."""
+        with self.lock:
+            mem_tasks = {}
+            for tid, t in self.tasks.items():
+                td = dict(t)
+                td["task_id"] = td.get("id", tid)
+                td["task_type"] = td.get("type", "task")
+                mem_tasks[tid] = td
+        try:
+            with DB_LOCK:
+                conn = get_db_connection()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, title, type, status, progress, logs, owner_user_id, created_at, updated_at FROM background_tasks ORDER BY updated_at DESC LIMIT 100")
+                    rows = cur.fetchall()
+                    for r in rows:
+                        if r["id"] not in mem_tasks:
+                            mem_tasks[r["id"]] = {
+                                "id": r["id"],
+                                "task_id": r["id"],
+                                "title": r["title"],
+                                "type": r["type"],
+                                "task_type": r["type"],
+                                "status": r["status"],
+                                "progress": r["progress"],
+                                "logs": json.loads(r["logs"]) if row["logs"] else [],
+                                "owner_user_id": r["owner_user_id"],
+                                "created_at": r["created_at"],
+                                "updated_at": r["updated_at"]
+                            }
+                finally:
+                    conn.close()
+        except Exception:
+            pass
+        return list(mem_tasks.values())
 
 
 task_runner = BoundedTaskRunner()

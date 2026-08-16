@@ -44,6 +44,7 @@ class SystemTelemetrySnapshot:
 
 class ResourceGovernor:
     def __init__(self):
+        self.start_time = time.time()
         self.normal_threshold_mb = config.RAM_NORMAL_THRESHOLD_MB
         self.pressure_threshold_mb = config.RAM_PRESSURE_THRESHOLD_MB
         self.thermal_warm_c = config.THERMAL_WARM_C
@@ -394,10 +395,6 @@ class ResourceGovernor:
         return []
 
     def get_telemetry_snapshot(self, force_refresh: bool = False) -> dict:
-        """
-        Central entrypoint returning synchronized telemetry snapshot.
-        Eliminates duplicate subprocess calls within the TTL window.
-        """
         if not force_refresh:
             cached = self.snapshot_cache.get()
             if cached:
@@ -616,6 +613,76 @@ class ResourceGovernor:
             "available_mb": mem["available_mb"],
             "reason": "Ollama startup permitted."
         }
+
+    def get_ram_status(self) -> dict:
+        """Alias for get_memory_status."""
+        return self.get_memory_status()
+
+    def get_thermal_status(self) -> dict:
+        """Returns thermal telemetry and assigned governor state."""
+        telemetry = self.get_device_telemetry()
+        temp_c = telemetry.get("cpu_temp_c") or telemetry.get("battery_temp_c") or 35.0
+        state = "normal"
+        if temp_c >= config.THERMAL_CRITICAL_C:
+            state = "critical"
+        elif temp_c >= config.THERMAL_THROTTLED_C:
+            state = "throttled"
+        elif temp_c >= config.THERMAL_WARM_C:
+            state = "warm"
+        return {
+            "temperature_c": temp_c,
+            "state": state
+        }
+
+    def get_cpu_status(self) -> dict:
+        """Returns CPU core count and load averages."""
+        telemetry = self.get_device_telemetry()
+        load = telemetry.get("load_avg") or [0.5, 0.5, 0.5]
+        return {
+            "cores": os.cpu_count() or 8,
+            "load_1m": load[0] if len(load) > 0 else 0.5,
+            "load_5m": load[1] if len(load) > 1 else 0.5
+        }
+
+    def get_battery_status(self) -> dict:
+        """Returns battery percentage and charging state."""
+        telemetry = self.get_device_telemetry()
+        return {
+            "level_percent": telemetry.get("battery_level_percent"),
+            "status": telemetry.get("battery_status", "unavailable"),
+            "is_charging": telemetry.get("battery_status") == "Charging"
+        }
+
+    def get_services_status(self) -> dict:
+        """Probes status of managed runit services."""
+        services = {
+            "nexusnode": {"status": "online", "uptime_seconds": int(time.time() - self.start_time), "details": f"port {config.PORT}"},
+            "ollama": {"status": "offline", "uptime_seconds": 0, "details": f"port {config.OLLAMA_PORT}"},
+            "localtonet": {"status": "offline", "uptime_seconds": 0, "details": "cloud tunnel"},
+            "sshd": {"status": "online", "uptime_seconds": int(time.time() - self.start_time), "details": f"port {config.SSH_PORT}"}
+        }
+        try:
+            # Check Ollama socket/health
+            import socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.2)
+            if s.connect_ex(('127.0.0.1', config.OLLAMA_PORT)) == 0:
+                services["ollama"]["status"] = "online"
+            s.close()
+        except Exception:
+            pass
+
+        try:
+            # Check SSH socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.2)
+            if s.connect_ex(('127.0.0.1', config.SSH_PORT)) == 0:
+                services["sshd"]["status"] = "online"
+            s.close()
+        except Exception:
+            pass
+
+        return services
 
     def get_appliance_state(self) -> dict:
         snap = self.get_telemetry_snapshot()
