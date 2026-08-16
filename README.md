@@ -129,6 +129,30 @@ chmod +x start_nexus.sh
 
 The **NexusNode Universal Remote CLI** allows administrators and users to manage the appliance from any computer or terminal over HTTPS without SSH or phone filesystem access.
 
+### Installation
+
+#### 🪟 Windows (1-Line Automated Setup — Zero Manual PATH Configuration)
+Run in PowerShell (installs client, creates shims, and configures User PATH automatically):
+```powershell
+irm https://raw.githubusercontent.com/Voidwalker-AT/NexusNode/main/install.ps1 | iex
+```
+*(Or run `install.bat` / `install.ps1` from the repository).*
+
+#### 🐍 Python / Pip / Pipx (All Platforms: Linux, macOS, Windows, Termux)
+```bash
+# Recommended for CLI binaries with automatic PATH management:
+pipx install nexusnode-cli
+
+# Standard pip installation:
+pip install nexusnode-cli
+```
+
+---
+
+### Usage
+
+Open any fresh terminal (PowerShell, Command Prompt, macOS/Linux Terminal) and run:
+
 ```powershell
 # Connect interactively to a remote NexusNode appliance
 nexus connect https://your-server.localto.net
@@ -142,11 +166,6 @@ nexus ai models
 nexus logout
 ```
 
-Launchers are included for all operating systems:
-- **Windows**: `nexus.bat`
-- **Linux / macOS / Termux**: `bin/nexus` or `python -m nexus`
-
----
 
 ## 🧪 Testing & Verification
 

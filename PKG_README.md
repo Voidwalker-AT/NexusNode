@@ -8,18 +8,28 @@ Universal remote command-line client for NexusNode Mobile Server Appliance. Conn
 
 ## Installation
 
+### Option 1: Python Package (All Platforms)
 ```bash
+# Recommended for automatic CLI binary PATH management:
+pipx install nexusnode-cli
+
+# Standard pip:
 pip install nexusnode-cli
+```
+
+### Option 2: Windows 1-Line Installer (Automated PATH Setup)
+In PowerShell:
+```powershell
+irm https://raw.githubusercontent.com/Voidwalker-AT/NexusNode/main/install.ps1 | iex
 ```
 
 ## Quick Start
 
+Open any fresh terminal and run:
 ```bash
 nexus connect https://your-nexusnode.example
 ```
 You will be prompted for your username and password, after which you'll enter the interactive `nexus>` shell.
-
-> **Windows Note:** If `nexus` is not immediately recognized in an already-open terminal after installation, open a fresh PowerShell/CMD window or run `nexus setup` (or `python -m nexus connect ...`).
 
 ## Features
 
