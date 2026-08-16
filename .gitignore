@@ -71,3 +71,6 @@ server_config.json
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local scratch files
+scratch/

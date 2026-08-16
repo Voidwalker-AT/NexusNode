@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nexusnode-cli"
+dynamic = ["version"]
+description = "Universal remote CLI client for NexusNode Mobile Server Appliance"
+readme = "PKG_README.md"
+license = "MIT"
+requires-python = ">=3.8"
+authors = [{ name = "NexusNode Contributors" }]
+keywords = ["nexusnode", "cli", "remote", "mobile", "server", "appliance", "terminal"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+]
+
+[project.scripts]
+nexus = "nexus.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/Voidwalker-AT/NexusNode"
+Repository = "https://github.com/Voidwalker-AT/NexusNode"
+Issues = "https://github.com/Voidwalker-AT/NexusNode/issues"
+Changelog = "https://github.com/Voidwalker-AT/NexusNode/blob/main/CHANGELOG.md"
+
+[tool.hatch.version]
+path = "nexus/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "nexus/**/*.py",
+    "PKG_README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["nexus"]
