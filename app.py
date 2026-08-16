@@ -188,6 +188,8 @@ def init_unified_db():
             """)
             cur.execute("PRAGMA table_info(backups);")
             backup_cols = [c[1] for c in cur.fetchall()]
+            if "filepath" not in backup_cols:
+                conn.execute("ALTER TABLE backups ADD COLUMN filepath TEXT NOT NULL DEFAULT '';")
             if "owner_user_id" not in backup_cols:
                 conn.execute("ALTER TABLE backups ADD COLUMN owner_user_id TEXT NOT NULL DEFAULT 'admin';")
 
@@ -768,6 +770,32 @@ class OllamaModelRegistry:
         """Returns unified AI state: engine status, selected model, loaded models."""
         ver = self.get_version()
         engine_running = (ver is not None)
+
+        supervisor_state = "down"
+        try:
+            res = subprocess.run(["sv", "status", "ollama"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            if res.returncode == 0 and "run:" in res.stdout:
+                supervisor_state = "up"
+        except Exception:
+            supervisor_state = "up" if engine_running else "down"
+
+        if not engine_running:
+            with self.cache_lock:
+                cached_models = list(self.last_installed_cache)
+            cached_names = [m["name"] for m in cached_models]
+            return {
+                "engine": "stopped",
+                "version": "offline",
+                "supervisor_state": supervisor_state,
+                "selected_model": self.selected_model,
+                "default_model": self.default_model,
+                "loaded_model": None,
+                "loaded_model_details": None,
+                "available_models": cached_names,
+                "installed_models_count": len(cached_models),
+                "loaded_models_count": 0
+            }
+
         installed = self.get_installed_models()
         installed_names = [m["name"] for m in installed]
 
@@ -777,24 +805,14 @@ class OllamaModelRegistry:
 
         # Verify selected model validity
         if self.selected_model not in installed_names and installed_names:
-            # Fallback to first available installed model or default
             if self.default_model in installed_names:
                 self.selected_model = self.default_model
             else:
                 self.selected_model = installed_names[0]
 
-        # Determine supervisor state
-        supervisor_state = "down"
-        try:
-            res = subprocess.run(["sv", "status", "ollama"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-            if res.returncode == 0 and "run:" in res.stdout:
-                supervisor_state = "up"
-        except Exception:
-            supervisor_state = "up" if engine_running else "down"
-
         return {
-            "engine": "running" if engine_running else "stopped",
-            "version": ver or "offline",
+            "engine": "running",
+            "version": ver or "online",
             "supervisor_state": supervisor_state,
             "selected_model": self.selected_model,
             "default_model": self.default_model,
@@ -2088,6 +2106,13 @@ def sanitized_system_status():
     tunnel_status = probe_localtonet_health()
     ssh_status = probe_ssh_status()
 
+    l2n_running = (tunnel_status.get("process") == "running")
+    l2n_connected = (tunnel_status.get("public_endpoint") == "reachable" or tunnel_status.get("state") == "TUNNEL_CONNECTED")
+    ssh_online = (ssh_status.get("status") == "online")
+    ollama_running = (ai_state.get("engine") == "running")
+
+    active_task_obj = user_tasks[0] if user_tasks else None
+
     return jsonify({
         "server": {
             "name": "NexusNode Mobile Appliance",
@@ -2096,16 +2121,61 @@ def sanitized_system_status():
             "uptime": uptime_str,
             "uptime_seconds": uptime_sec
         },
-        "appliance": snap["appliance"],
-        "memory": snap["memory"],
-        "disk": snap["disk"],
-        "device": snap["device"],
-        "services": {
-            "nexusnode": {"status": "online", "port": config.PORT},
-            "localtonet": {"status": tunnel_status["state"].lower(), "url": tunnel_status["url"]},
-            "ssh": {"status": ssh_status["status"], "port": config.SSH_PORT},
-            "ollama": {"status": ai_state["engine"], "selected_model": ai_state["selected_model"], "loaded_model": ai_state["loaded_model"]}
+        "system": {
+            "uptime": uptime_str,
+            "uptime_seconds": uptime_sec,
+            "version": config.VERSION,
+            "hostname": "TECNO BG6"
         },
+        "appliance": snap["appliance"],
+        "memory": {
+            "percent": snap["memory"]["ram_percent"],
+            "ram_percent": snap["memory"]["ram_percent"],
+            "used_mb": snap["memory"]["used_mb"],
+            "total_mb": snap["memory"]["total_mb"],
+            "available_mb": snap["memory"]["available_mb"],
+            "swap_percent": snap["memory"]["swap_percent"],
+            "swap_used_mb": snap["memory"]["swap_used_mb"],
+            "swap_total_mb": snap["memory"]["swap_total_mb"]
+        },
+        "swap": {
+            "percent": snap["memory"]["swap_percent"],
+            "swap_percent": snap["memory"]["swap_percent"],
+            "used_mb": snap["memory"]["swap_used_mb"],
+            "total_mb": snap["memory"]["swap_total_mb"]
+        },
+        "disk": snap["disk"],
+        "storage": {
+            "percent": snap["disk"]["percent"],
+            "used_gb": snap["disk"]["used_gb"],
+            "total_gb": snap["disk"]["total_gb"],
+            "free_gb": snap["disk"]["free_gb"]
+        },
+        "device": snap["device"],
+        "battery": {
+            "level": snap["device"].get("battery_percent"),
+            "status": snap["device"].get("battery_status", "STANDBY")
+        },
+        "thermal": {
+            "temp_c": snap["device"].get("cpu_temperature_c"),
+            "status": snap["appliance"].get("state", "NORMAL")
+        },
+        "network": {
+            "mode": "wan" if l2n_connected else "lan",
+            "tunnel_url": tunnel_status.get("url"),
+            "tunnel_status": tunnel_status.get("state", "STOPPED")
+        },
+        "cpu": {
+            "percent": snap["device"].get("cpu_usage_percent", 0)
+        },
+        "services": {
+            "nexusnode": {"status": "online", "running": True, "port": config.PORT, "pid": os.getpid()},
+            "localtonet": {"status": tunnel_status.get("state", "STOPPED").lower(), "state": tunnel_status.get("state", "STOPPED"), "running": l2n_running, "connected": l2n_connected, "url": tunnel_status.get("url"), "pid": tunnel_status.get("pid")},
+            "ssh": {"status": ssh_status.get("status", "offline"), "running": ssh_online, "port": config.SSH_PORT, "pid": ssh_status.get("pid")},
+            "sshd": {"status": ssh_status.get("status", "offline"), "running": ssh_online, "port": config.SSH_PORT, "pid": ssh_status.get("pid")},
+            "ollama": {"status": ai_state.get("engine", "stopped"), "running": ollama_running, "online": ollama_running, "selected_model": ai_state.get("selected_model"), "loaded_model": ai_state.get("loaded_model"), "pid": None}
+        },
+        "active_task": active_task_obj,
         "tasks": {
             "active_count": len(user_tasks),
             "active_tasks": user_tasks
@@ -2128,11 +2198,44 @@ def services_status_endpoint():
     ssh_status = probe_ssh_status()
     ai_state = ollama_registry.get_ai_state()
 
+    l2n_running = (tunnel_status.get("process") == "running")
+    l2n_connected = (tunnel_status.get("public_endpoint") == "reachable" or tunnel_status.get("state") == "TUNNEL_CONNECTED")
+    ssh_online = (ssh_status.get("status") == "online")
+    ollama_running = (ai_state.get("engine") == "running")
+
     return jsonify({
-        "nexusnode": {"status": "online", "port": config.PORT, "pid": os.getpid()},
-        "localtonet": tunnel_status,
-        "ssh": ssh_status,
-        "ollama": ai_state
+        "nexusnode": {"status": "online", "running": True, "port": config.PORT, "pid": os.getpid()},
+        "localtonet": {
+            "status": tunnel_status.get("state", "STOPPED").lower(),
+            "state": tunnel_status.get("state", "STOPPED"),
+            "running": l2n_running,
+            "connected": l2n_connected,
+            "url": tunnel_status.get("url"),
+            "pid": tunnel_status.get("pid"),
+            "process": tunnel_status.get("process", "stopped"),
+            "public_endpoint": tunnel_status.get("public_endpoint", "unreachable")
+        },
+        "ssh": {
+            "status": ssh_status.get("status", "offline"),
+            "running": ssh_online,
+            "port": config.SSH_PORT,
+            "pid": ssh_status.get("pid")
+        },
+        "sshd": {
+            "status": ssh_status.get("status", "offline"),
+            "running": ssh_online,
+            "port": config.SSH_PORT,
+            "pid": ssh_status.get("pid")
+        },
+        "ollama": {
+            "status": ai_state.get("engine", "stopped"),
+            "running": ollama_running,
+            "online": ollama_running,
+            "selected_model": ai_state.get("selected_model"),
+            "loaded_model": ai_state.get("loaded_model"),
+            "version": ai_state.get("version"),
+            "pid": None
+        }
     })
 
 
@@ -2468,6 +2571,7 @@ def list_tasks():
                     "progress": r["progress"],
                     "logs": json.loads(r["logs"] or "[]"),
                     "error": r["error"],
+                    "owner": r["owner_user_id"],
                     "owner_user_id": r["owner_user_id"],
                     "created_at": r["created_at"],
                     "updated_at": r["updated_at"]
@@ -2804,7 +2908,20 @@ def get_media_library():
                     "stream_url": f"/stream/{rel_path}"
                 })
 
-    return jsonify(library)
+    all_items = []
+    for cat, cat_items in library.items():
+        for item in cat_items:
+            item_copy = dict(item)
+            item_copy["category"] = cat
+            item_copy["name"] = item["filename"]
+            item_copy["size"] = item["size_bytes"]
+            item_copy["type"] = "video" if item["format"] in ['MP4', 'MKV', 'WEBM', 'MOV'] else "audio"
+            all_items.append(item_copy)
+
+    response_data = dict(library)
+    response_data["items"] = all_items
+    response_data["total_count"] = len(all_items)
+    return jsonify(response_data)
 
 
 # --- Temporary Secure Shares Endpoints ---
@@ -2928,8 +3045,15 @@ def list_backups():
         conn = get_db_connection()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT id, filename, filepath, checksum, size_bytes, owner_user_id, created_at FROM backups ORDER BY created_at DESC")
+            cur.execute("PRAGMA table_info(backups);")
+            bcols = [c[1] for c in cur.fetchall()]
+            fp_col = "filepath" if "filepath" in bcols else ("file_path" if "file_path" in bcols else "'' as filepath")
+            cur.execute(f"SELECT id, filename, {fp_col} as filepath, checksum, size_bytes, owner_user_id, created_at FROM backups ORDER BY created_at DESC")
             rows = [dict(r) for r in cur.fetchall()]
+            # Normalize fields for client compatibility
+            for r in rows:
+                r["size"] = r.get("size_bytes", 0)
+                r["created"] = str(datetime.fromtimestamp(r["created_at"])) if isinstance(r.get("created_at"), (int, float)) and r["created_at"] > 0 else str(r.get("created_at", "--"))
             return jsonify(rows)
         finally:
             conn.close()
@@ -2994,12 +3118,12 @@ def restore_backup_endpoint():
 # --- Events, Logs & Automation Endpoints ---
 @app.route('/api/events', methods=['GET'])
 def get_events():
-    err = require_auth()
+    err = require_privilege_or_admin("can_view_system_logs")
     if err:
         return err
 
     cat = request.args.get('category', 'ALL').upper()
-    limit = min(200, int(request.args.get('limit', 60)))
+    limit = int(request.args.get('limit', 100))
 
     with DB_LOCK:
         conn = get_db_connection()
@@ -3050,6 +3174,8 @@ def list_automation_jobs():
             cur = conn.cursor()
             cur.execute("SELECT id, name, job_type, interval_seconds, enabled, last_run, next_run, last_status FROM scheduled_jobs")
             rows = [dict(r) for r in cur.fetchall()]
+            for r in rows:
+                r["schedule"] = f"Every {r.get('interval_seconds', 60)}s"
             return jsonify(rows)
         finally:
             conn.close()
@@ -3096,6 +3222,7 @@ def run_automation_job_now(job_id):
 
 # --- Storage Intelligence & Settings ---
 @app.route('/api/storage/intelligence', methods=['GET'])
+@app.route('/api/system/storage-intel', methods=['GET'])
 def get_storage_intelligence():
     err = require_auth()
     if err:
@@ -3127,7 +3254,14 @@ def get_storage_intelligence():
                 pass
 
     large_files.sort(key=lambda x: x["size_mb"], reverse=True)
-    return jsonify({"breakdown": breakdown, "large_files": large_files[:15]})
+    category_list = [
+        {"directory": "Videos Vault", "file_count": 0, "size_bytes": breakdown["videos_bytes"]},
+        {"directory": "Music & Audio", "file_count": 0, "size_bytes": breakdown["music_bytes"]},
+        {"directory": "AI Models Store", "file_count": 0, "size_bytes": breakdown["models_bytes"]},
+        {"directory": "Temporary / Staging", "file_count": 0, "size_bytes": breakdown["temp_bytes"]},
+        {"directory": "Documents & Vault", "file_count": 0, "size_bytes": breakdown["vault_bytes"]}
+    ]
+    return jsonify({"breakdown": category_list, "breakdown_dict": breakdown, "large_files": large_files[:15]})
 
 
 @app.route('/api/vault/checksum/<path:filename>', methods=['GET'])
@@ -3320,6 +3454,8 @@ def admin_diagnostics_full_report():
         "overall_status": overall_status,
         "findings_count": len(findings),
         "findings": findings,
+        "rag": rag_diag,
+        "processes": snap["process"].get("top_processes", []),
         "diagnostics": {
             "telemetry": snap,
             "rag": rag_diag,
@@ -3491,7 +3627,7 @@ def admin_manage_users():
 
     # GET List
     users = db_get_all_users()
-    clean_users = [{"user_id": u["user_id"], "role": u["role"], "privileges": u["privileges"], "created_at": u["created_at"]} for u in users.values()]
+    clean_users = [{"user_id": u["user_id"], "username": u["user_id"], "role": u["role"], "privileges": u["privileges"], "created_at": u["created_at"]} for u in users.values()]
     return jsonify(clean_users)
 
 

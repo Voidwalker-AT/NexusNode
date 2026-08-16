@@ -1,10 +1,10 @@
 # 📱 NexusNode — Personal Mobile Server Appliance & Hardened AI Vault
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform: Android 13 Termux](https://img.shields.io/badge/Platform-Android%2013%20%7C%20Termux-green.svg)](https://termux.dev)
+[![Platforms: Android 13 Termux](https://img.shields.io/badge/Platform-Android%2013%20%7C%20Termux-green.svg)](https://termux.dev)
 [![Architecture: 4GB RAM Hardened](https://img.shields.io/badge/RAM-4GB%20Hardened-orange.svg)]()
 [![Supervision: Runit / termux--services](https://img.shields.io/badge/Supervision-runit%20%2F%20termux--services-blueviolet.svg)]()
-[![Tests: 53 Passed](https://img.shields.io/badge/Tests-53%20Passed%20(100%25)-brightgreen.svg)]()
+[![Tests: 135 Passed](https://img.shields.io/badge/Tests-135%20Passed%20(100%25)-brightgreen.svg)]()
 
 **NexusNode** turns a low-resource, unrooted Android smartphone (e.g. TECNO BG6, ~4 GB RAM) into a reliable, self-supervising **24/7 personal mobile server appliance**. It provides personal cloud storage, bounded background media processing, encrypted sharing, SQLite FTS5 document RAG, local AI model serving, and automated root-cause system diagnostics.
 

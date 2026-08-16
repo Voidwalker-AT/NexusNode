@@ -23,6 +23,7 @@ const authState = {
 const appState = {
   activeTab: 'dashboard',
   systemStatusInterval: null,
+  isPollingSystemStatus: false,
   cachedFiles: [],
   activeVaultFilter: 'all',
   activeVaultQuery: '',
@@ -51,6 +52,7 @@ function getAuthHeaders() {
   };
   if (authState.token) {
     headers['Authorization'] = `Bearer ${authState.token}`;
+    headers['X-Session-Token'] = authState.token;
   }
   return headers;
 }
@@ -62,14 +64,30 @@ async function apiFetch(url, options = {}) {
   };
   if (authState.token) {
     headers['Authorization'] = `Bearer ${authState.token}`;
+    headers['X-Session-Token'] = authState.token;
   }
   if (!headers['Content-Type'] && !(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
   options.headers = headers;
 
+  // Timeout handling using AbortController (default 8000ms, bypassable via options.timeoutMs = 0)
+  const timeoutMs = options.timeoutMs !== undefined ? options.timeoutMs : 8000;
+  let timerId = null;
+  let controller = null;
+
+  if (timeoutMs > 0 && !options.signal) {
+    controller = new AbortController();
+    options.signal = controller.signal;
+    timerId = setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
+  }
+
   try {
     const res = await fetch(url, options);
+    if (timerId) clearTimeout(timerId);
+
     if (res.status === 401) {
       if (authState.isAuthenticated) {
         showToast('Session expired. Please log in again.', 'warning');
@@ -82,6 +100,11 @@ async function apiFetch(url, options = {}) {
     }
     return res;
   } catch (err) {
+    if (timerId) clearTimeout(timerId);
+    if (err.name === 'AbortError') {
+      console.warn(`Request timed out after ${timeoutMs}ms: ${url}`);
+      throw new Error(`Request timed out after ${timeoutMs / 1000}s`);
+    }
     console.error(`API Fetch failed for ${url}:`, err);
     throw err;
   }
@@ -434,6 +457,9 @@ function switchTab(tabId) {
     case 'events':
       loadEventsArchive();
       break;
+    case 'network':
+      loadNetworkInterfaces();
+      break;
     case 'admin':
       loadAdminUsers();
       break;
@@ -484,6 +510,9 @@ function startPeriodicPolling() {
 
 async function pollSystemStatus() {
   if (!authState.isAuthenticated) return;
+  if (appState.isPollingSystemStatus) return;
+  appState.isPollingSystemStatus = true;
+
   try {
     const res = await apiFetch('/api/system/status');
     if (res.ok) {
@@ -492,6 +521,8 @@ async function pollSystemStatus() {
     }
   } catch (e) {
     console.warn('System status poll error:', e);
+  } finally {
+    appState.isPollingSystemStatus = false;
   }
 }
 
@@ -500,13 +531,15 @@ function updateTelemetryUI(data) {
 
   // 1. Top Status Strip
   const stripUptime = document.getElementById('stripUptime');
-  if (stripUptime && data.system && data.system.uptime) {
-    stripUptime.textContent = data.system.uptime;
+  const uptimeVal = data.system?.uptime || data.server?.uptime;
+  if (stripUptime && uptimeVal) {
+    stripUptime.textContent = uptimeVal;
   }
 
   const stripBattery = document.getElementById('stripBattery');
-  if (stripBattery && data.battery) {
-    stripBattery.textContent = `${data.battery.level ?? '--'}%`;
+  const battLvl = data.battery?.level ?? data.device?.battery_percent;
+  if (stripBattery && battLvl !== undefined && battLvl !== null) {
+    stripBattery.textContent = `${battLvl}%`;
   }
 
   const stripConnStatus = document.getElementById('stripConnStatus');
@@ -519,7 +552,7 @@ function updateTelemetryUI(data) {
 
   // 2. RAM Meter (PSS + Ollama)
   const ram = data.memory || {};
-  const ramPercent = ram.percent || 0;
+  const ramPercent = ram.percent ?? ram.ram_percent ?? 0;
   const ramMeterFill = document.getElementById('ramMeterFill');
   const ramMeterVal = document.getElementById('ramMeterVal');
   const ramDetail = document.getElementById('ramDetailText');
@@ -535,8 +568,8 @@ function updateTelemetryUI(data) {
   }
 
   // 3. Swap / ZRAM Meter
-  const swap = data.swap || {};
-  const swapPercent = swap.percent || 0;
+  const swap = data.swap || data.memory || {};
+  const swapPercent = swap.percent ?? swap.swap_percent ?? 0;
   const swapMeterFill = document.getElementById('swapMeterFill');
   const swapMeterVal = document.getElementById('swapMeterVal');
   const swapDetail = document.getElementById('swapDetailText');
@@ -544,12 +577,14 @@ function updateTelemetryUI(data) {
     swapMeterFill.style.width = `${Math.min(swapPercent, 100)}%`;
   }
   if (swapMeterVal) swapMeterVal.textContent = `${swapPercent}%`;
-  if (swapDetail && swap.used_mb !== undefined) {
-    swapDetail.textContent = `${swap.used_mb} / ${swap.total_mb || 0} MB`;
+  const swapUsed = swap.used_mb ?? swap.swap_used_mb;
+  const swapTotal = swap.total_mb ?? swap.swap_total_mb;
+  if (swapDetail && swapUsed !== undefined) {
+    swapDetail.textContent = `${swapUsed} / ${swapTotal || 0} MB`;
   }
 
   // 4. Storage Meter
-  const stg = data.storage || {};
+  const stg = data.storage || data.disk || {};
   const stgPercent = stg.percent || 0;
   const stgMeterFill = document.getElementById('storageMeterFill');
   const stgMeterVal = document.getElementById('storageMeterVal');
@@ -557,12 +592,12 @@ function updateTelemetryUI(data) {
   if (stgMeterFill) stgMeterFill.style.width = `${Math.min(stgPercent, 100)}%`;
   if (stgMeterVal) stgMeterVal.textContent = `${stgPercent}%`;
   if (stgDetail && stg.used_gb) {
-    stgDetail.textContent = `${stg.used_gb} / ${stg.total_gb} GB`;
+    stgDetail.textContent = `${stg.used_gb} / ${stg.total_gb || '--'} GB`;
   }
 
   // 5. CPU Meter
-  const cpu = data.cpu || {};
-  const cpuPercent = cpu.percent || 0;
+  const cpu = data.cpu || data.device || {};
+  const cpuPercent = cpu.percent ?? cpu.cpu_usage_percent ?? 0;
   const cpuMeterFill = document.getElementById('cpuMeterFill');
   const cpuMeterVal = document.getElementById('cpuMeterVal');
   if (cpuMeterFill) cpuMeterFill.style.width = `${Math.min(cpuPercent, 100)}%`;
@@ -571,22 +606,23 @@ function updateTelemetryUI(data) {
   // 6. Battery & Thermal Chip
   const dashBatteryLevel = document.getElementById('dashBatteryLevel');
   const dashBatteryStatus = document.getElementById('dashBatteryStatus');
-  if (dashBatteryLevel && data.battery) {
-    dashBatteryLevel.textContent = `${data.battery.level ?? '--'}%`;
-    if (dashBatteryStatus) dashBatteryStatus.textContent = data.battery.status || 'STANDBY';
+  if (dashBatteryLevel) {
+    dashBatteryLevel.textContent = `${battLvl ?? '--'}%`;
+    if (dashBatteryStatus) dashBatteryStatus.textContent = (data.battery?.status || data.device?.battery_status || 'STANDBY').toUpperCase();
   }
 
   const dashThermalLevel = document.getElementById('dashThermalLevel');
   const dashThermalStatus = document.getElementById('dashThermalStatus');
-  if (dashThermalLevel && data.thermal) {
-    dashThermalLevel.textContent = `${data.thermal.temp_c ?? '--'}°C`;
-    if (dashThermalStatus) dashThermalStatus.textContent = (data.thermal.status || 'NORMAL').toUpperCase();
+  const thermTemp = data.thermal?.temp_c ?? data.device?.cpu_temperature_c;
+  if (dashThermalLevel) {
+    dashThermalLevel.textContent = thermTemp !== undefined && thermTemp !== null ? `${thermTemp}°C` : '--°C';
+    if (dashThermalStatus) dashThermalStatus.textContent = (data.thermal?.status || data.appliance?.state || 'NORMAL').toUpperCase();
   }
 
   // 7. Active Task Supervision
-  if (data.active_task) {
-    const task = data.active_task;
-    appState.activeTaskId = task.id;
+  const activeTask = data.active_task || (data.tasks?.active_tasks && data.tasks.active_tasks[0]);
+  if (activeTask) {
+    appState.activeTaskId = activeTask.id;
     const taskTitle = document.getElementById('activeTaskTitle');
     const taskStatus = document.getElementById('activeTaskStatus');
     const taskFill = document.getElementById('activeTaskMeterFill');
@@ -595,13 +631,13 @@ function updateTelemetryUI(data) {
     const cancelBtn = document.getElementById('activeTaskCancelBtn');
     const idText = document.getElementById('activeTaskIdText');
 
-    if (taskTitle) taskTitle.textContent = task.title || task.type;
-    if (taskStatus) taskStatus.textContent = (task.status || 'RUNNING').toUpperCase();
-    if (taskFill) taskFill.style.width = `${Math.min(task.progress || 0, 100)}%`;
-    if (taskStep) taskStep.textContent = task.step_label || 'Executing...';
-    if (taskPct) taskPct.textContent = `${task.progress || 0}%`;
+    if (taskTitle) taskTitle.textContent = activeTask.title || activeTask.type;
+    if (taskStatus) taskStatus.textContent = (activeTask.status || 'RUNNING').toUpperCase();
+    if (taskFill) taskFill.style.width = `${Math.min(activeTask.progress || 0, 100)}%`;
+    if (taskStep) taskStep.textContent = activeTask.step_label || 'Executing operation...';
+    if (taskPct) taskPct.textContent = `${activeTask.progress || 0}%`;
     if (cancelBtn) cancelBtn.style.display = 'block';
-    if (idText) idText.textContent = `TASK: #${task.id}`;
+    if (idText) idText.textContent = `TASK: #${activeTask.id}`;
   } else {
     appState.activeTaskId = null;
     const taskTitle = document.getElementById('activeTaskTitle');
@@ -628,41 +664,54 @@ function updateTelemetryUI(data) {
 }
 
 function updateServicesUI(services) {
-  // NexusNode
+  if (!services) return;
+
+  // 1. NexusNode
   const nexus = services.nexusnode || {};
+  const isNexusUp = Boolean(nexus.running || nexus.status === 'online' || nexus.status === 'running' || nexus.pid);
   const svcBadgeNexus = document.getElementById('svcBadgeNexus');
   const svcDotNexus = document.getElementById('svcDotNexus');
   const svcDetailNexus = document.getElementById('svcDetailNexus');
-  if (svcBadgeNexus) svcBadgeNexus.textContent = nexus.running ? 'RUNNING' : 'STOPPED';
-  if (svcDotNexus) svcDotNexus.className = nexus.running ? 'service-dot online' : 'service-dot offline';
-  if (svcDetailNexus) svcDetailNexus.textContent = `PID ${nexus.pid || '--'} • Port 5000`;
+  if (svcBadgeNexus) svcBadgeNexus.textContent = isNexusUp ? 'RUNNING' : 'STOPPED';
+  if (svcDotNexus) svcDotNexus.className = isNexusUp ? 'service-dot online' : 'service-dot offline';
+  if (svcDetailNexus) svcDetailNexus.textContent = `PID ${nexus.pid || '--'} • Port ${nexus.port || 5000}`;
 
-  // SSHD
-  const ssh = services.sshd || {};
+  // 2. SSHD
+  const ssh = services.ssh || services.sshd || {};
+  const isSshUp = Boolean(ssh.running || ssh.status === 'online' || ssh.status === 'running');
   const svcBadgeSsh = document.getElementById('svcBadgeSsh');
   const svcDotSsh = document.getElementById('svcDotSsh');
   const svcDetailSsh = document.getElementById('svcDetailSsh');
-  if (svcBadgeSsh) svcBadgeSsh.textContent = ssh.running ? 'RUNNING' : 'STOPPED';
-  if (svcDotSsh) svcDotSsh.className = ssh.running ? 'service-dot online' : 'service-dot offline';
-  if (svcDetailSsh) svcDetailSsh.textContent = `PID ${ssh.pid || '--'} • Port 8022`;
+  if (svcBadgeSsh) svcBadgeSsh.textContent = isSshUp ? 'RUNNING' : 'STOPPED';
+  if (svcDotSsh) svcDotSsh.className = isSshUp ? 'service-dot online' : 'service-dot offline';
+  if (svcDetailSsh) svcDetailSsh.textContent = `PID ${ssh.pid || '--'} • Port ${ssh.port || 8022}`;
 
-  // LocalToNet
+  // 3. LocalToNet
   const l2n = services.localtonet || {};
+  const isL2nConnected = Boolean(l2n.connected || l2n.status === 'tunnel_connected' || l2n.state === 'TUNNEL_CONNECTED' || l2n.public_endpoint === 'reachable');
+  const isL2nRunning = Boolean(l2n.running || l2n.process === 'running' || l2n.state === 'PROCESS_ONLY' || l2n.pid);
   const svcBadgeL2n = document.getElementById('svcBadgeL2n');
   const svcDotL2n = document.getElementById('svcDotL2n');
   const svcDetailL2n = document.getElementById('svcDetailL2n');
-  if (svcBadgeL2n) svcBadgeL2n.textContent = l2n.connected ? 'CONNECTED' : (l2n.running ? 'CONNECTING' : 'OFFLINE');
-  if (svcDotL2n) svcDotL2n.className = l2n.connected ? 'service-dot online' : (l2n.running ? 'service-dot warning' : 'service-dot offline');
-  if (svcDetailL2n && l2n.url) svcDetailL2n.textContent = l2n.url;
+  if (svcBadgeL2n) svcBadgeL2n.textContent = isL2nConnected ? 'CONNECTED' : (isL2nRunning ? 'CONNECTING' : 'OFFLINE');
+  if (svcDotL2n) svcDotL2n.className = isL2nConnected ? 'service-dot online' : (isL2nRunning ? 'service-dot warning' : 'service-dot offline');
+  if (svcDetailL2n) svcDetailL2n.textContent = l2n.url || (isL2nRunning ? 'Tunnel initializing...' : 'No active tunnel URL');
 
-  // Ollama
+  // 4. Ollama
   const ollama = services.ollama || {};
+  const isOllamaUp = Boolean(ollama.running || ollama.online || ollama.status === 'running' || ollama.status === 'online' || ollama.loaded_model);
   const svcBadgeOllama = document.getElementById('svcBadgeOllama');
   const svcDotOllama = document.getElementById('svcDotOllama');
   const svcDetailOllama = document.getElementById('svcDetailOllama');
-  if (svcBadgeOllama) svcBadgeOllama.textContent = ollama.running ? 'RUNNING' : 'STANDBY';
-  if (svcDotOllama) svcDotOllama.className = ollama.running ? 'service-dot online' : 'service-dot warning';
-  if (svcDetailOllama) svcDetailOllama.textContent = `PID ${ollama.pid || '--'} • Port 11434`;
+  if (svcBadgeOllama) svcBadgeOllama.textContent = isOllamaUp ? 'RUNNING' : 'STANDBY';
+  if (svcDotOllama) svcDotOllama.className = isOllamaUp ? 'service-dot online' : 'service-dot warning';
+  if (svcDetailOllama) {
+    if (ollama.loaded_model) {
+      svcDetailOllama.textContent = `Active: ${ollama.loaded_model}`;
+    } else {
+      svcDetailOllama.textContent = isOllamaUp ? 'Ready • No model resident' : 'Supervisor standby';
+    }
+  }
 }
 
 function connectLogStream() {
@@ -716,17 +765,32 @@ function clearEventFeed() {
 // ==============================================================================
 
 async function loadVaultFiles(folderPath = '') {
+  const tbody = document.getElementById('vaultTableBody');
+  const countLabel = document.getElementById('vaultFileCount');
+
   try {
     appState.currentVaultPath = folderPath || '';
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--on-surface-muted); padding: 24px;">Loading Vault objects...</td></tr>';
+    }
     const url = folderPath ? `/files?path=${encodeURIComponent(folderPath)}` : '/files';
     const res = await apiFetch(url);
     if (res.ok) {
       const data = await res.json();
-      appState.cachedFiles = data.files || [];
+      appState.cachedFiles = data.files || (Array.isArray(data) ? data : []);
       renderVaultTable(appState.cachedFiles);
+    } else {
+      if (countLabel) countLabel.textContent = 'UNAVAILABLE';
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--status-critical); padding: 24px;">Unable to load Vault — HTTP ${res.status}</td></tr>`;
+      }
     }
   } catch (e) {
     console.error('Failed to load vault files:', e);
+    if (countLabel) countLabel.textContent = 'ERROR';
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--status-critical); padding: 24px;">Vault load error: ${escapeHtml(e.message || 'Request failed')}</td></tr>`;
+    }
   }
 }
 
@@ -926,8 +990,9 @@ async function pollMediaQueue() {
   try {
     const res = await apiFetch('/api/tasks?type=media_download');
     if (res.ok) {
-      const tasks = await res.json();
-      renderMediaQueue(tasks.tasks || []);
+      const data = await res.json();
+      const tasks = Array.isArray(data) ? data : (data.tasks || []);
+      renderMediaQueue(tasks);
     }
   } catch (e) {}
 }
@@ -957,15 +1022,30 @@ function renderMediaQueue(tasks) {
 }
 
 async function loadMediaLibrary() {
+  const grid = document.getElementById('mediaLibraryGrid');
   try {
+    if (grid) grid.innerHTML = '<div class="font-data-sm" style="color: var(--on-surface-muted); padding: 16px;">Scanning media files...</div>';
     const res = await apiFetch('/api/media/library');
     if (res.ok) {
       const data = await res.json();
-      appState.mediaLibrary = data.items || [];
-      renderMediaLibrary(appState.mediaLibrary);
+      let items = [];
+      if (data.items) {
+        items = data.items;
+      } else if (Array.isArray(data)) {
+        items = data;
+      } else if (typeof data === 'object') {
+        items = Object.values(data).filter(Array.isArray).flat();
+      }
+      appState.mediaLibrary = items;
+      renderMediaLibrary(items);
+    } else if (grid) {
+      grid.innerHTML = `<div class="font-data-sm" style="color: var(--status-critical); padding: 16px;">Unable to load media library — HTTP ${res.status}</div>`;
     }
   } catch (e) {
     console.error('Failed to load media library:', e);
+    if (grid) {
+      grid.innerHTML = `<div class="font-data-sm" style="color: var(--status-critical); padding: 16px;">Media library error: ${escapeHtml(e.message || 'Request failed')}</div>`;
+    }
   }
 }
 
@@ -1041,14 +1121,21 @@ function closeMediaPlayer() {
 // ==============================================================================
 
 async function loadTasksList() {
+  const tbody = document.getElementById('tasksTableBody');
   try {
     const res = await apiFetch('/api/tasks');
     if (res.ok) {
       const data = await res.json();
-      renderTasksTable(data.tasks || []);
+      const tasks = Array.isArray(data) ? data : (data.tasks || []);
+      renderTasksTable(tasks);
+    } else if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--status-critical); padding: 24px;">Unable to load tasks — HTTP ${res.status}</td></tr>`;
     }
   } catch (e) {
     console.error('Failed to load tasks:', e);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--status-critical); padding: 24px;">Task load error: ${escapeHtml(e.message || 'Request failed')}</td></tr>`;
+    }
   }
 }
 
@@ -1109,32 +1196,45 @@ async function cancelTask(taskId) {
 // ==============================================================================
 
 async function loadAiState() {
+  const select = document.getElementById('aiModelSelect');
+  const loadedName = document.getElementById('aiLoadedModelName');
+  const loadedMem = document.getElementById('aiLoadedModelMemory');
+  const unloadBtn = document.getElementById('aiUnloadModelBtn');
+
   try {
-    // 1. Get Models List
-    const modelsRes = await apiFetch('/api/ai/models');
-    if (modelsRes.ok) {
-      const modelsData = await modelsRes.json();
-      const select = document.getElementById('aiModelSelect');
-      if (select && modelsData.models) {
-        select.innerHTML = modelsData.models.map(m => `
-          <option value="${m.name}" ${m.name === modelsData.selected_model ? 'selected' : ''}>${m.name} (${formatBytes(m.size || 0)})</option>
-        `).join('');
-        appState.selectedModel = modelsData.selected_model || (modelsData.models[0] ? modelsData.models[0].name : '');
+    const [modelsResult, stateResult] = await Promise.allSettled([
+      apiFetch('/api/ai/models'),
+      apiFetch('/api/ai/state')
+    ]);
+
+    // 1. Process Models List
+    if (modelsResult.status === 'fulfilled' && modelsResult.value.ok) {
+      const modelsData = await modelsResult.value.json();
+      const modelsList = Array.isArray(modelsData) ? modelsData : (modelsData.models || []);
+      const selectedModel = modelsData.selected_model || appState.selectedModel || (modelsList[0] ? modelsList[0].name : '');
+
+      if (select) {
+        if (modelsList.length === 0) {
+          select.innerHTML = '<option value="">No models installed</option>';
+        } else {
+          select.innerHTML = modelsList.map(m => `
+            <option value="${m.name}" ${m.name === selectedModel ? 'selected' : ''}>${m.name} (${m.size_display || formatBytes(m.size_bytes || m.size || 0)})</option>
+          `).join('');
+          appState.selectedModel = selectedModel;
+        }
       }
+    } else if (select) {
+      select.innerHTML = '<option value="">Unable to load models</option>';
     }
 
-    // 2. Get Runtime Residency State
-    const stateRes = await apiFetch('/api/ai/state');
-    if (stateRes.ok) {
-      const stateData = await stateRes.json();
-      const loadedName = document.getElementById('aiLoadedModelName');
-      const loadedMem = document.getElementById('aiLoadedModelMemory');
-      const unloadBtn = document.getElementById('aiUnloadModelBtn');
-
+    // 2. Process Runtime Residency State
+    if (stateResult.status === 'fulfilled' && stateResult.value.ok) {
+      const stateData = await stateResult.value.json();
       if (stateData.loaded_model) {
         appState.loadedModel = stateData.loaded_model;
         if (loadedName) loadedName.textContent = stateData.loaded_model;
-        if (loadedMem) loadedMem.textContent = `Resident RAM: ${stateData.memory_mb || 0} MB`;
+        const ramMb = stateData.loaded_model_details ? stateData.loaded_model_details.runtime_size_mb : (stateData.memory_mb || 0);
+        if (loadedMem) loadedMem.textContent = `Resident RAM: ${ramMb} MB`;
         if (unloadBtn) unloadBtn.style.display = 'block';
       } else {
         appState.loadedModel = '';
@@ -1142,9 +1242,13 @@ async function loadAiState() {
         if (loadedMem) loadedMem.textContent = 'Resident RAM: 0 MB';
         if (unloadBtn) unloadBtn.style.display = 'none';
       }
+      if (stateData.selected_model && select && !select.value) {
+        select.value = stateData.selected_model;
+      }
     }
   } catch (e) {
     console.error('Failed to load AI state:', e);
+    if (select) select.innerHTML = '<option value="">Unable to load models (Error)</option>';
   }
 }
 
@@ -1259,23 +1363,61 @@ async function handleSendAiChat(event) {
 async function loadDiagnosticsReport() {
   if (authState.role !== 'admin') return;
 
+  const container = document.getElementById('diagFindingsContainer');
+  const countLabel = document.getElementById('diagFindingsCount');
+
   try {
-    const res = await apiFetch('/api/admin/diagnostics/full-report');
-    if (res.ok) {
-      const data = await res.json();
-      renderDiagnosticFindings(data.findings || []);
-      renderDiagnosticsProcesses(data.processes || []);
-      if (data.rag) {
-        const docCount = document.getElementById('ragDocCount');
-        const idxSize = document.getElementById('ragIndexSize');
-        const walSize = document.getElementById('ragWalSize');
-        if (docCount) docCount.textContent = data.rag.doc_count || 0;
-        if (idxSize) idxSize.textContent = `${Math.round((data.rag.index_bytes || 0) / 1024)} KB`;
-        if (walSize) walSize.textContent = `${Math.round((data.rag.wal_bytes || 0) / 1024)} KB`;
+    const [fullRes, sysRes] = await Promise.allSettled([
+      apiFetch('/api/admin/diagnostics/full-report'),
+      apiFetch('/api/admin/diagnostics/system')
+    ]);
+
+    let findings = [];
+    let processes = [];
+    let rag = null;
+
+    if (fullRes.status === 'fulfilled' && fullRes.value.ok) {
+      const fullData = await fullRes.value.json();
+      findings = fullData.findings || [];
+      processes = fullData.processes || [];
+      rag = fullData.rag || fullData.diagnostics?.rag;
+    }
+
+    if (sysRes.status === 'fulfilled' && sysRes.value.ok) {
+      const sysData = await sysRes.value.json();
+      if (!processes.length && sysData.top_processes) {
+        processes = sysData.top_processes;
       }
+      if (!rag && sysData.rag) {
+        rag = sysData.rag;
+      }
+    }
+
+    renderDiagnosticFindings(findings);
+    renderDiagnosticsProcesses(processes);
+
+    // Update RAG stats
+    const docCount = document.getElementById('ragDocCount');
+    const idxSize = document.getElementById('ragIndexSize');
+    const walSize = document.getElementById('ragWalSize');
+    if (rag) {
+      const docs = rag.document_count ?? rag.doc_count ?? 0;
+      const idxKb = rag.database_size_kb ?? Math.round((rag.index_bytes || 0) / 1024);
+      const walKb = rag.wal_size_kb ?? Math.round((rag.wal_bytes || 0) / 1024);
+      if (docCount) docCount.textContent = docs;
+      if (idxSize) idxSize.textContent = `${idxKb} KB`;
+      if (walSize) walSize.textContent = `${walKb} KB`;
+    } else {
+      if (docCount) docCount.textContent = '0';
+      if (idxSize) idxSize.textContent = '0 KB';
+      if (walSize) walSize.textContent = '0 KB';
     }
   } catch (e) {
     console.error('Failed to load diagnostics report:', e);
+    if (countLabel) countLabel.textContent = 'ERROR';
+    if (container) {
+      container.innerHTML = `<div class="font-data-sm" style="color: var(--status-critical); padding: 16px;">Diagnostics unavailable: ${escapeHtml(e.message || 'Request failed')}</div>`;
+    }
   }
 }
 
@@ -1410,24 +1552,36 @@ async function handleSaveSettings() {
 }
 
 async function loadAutomationJobs() {
+  const container = document.getElementById('automationJobsList');
   try {
     const res = await apiFetch('/api/automation/jobs');
     if (res.ok) {
       const data = await res.json();
-      const container = document.getElementById('automationJobsList');
-      if (container && data.jobs) {
-        container.innerHTML = data.jobs.map(j => `
+      const jobs = Array.isArray(data) ? data : (data.jobs || []);
+      if (container) {
+        if (jobs.length === 0) {
+          container.innerHTML = '<div class="font-data-sm" style="color: var(--on-surface-muted); padding: 16px;">No automation tasks scheduled.</div>';
+          return;
+        }
+        container.innerHTML = jobs.map(j => `
           <div class="service-row">
             <div>
-              <div class="service-name">${escapeHtml(j.name)}</div>
-              <div class="service-detail">${escapeHtml(j.schedule || 'Scheduled')} • Last run: ${j.last_run || 'Never'}</div>
+              <div class="service-name">${escapeHtml(j.name || j.id)}</div>
+              <div class="service-detail">${escapeHtml(j.schedule || `Interval: ${j.interval_seconds}s`)} • Last run: ${j.last_run || 'Never'}</div>
             </div>
             <button class="btn btn-primary" style="padding: 2px 8px; font-size: 11px; min-height: 28px;" onclick="runAutomationJob('${j.id}')">Run Now</button>
           </div>
         `).join('');
       }
+    } else if (container) {
+      container.innerHTML = `<div class="font-data-sm" style="color: var(--status-critical); padding: 16px;">Unable to load automation jobs — HTTP ${res.status}</div>`;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('Failed to load automation jobs:', e);
+    if (container) {
+      container.innerHTML = `<div class="font-data-sm" style="color: var(--status-critical); padding: 16px;">Automation load error: ${escapeHtml(e.message || 'Request failed')}</div>`;
+    }
+  }
 }
 
 async function runAutomationJob(jobId) {
@@ -1444,29 +1598,37 @@ async function runAutomationJob(jobId) {
 }
 
 async function loadBackupsList() {
+  const tbody = document.getElementById('backupsTableBody');
   try {
     const res = await apiFetch('/api/backups');
     if (res.ok) {
       const data = await res.json();
-      const tbody = document.getElementById('backupsTableBody');
-      if (tbody && data.backups) {
-        if (data.backups.length === 0) {
+      const backups = Array.isArray(data) ? data : (data.backups || []);
+      if (tbody) {
+        if (backups.length === 0) {
           tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--on-surface-muted); padding: 16px;">No backup archives generated yet.</td></tr>';
           return;
         }
-        tbody.innerHTML = data.backups.map(b => `
+        tbody.innerHTML = backups.map(b => `
           <tr>
-            <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(b.filename)}</td>
-            <td class="font-data-sm">${formatBytes(b.size || 0)}</td>
-            <td class="font-data-sm">${b.created || '--'}</td>
+            <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(b.filename || b.name || 'backup.tar.gz')}</td>
+            <td class="font-data-sm">${formatBytes(b.size || b.size_bytes || 0)}</td>
+            <td class="font-data-sm">${b.created || b.created_at || '--'}</td>
             <td style="text-align: right;">
-              <a class="btn btn-primary" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" href="/download/${encodeURIComponent(b.filename)}" download>Download</a>
+              <a class="btn btn-primary" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" href="/download/${encodeURIComponent(b.filename || b.name)}" download>Download</a>
             </td>
           </tr>
         `).join('');
       }
+    } else if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--status-critical); padding: 16px;">Unable to load backups — HTTP ${res.status}</td></tr>`;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('Failed to load backups list:', e);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--status-critical); padding: 16px;">Backup load error: ${escapeHtml(e.message || 'Request failed')}</td></tr>`;
+    }
+  }
 }
 
 async function handleCreateBackup() {
@@ -1483,66 +1645,167 @@ async function handleCreateBackup() {
 }
 
 async function loadStorageIntel() {
+  const container = document.getElementById('storageIntelBreakdown');
   try {
     const res = await apiFetch('/api/system/storage-intel');
     if (res.ok) {
       const data = await res.json();
-      const container = document.getElementById('storageIntelBreakdown');
-      if (container && data.breakdown) {
-        container.innerHTML = data.breakdown.map(b => `
+      let breakdown = [];
+      if (Array.isArray(data.breakdown)) {
+        breakdown = data.breakdown;
+      } else if (typeof data.breakdown === 'object') {
+        const d = data.breakdown;
+        breakdown = [
+          { directory: 'Videos Vault', size_bytes: d.videos_bytes || 0, file_count: d.videos_count },
+          { directory: 'Music & Audio', size_bytes: d.music_bytes || 0, file_count: d.music_count },
+          { directory: 'AI Models Store', size_bytes: d.models_bytes || 0, file_count: d.models_count },
+          { directory: 'Temporary Staging', size_bytes: d.temp_bytes || 0, file_count: d.temp_count },
+          { directory: 'Documents & Vault', size_bytes: d.vault_bytes || 0, file_count: d.vault_count }
+        ];
+      }
+      if (container) {
+        container.innerHTML = breakdown.map(b => `
           <div class="service-row">
             <div>
-              <div class="service-name">${escapeHtml(b.directory)}</div>
-              <div class="service-detail">${b.file_count || 0} objects</div>
+              <div class="service-name">${escapeHtml(b.directory || 'Vault')}</div>
+              <div class="service-detail">${b.file_count ? `${b.file_count} objects` : 'Managed storage partition'}</div>
             </div>
             <span class="font-data-md" style="color: var(--primary);">${formatBytes(b.size_bytes || 0)}</span>
           </div>
         `).join('');
       }
+    } else if (container) {
+      container.innerHTML = `<div class="font-data-sm" style="color: var(--status-critical); padding: 16px;">Unable to load storage breakdown — HTTP ${res.status}</div>`;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('Failed to load storage intel:', e);
+    if (container) {
+      container.innerHTML = `<div class="font-data-sm" style="color: var(--status-critical); padding: 16px;">Storage intel error: ${escapeHtml(e.message || 'Request failed')}</div>`;
+    }
+  }
 }
 
 async function loadEventsArchive() {
+  const container = document.getElementById('fullEventLogContainer');
   try {
     const res = await apiFetch('/api/events');
     if (res.ok) {
       const data = await res.json();
-      const container = document.getElementById('fullEventLogContainer');
-      if (container && data.events) {
-        container.innerHTML = data.events.map(ev => `
-          <div class="log-entry">
-            <span class="log-time">[${ev.timestamp ? ev.timestamp.substring(11, 19) : '--'}]</span>
-            <span class="log-level ${ev.level || 'INFO'}">${ev.level || 'INFO'}</span>
-            <span class="log-msg">${escapeHtml(ev.message || '')}</span>
-          </div>
-        `).join('');
+      const events = Array.isArray(data) ? data : (data.events || []);
+      if (container) {
+        if (events.length === 0) {
+          container.innerHTML = '<div class="log-entry" style="color: var(--on-surface-muted);">No audit log events recorded yet.</div>';
+          return;
+        }
+        container.innerHTML = events.map(ev => {
+          const ts = ev.timestamp ? ev.timestamp.substring(11, 19) : (ev.date ? ev.date : '--');
+          const lvl = (ev.level || 'INFO').toUpperCase();
+          return `
+            <div class="log-entry">
+              <span class="log-time">[${ts}]</span>
+              <span class="log-level ${lvl}">${lvl}</span>
+              <span class="log-msg">${escapeHtml(ev.message || '')}</span>
+            </div>
+          `;
+        }).join('');
       }
+    } else if (container) {
+      container.innerHTML = `<div class="log-entry" style="color: var(--status-critical);">Unable to load audit logs — HTTP ${res.status}</div>`;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('Failed to load events archive:', e);
+    if (container) {
+      container.innerHTML = `<div class="log-entry" style="color: var(--status-critical);">Event load error: ${escapeHtml(e.message || 'Request failed')}</div>`;
+    }
+  }
 }
 
 async function loadAdminUsers() {
   if (authState.role !== 'admin') return;
+  const tbody = document.getElementById('adminUserTableBody');
   try {
     const res = await apiFetch('/api/admin/users');
     if (res.ok) {
       const data = await res.json();
-      const tbody = document.getElementById('adminUserTableBody');
-      if (tbody && data.users) {
-        tbody.innerHTML = data.users.map(u => `
-          <tr>
-            <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(u.username)}</td>
-            <td><span class="node-badge" style="color: ${u.role === 'admin' ? 'var(--primary)' : 'var(--on-surface-variant)'};">${(u.role || 'USER').toUpperCase()}</span></td>
-            <td class="font-data-sm">${u.created_at ? u.created_at.substring(0, 10) : '--'}</td>
-            <td style="text-align: right;">
-              <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="showToast('User edit modal ready.', 'info')">Edit</button>
-            </td>
-          </tr>
-        `).join('');
+      const users = Array.isArray(data) ? data : (data.users || []);
+      if (tbody) {
+        if (users.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--on-surface-muted); padding: 16px;">No registered user accounts found.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = users.map(u => {
+          const uname = u.username || u.user_id || 'user';
+          const urole = (u.role || 'USER').toUpperCase();
+          const created = u.created_at ? (typeof u.created_at === 'string' ? u.created_at.substring(0, 10) : new Date(u.created_at * 1000).toISOString().substring(0, 10)) : '--';
+          return `
+            <tr>
+              <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(uname)}</td>
+              <td><span class="node-badge" style="color: ${urole === 'ADMIN' ? 'var(--primary)' : 'var(--on-surface-variant)'};">${urole}</span></td>
+              <td class="font-data-sm">${created}</td>
+              <td style="text-align: right;">
+                <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="showToast('User account active.', 'info')">Details</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
       }
+    } else if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--status-critical); padding: 16px;">Unable to load users — HTTP ${res.status}</td></tr>`;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('Failed to load admin users:', e);
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--status-critical); padding: 16px;">User load error: ${escapeHtml(e.message || 'Request failed')}</td></tr>`;
+    }
+  }
+}
+
+async function loadNetworkInterfaces() {
+  const container = document.getElementById('networkInterfacesList');
+  if (!container) return;
+
+  try {
+    container.innerHTML = '<div class="font-data-sm" style="color: var(--on-surface-muted); padding: 16px;">Probing network interfaces...</div>';
+    const res = await apiFetch('/api/services/status');
+    if (res.ok) {
+      const data = await res.json();
+      const l2n = data.localtonet || {};
+      const ssh = data.ssh || data.sshd || {};
+      const nexus = data.nexusnode || {};
+
+      const isL2nConnected = Boolean(l2n.connected || l2n.status === 'tunnel_connected' || l2n.state === 'TUNNEL_CONNECTED');
+      const isSshOnline = Boolean(ssh.running || ssh.status === 'online');
+
+      container.innerHTML = `
+        <div class="service-row">
+          <div>
+            <div class="service-name">LocalToNet Public WAN Ingress</div>
+            <div class="service-detail">${escapeHtml(l2n.url || 'No tunnel endpoint active')} • TLS Ingress Proxy</div>
+          </div>
+          <span class="node-badge" style="color: ${isL2nConnected ? 'var(--status-healthy)' : 'var(--status-critical)'};">${isL2nConnected ? 'CONNECTED' : 'OFFLINE'}</span>
+        </div>
+        <div class="service-row">
+          <div>
+            <div class="service-name">OpenSSH Operator Transport</div>
+            <div class="service-detail">Port ${ssh.port || 8022} • Local TCP Listener</div>
+          </div>
+          <span class="node-badge" style="color: ${isSshOnline ? 'var(--status-healthy)' : 'var(--status-critical)'};">${isSshOnline ? 'RUNNING' : 'STOPPED'}</span>
+        </div>
+        <div class="service-row">
+          <div>
+            <div class="service-name">NexusNode Core HTTPS Listener</div>
+            <div class="service-detail">Port ${nexus.port || 5000} • Dual-Frontend REST/WS Core</div>
+          </div>
+          <span class="node-badge" style="color: var(--status-healthy);">ACTIVE (PID ${nexus.pid || '--'})</span>
+        </div>
+      `;
+    } else {
+      container.innerHTML = `<div class="font-data-sm" style="color: var(--status-critical); padding: 16px;">Unable to probe network interfaces — HTTP ${res.status}</div>`;
+    }
+  } catch (e) {
+    console.error('Failed to load network interfaces:', e);
+    container.innerHTML = `<div class="font-data-sm" style="color: var(--status-critical); padding: 16px;">Network probe error: ${escapeHtml(e.message || 'Request failed')}</div>`;
+  }
 }
 
 function openAddUserModal() {

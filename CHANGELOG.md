@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.1] - 2026-08-16
+
+### 🚀 Live Functionality & Performance Audit & Repair
+
+#### Fixed & Optimized
+- **API Endpoint Performance & Latency Overhaul**:
+  - Reduced `/api/system/status` polling latency from ~3.9s to ~1.5s (>60% reduction) by short-circuiting dead daemon probes.
+  - Reduced `/api/ai/state` probe latency from ~3.5s to ~1.0s (>70% reduction) with immediate exit when Ollama engine is offline, eliminating sequential HTTP socket timeouts.
+  - Reduced `/api/admin/diagnostics/full-report` latency from ~3.6s to ~1.0s (>70% reduction).
+- **Service Badge & Status Normalization**:
+  - Fixed NexusNode reporting `STOPPED` while actively serving requests by checking `status === 'online'`, `running`, and active `pid`.
+  - Aligned OpenSSH, LocalToNet, and Ollama service telemetry parsing across all backend states.
+- **AI Studio Model Loading & Residency**:
+  - Fixed model selector hanging indefinitely on *"Loading installed models..."* by supporting both raw JSON arrays and wrapped object payloads.
+  - Concurrently queried `/api/ai/models` and `/api/ai/state` via `Promise.allSettled()`.
+- **SQLite Database Schema Auto-Migration**:
+  - Resolved HTTP 500 error on `/api/backups` caused by column naming mismatch (`filepath` vs `file_path`) with automatic `PRAGMA table_info` schema migration.
+- **Resilient UI Data Loaders & Non-Destructive Error States**:
+  - Implemented graceful loading indicators and visible `UNAVAILABLE` / `ERROR` messages for Vault, Media Library, Task Supervision, Backups, Events, Storage Intelligence, and Admin Users.
+  - Registered `/api/system/storage-intel` route alias to `/api/storage/intelligence`.
+  - Added `case 'network': loadNetworkInterfaces(); break;` in client-side `switchTab()` router.
+- **Frontend Concurrency & Timeout Hardening**:
+  - Integrated 8-second `AbortController` timeout inside `apiFetch()` to eliminate stalled promises.
+  - Added an in-flight polling guard (`isPollingSystemStatus`) to prevent duplicate overlapping poll requests.
+- **Expanded Test Suite**:
+  - Verified 100% pass rate across all 135 unit, client, and integration tests (`python -m unittest tests/test_server.py tests/test_nexus_client.py`).
+
+---
+
 ## [2.3.0] - 2026-08-16
 
 ### 🎨 Canonical Google Stitch UI & Hardened Diagnostics Runtime

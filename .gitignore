@@ -31,6 +31,9 @@ ENV/
 .venv/
 
 # NexusNode Local Vault Data & Backups (Keep folder structure, ignore user data)
+*.db
+*.db-wal
+*.db-shm
 storage_vault/*.db
 storage_vault/*.db-wal
 storage_vault/*.db-shm
