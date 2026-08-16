@@ -1643,6 +1643,15 @@ def index():
     return render_template('index.html', version=config.VERSION)
 
 
+def clear_account_lockout(user_id: str = None, ip_address: str = None):
+    """Clears failed login and lockout tracking for emergency recovery or password resets."""
+    with FAILED_LOGINS_LOCK:
+        if ip_address and ip_address in FAILED_LOGINS:
+            del FAILED_LOGINS[ip_address]
+        else:
+            FAILED_LOGINS.clear()
+
+
 # --- Authentication Routes ---
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
@@ -1651,8 +1660,13 @@ def api_login():
     with FAILED_LOGINS_LOCK:
         fail_record = FAILED_LOGINS.get(client_ip, {"count": 0, "locked_until": 0.0})
         if time.time() < fail_record["locked_until"]:
-            remaining = int(fail_record["locked_until"] - time.time())
-            return jsonify({"error": "locked_out", "message": f"Too many failed login attempts. Locked for {remaining}s."}), 429
+            remaining = max(1, int(fail_record["locked_until"] - time.time()))
+            return jsonify({
+                "error": "locked_out",
+                "message": f"Account Locked. Try again in {remaining}s.",
+                "lockout_seconds": remaining,
+                "retry_after": remaining
+            }), 429
 
     data = request.get_json(force=True, silent=True) or {}
     user_id = str(data.get("user_id") or data.get("username") or "").strip().lower()
@@ -1668,6 +1682,14 @@ def api_login():
             if fail_record["count"] >= config.LOCKOUT_THRESHOLD:
                 fail_record["locked_until"] = time.time() + config.LOCKOUT_DURATION_SECONDS
                 log_event("WARN", "AUTH", f"IP '{client_ip}' locked out due to repeated failed logins.")
+                FAILED_LOGINS[client_ip] = fail_record
+                remaining = int(config.LOCKOUT_DURATION_SECONDS)
+                return jsonify({
+                    "error": "locked_out",
+                    "message": f"Account Locked. Try again in {remaining}s.",
+                    "lockout_seconds": remaining,
+                    "retry_after": remaining
+                }), 429
             FAILED_LOGINS[client_ip] = fail_record
 
         log_event("WARN", "AUTH", f"Failed login attempt for user '{user_id}' from {client_ip}")

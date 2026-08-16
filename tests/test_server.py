@@ -891,6 +891,169 @@ class TestNexusNodeServer(unittest.TestCase):
         server_app.run_retention_sweep_job(dummy_task)
         self.assertIn("Retention sweep completed successfully.", dummy_task["logs"][-1])
 
+    # 18. Emergency Login Lockout & Admin Password Recovery Tests
+    def test_login_lockout_countdown_state(self):
+        """Verify login lockout returns 429 with lockout_seconds and retry_after."""
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+        # Trigger lockout threshold
+        for _ in range(config.LOCKOUT_THRESHOLD):
+            self.client.post('/api/auth/login', json={"user_id": "admin", "password": "wrongpassword"})
+
+        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "wrongpassword"})
+        self.assertEqual(res.status_code, 429)
+        data = res.get_json()
+        self.assertEqual(data.get("error"), "locked_out")
+        self.assertIn("Account Locked. Try again in", data.get("message", ""))
+        self.assertTrue(data.get("lockout_seconds", 0) > 0)
+        self.assertTrue(data.get("retry_after", 0) > 0)
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+    def test_login_unlock_after_countdown(self):
+        """Verify account automatically unlocks after lockout expiry timestamp."""
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS["127.0.0.1"] = {
+                "count": config.LOCKOUT_THRESHOLD,
+                "locked_until": time.time() - 1.0  # Already expired
+            }
+
+        # Successful login after lockout expiry
+        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "adminpassword"})
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertIn("token", data)
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+    def test_locked_login_submission_blocked(self):
+        """Verify active lockout blocks all login attempts regardless of credentials."""
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS["127.0.0.1"] = {
+                "count": config.LOCKOUT_THRESHOLD,
+                "locked_until": time.time() + 30.0  # Locked for 30s
+            }
+
+        # Even correct credentials return 429 while locked
+        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "adminpassword"})
+        self.assertEqual(res.status_code, 429)
+        data = res.get_json()
+        self.assertEqual(data.get("error"), "locked_out")
+        self.assertTrue(data.get("lockout_seconds") > 0)
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+    def test_emergency_password_reset(self):
+        """Verify local emergency reset helper updates password and enables login."""
+        from scripts.reset_admin_password import emergency_reset_password
+
+        # Create temporary user
+        temp_user = f"reset_u_{int(time.time()*1000)}"
+        h, s = server_app.hash_password("oldpass123")
+        with server_app.DB_LOCK:
+            conn = server_app.get_db_connection()
+            conn.execute("""
+                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
+                VALUES (?, ?, ?, 'user', '{"can_upload_files": true}', 1234567.0)
+            """, (temp_user, h, s))
+            conn.commit()
+            conn.close()
+
+        # Reset password via emergency script
+        success = emergency_reset_password(username=temp_user, new_password="newpass456_secure")
+        self.assertTrue(success)
+
+        # Old password rejected
+        res_old = self.client.post('/api/auth/login', json={"user_id": temp_user, "password": "oldpass123"})
+        self.assertEqual(res_old.status_code, 401)
+
+        # New password succeeds
+        res_new = self.client.post('/api/auth/login', json={"user_id": temp_user, "password": "newpass456_secure"})
+        self.assertEqual(res_new.status_code, 200)
+
+    def test_emergency_reset_preserves_role(self):
+        """Verify emergency reset strictly preserves user role."""
+        from scripts.reset_admin_password import emergency_reset_password
+
+        user_before = server_app.db_get_user("admin")
+        self.assertEqual(user_before["role"], "admin")
+
+        success = emergency_reset_password(username="admin", new_password="adminpassword")
+        self.assertTrue(success)
+
+        user_after = server_app.db_get_user("admin")
+        self.assertEqual(user_after["role"], "admin")
+
+    def test_emergency_reset_preserves_privileges(self):
+        """Verify emergency reset strictly preserves user privileges and created_at timestamp."""
+        from scripts.reset_admin_password import emergency_reset_password
+
+        user_before = server_app.db_get_user("admin")
+        created_at_before = user_before["created_at"]
+        privs_before = user_before["privileges"]
+
+        success = emergency_reset_password(username="admin", new_password="adminpassword")
+        self.assertTrue(success)
+
+        user_after = server_app.db_get_user("admin")
+        self.assertEqual(user_after["created_at"], created_at_before)
+        self.assertEqual(user_after["privileges"], privs_before)
+
+    def test_emergency_reset_clears_failed_login_lockout(self):
+        """Verify emergency reset immediately clears active lockout state."""
+        from scripts.reset_admin_password import emergency_reset_password
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS["127.0.0.1"] = {
+                "count": config.LOCKOUT_THRESHOLD,
+                "locked_until": time.time() + 600.0
+            }
+
+        # Emergency reset
+        success = emergency_reset_password(username="admin", new_password="adminpassword")
+        self.assertTrue(success)
+
+        # Account is immediately usable without waiting for lockout timer
+        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "adminpassword"})
+        self.assertEqual(res.status_code, 200)
+
+    def test_emergency_reset_does_not_expose_password(self):
+        """Verify emergency reset helper never returns or leaks password/hash/salt in output."""
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        from scripts.reset_admin_password import emergency_reset_password
+
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        secret_pass = "super_secret_test_password_12345"
+
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            emergency_reset_password(username="admin", new_password=secret_pass)
+
+        full_output = out_buf.getvalue() + err_buf.getvalue()
+        self.assertNotIn(secret_pass, full_output)
+        self.assertNotIn("password_hash", full_output)
+        self.assertNotIn("salt", full_output)
+        self.assertIn("Password reset successfully", full_output)
+
+        # Reset admin password back
+        emergency_reset_password(username="admin", new_password="adminpassword")
+
+    def test_emergency_reset_is_not_an_http_endpoint(self):
+        """Verify emergency reset cannot be invoked through any HTTP route."""
+        res1 = self.client.post('/api/emergency-reset', json={"user": "admin", "password": "hacked"})
+        self.assertIn(res1.status_code, [404, 405])
+
+        res2 = self.client.post('/api/auth/reset-admin', json={"user": "admin", "password": "hacked"})
+        self.assertIn(res2.status_code, [404, 405])
+
+        res3 = self.client.get('/scripts/reset_admin_password.py')
+        self.assertIn(res3.status_code, [404, 403, 401])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

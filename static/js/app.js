@@ -14,7 +14,10 @@ const authState = {
   user: null,
   role: 'user',
   privileges: {},
-  isAuthenticated: false
+  isAuthenticated: false,
+  isLocked: false,
+  lockoutRemaining: 0,
+  lockoutTimer: null
 };
 
 const appState = {
@@ -84,6 +87,68 @@ async function apiFetch(url, options = {}) {
   }
 }
 
+function clearLockoutCountdown() {
+  if (authState.lockoutTimer) {
+    clearInterval(authState.lockoutTimer);
+    authState.lockoutTimer = null;
+  }
+  authState.isLocked = false;
+  authState.lockoutRemaining = 0;
+
+  const lockoutAlert = document.getElementById('lockoutAlert');
+  const submitBtn = document.getElementById('loginSubmitBtn');
+  const countdown = document.getElementById('lockoutCountdown');
+
+  if (lockoutAlert) lockoutAlert.style.display = 'none';
+  if (countdown) countdown.textContent = '0';
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    const btnText = submitBtn.querySelector('span:last-child');
+    if (btnText) btnText.textContent = 'AUTHENTICATE';
+  }
+}
+
+function startLockoutCountdown(seconds) {
+  // Prevent duplicate intervals
+  if (authState.lockoutTimer) {
+    clearInterval(authState.lockoutTimer);
+    authState.lockoutTimer = null;
+  }
+
+  const duration = parseInt(seconds, 10) || 60;
+  authState.isLocked = true;
+  authState.lockoutRemaining = duration;
+
+  const lockoutAlert = document.getElementById('lockoutAlert');
+  const countdown = document.getElementById('lockoutCountdown');
+  const submitBtn = document.getElementById('loginSubmitBtn');
+
+  if (lockoutAlert) lockoutAlert.style.display = 'flex';
+  if (countdown) countdown.textContent = duration;
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    const btnText = submitBtn.querySelector('span:last-child');
+    if (btnText) btnText.textContent = `LOCKED (${duration}s)`;
+  }
+
+  authState.lockoutTimer = setInterval(() => {
+    authState.lockoutRemaining -= 1;
+
+    if (authState.lockoutRemaining > 0) {
+      const cdEl = document.getElementById('lockoutCountdown');
+      const btnEl = document.getElementById('loginSubmitBtn');
+      if (cdEl) cdEl.textContent = authState.lockoutRemaining;
+      if (btnEl) {
+        const textSpan = btnEl.querySelector('span:last-child');
+        if (textSpan) textSpan.textContent = `LOCKED (${authState.lockoutRemaining}s)`;
+      }
+    } else {
+      clearLockoutCountdown();
+      showToast('Lockout period ended. Authentication controls restored.', 'info');
+    }
+  }, 1000);
+}
+
 async function initAuth() {
   const savedToken = localStorage.getItem('nexus_token');
   if (savedToken) {
@@ -103,6 +168,8 @@ async function initAuth() {
 }
 
 function setAuthenticatedState(user, token) {
+  clearLockoutCountdown();
+
   authState.token = token;
   authState.user = user;
   authState.role = user.role || 'user';
@@ -113,10 +180,10 @@ function setAuthenticatedState(user, token) {
 
   // Update Header UI
   const headerUsername = document.getElementById('headerUsername');
-  if (headerUsername) headerUsername.textContent = user.username;
+  if (headerUsername) headerUsername.textContent = user.username || user.user_id || 'admin';
 
   const headerAvatar = document.getElementById('headerUserAvatar');
-  if (headerAvatar) headerAvatar.textContent = (user.username || 'A')[0].toUpperCase();
+  if (headerAvatar) headerAvatar.textContent = ((user.username || user.user_id || 'A')[0]).toUpperCase();
 
   const roleBadge = document.getElementById('headerRoleBadge');
   if (roleBadge) {
@@ -145,7 +212,11 @@ async function handleLoginSubmit(event) {
   const usernameInput = document.getElementById('loginUsername');
   const passwordInput = document.getElementById('loginPassword');
   const submitBtn = document.getElementById('loginSubmitBtn');
-  const lockoutAlert = document.getElementById('lockoutAlert');
+
+  if (authState.isLocked && authState.lockoutRemaining > 0) {
+    showToast(`Account is locked. Please wait ${authState.lockoutRemaining}s before attempting login.`, 'warning');
+    return;
+  }
 
   if (!usernameInput || !passwordInput) return;
 
@@ -170,29 +241,30 @@ async function handleLoginSubmit(event) {
     });
 
     const data = await res.json();
-    if (res.ok && data.success) {
-      if (lockoutAlert) lockoutAlert.style.display = 'none';
+    if (res.ok && (data.token || data.success)) {
+      clearLockoutCountdown();
       setAuthenticatedState(data.user, data.token);
-      showToast(`Welcome back, ${data.user.username}`, 'success');
+      showToast(`Welcome back, ${data.user.username || data.user.user_id || 'Operator'}`, 'success');
       passwordInput.value = '';
     } else {
-      if (res.status === 429) {
-        if (lockoutAlert) {
-          lockoutAlert.style.display = 'flex';
-          const countdown = document.getElementById('lockoutCountdown');
-          if (countdown) countdown.textContent = data.retry_after || 60;
-        }
+      if (res.status === 429 || data.error === 'locked_out' || data.lockout_seconds) {
+        const secs = data.lockout_seconds || data.retry_after || 60;
+        startLockoutCountdown(secs);
+        showToast(data.message || `Account Locked. Try again in ${secs}s.`, 'error');
+      } else {
+        showToast(data.message || data.error || 'Authentication rejected.', 'error');
+        if (submitBtn && !authState.isLocked) submitBtn.disabled = false;
       }
-      showToast(data.error || 'Authentication rejected.', 'error');
     }
   } catch (err) {
     showToast('Failed to connect to authentication gateway.', 'error');
-  } finally {
-    if (submitBtn) submitBtn.disabled = false;
+    if (submitBtn && !authState.isLocked) submitBtn.disabled = false;
   }
 }
 
 async function handleLogout(notifyServer = true) {
+  clearLockoutCountdown();
+
   if (notifyServer && authState.token) {
     try {
       await apiFetch('/api/auth/logout', { method: 'POST' });
