@@ -16,6 +16,7 @@ import re
 import time
 import json
 import queue
+import signal
 import shutil
 import base64
 import hashlib
@@ -24,7 +25,8 @@ import sqlite3
 import tempfile
 import threading
 import subprocess
-from datetime import datetime
+import urllib.parse
+from datetime import datetime, timezone
 from functools import wraps
 
 import requests
@@ -123,18 +125,25 @@ def init_unified_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_level ON system_logs(level);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_category ON system_logs(category);")
 
-            # 3. Background Tasks table with owner_user_id
+            # 3. Background Tasks table with authoritative fields and owner_user_id
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS background_tasks (
                     id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
                     type TEXT NOT NULL,
                     status TEXT NOT NULL,
+                    stage TEXT NOT NULL DEFAULT 'QUEUED',
                     progress INTEGER NOT NULL DEFAULT 0,
                     logs TEXT DEFAULT '[]',
                     error TEXT,
+                    result TEXT,
+                    metadata TEXT DEFAULT '{}',
                     owner_user_id TEXT NOT NULL DEFAULT 'admin',
+                    eta_seconds INTEGER,
+                    speed_bps INTEGER,
+                    output_path TEXT,
                     created_at REAL NOT NULL,
+                    started_at REAL,
                     updated_at REAL NOT NULL,
                     completed_at REAL
                 );
@@ -148,11 +157,27 @@ def init_unified_db():
                 conn.execute("ALTER TABLE background_tasks ADD COLUMN owner_user_id TEXT NOT NULL DEFAULT 'admin';")
             if "type" not in task_cols and "task_type" in task_cols:
                 conn.execute("ALTER TABLE background_tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'generic';")
+            if "stage" not in task_cols:
+                conn.execute("ALTER TABLE background_tasks ADD COLUMN stage TEXT NOT NULL DEFAULT 'QUEUED';")
             if "error" not in task_cols:
                 conn.execute("ALTER TABLE background_tasks ADD COLUMN error TEXT;")
+            if "result" not in task_cols:
+                conn.execute("ALTER TABLE background_tasks ADD COLUMN result TEXT;")
+            if "metadata" not in task_cols:
+                conn.execute("ALTER TABLE background_tasks ADD COLUMN metadata TEXT DEFAULT '{}';")
+            if "eta_seconds" not in task_cols:
+                conn.execute("ALTER TABLE background_tasks ADD COLUMN eta_seconds INTEGER;")
+            if "speed_bps" not in task_cols:
+                conn.execute("ALTER TABLE background_tasks ADD COLUMN speed_bps INTEGER;")
+            if "output_path" not in task_cols:
+                conn.execute("ALTER TABLE background_tasks ADD COLUMN output_path TEXT;")
+            if "started_at" not in task_cols:
+                conn.execute("ALTER TABLE background_tasks ADD COLUMN started_at REAL;")
             if "completed_at" not in task_cols:
                 conn.execute("ALTER TABLE background_tasks ADD COLUMN completed_at REAL;")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_owner ON background_tasks(owner_user_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON background_tasks(status);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_updated ON background_tasks(updated_at);")
 
             # 4. Temporary Share Links table with owner_user_id
             conn.execute("""
@@ -1211,16 +1236,94 @@ class SQLiteFTS5RAGEngine:
         }
 
 
-rag_engine = SQLiteFTS5RAGEngine()
+rag_engine = SQLiteFTS5RAGEngine()# ==============================================================================
+# 6. BOUNDED TASK RUNNER WITH AUTHORITATIVE LIFECYCLE & PROCESS MANAGEMENT
+# ==============================================================================
 
-# ==============================================================================
-# 6. BOUNDED TASK RUNNER WITH OWNER USER ISOLATION
-# ==============================================================================
+def serialize_iso_timestamp(ts: float | int | str | None) -> str | None:
+    if not ts:
+        return None
+    if isinstance(ts, str):
+        if 'T' in ts:
+            return ts
+        try:
+            ts = float(ts)
+        except (ValueError, TypeError):
+            return ts
+    try:
+        return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    except Exception:
+        return None
+
+
+def parse_speed_string_to_bps(speed_str: str) -> int | None:
+    if not speed_str:
+        return None
+    try:
+        m = re.match(r'([\d\.]+)\s*([kKmMgG]?)(?:i?B/s|b/s)?', str(speed_str).strip())
+        if m:
+            val = float(m.group(1))
+            unit = m.group(2).upper()
+            mult = 1
+            if unit == 'K': mult = 1024
+            elif unit == 'M': mult = 1024 * 1024
+            elif unit == 'G': mult = 1024 * 1024 * 1024
+            return int(val * mult)
+    except Exception:
+        pass
+    return None
+
+
+def parse_eta_string_to_seconds(eta_str: str) -> int | None:
+    if not eta_str:
+        return None
+    try:
+        parts = [int(p) for p in str(eta_str).strip().split(':')]
+        if len(parts) == 1:
+            return parts[0]
+        elif len(parts) == 2:
+            return parts[0] * 60 + parts[1]
+        elif len(parts) == 3:
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    except Exception:
+        pass
+    return None
+
+
+def terminate_process_tree(proc: subprocess.Popen):
+    """Authoritative process hierarchy termination for yt-dlp, ffmpeg, and subprocesses."""
+    if not proc or proc.poll() is not None:
+        return
+    try:
+        pid = proc.pid
+        if os.name == 'nt':
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            try:
+                pgid = os.getpgid(pid)
+                os.killpg(pgid, signal.SIGTERM)
+            except Exception:
+                proc.terminate()
+            try:
+                proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(pgid, signal.SIGKILL)
+                except Exception:
+                    proc.kill()
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
 
 class BoundedTaskRunner:
     """
     Bounded worker thread pool strictly maintaining concurrency = 1 on 4 GB RAM hardware.
-    Features: owner_user_id tracking, clean cancellation, safe subprocess execution, partial file cleanup.
+    Features: authoritative SQLite persistence, deterministic ISO-8601 timestamps,
+    authoritative state machine (QUEUED -> STARTING -> RUNNING -> POST_PROCESSING -> VERIFYING -> COMPLETED),
+    process-tree termination, partial file cleanup, and owner user isolation.
     """
     def __init__(self, max_concurrency: int = config.MAX_HEAVY_CONCURRENCY):
         self.max_concurrency = max_concurrency
@@ -1231,6 +1334,60 @@ class BoundedTaskRunner:
         self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True, name="BoundedTaskWorker")
         self._worker_thread.start()
 
+    def _normalize_task_record(self, t: dict) -> dict:
+        """Converts internal task dict/row into canonical task schema."""
+        task_id = str(t.get("id") or t.get("task_id") or "")
+        task_type = str(t.get("type") or t.get("task_type") or "generic")
+        status = str(t.get("status") or "QUEUED").upper()
+        stage = str(t.get("stage") or status).upper()
+        owner = str(t.get("owner_user_id") or t.get("owner") or t.get("user_id") or "admin")
+        
+        created_at = t.get("created_at")
+        started_at = t.get("started_at")
+        updated_at = t.get("updated_at")
+        completed_at = t.get("completed_at")
+        
+        raw_logs = t.get("logs", [])
+        if isinstance(raw_logs, str):
+            try:
+                logs = json.loads(raw_logs)
+            except Exception:
+                logs = [raw_logs]
+        elif isinstance(raw_logs, list):
+            logs = raw_logs
+        else:
+            logs = []
+
+        return {
+            "id": task_id,
+            "task_id": task_id,
+            "title": str(t.get("title") or f"Task {task_id}"),
+            "type": task_type,
+            "task_type": task_type,
+            "status": status,
+            "state": status,
+            "stage": stage,
+            "progress": int(t.get("progress") or 0),
+            "eta_seconds": t.get("eta_seconds"),
+            "speed_bps": t.get("speed_bps"),
+            "output_path": t.get("output_path"),
+            "error": t.get("error"),
+            "result": t.get("result"),
+            "metadata": t.get("metadata") if isinstance(t.get("metadata"), dict) else {},
+            "owner": owner,
+            "owner_user_id": owner,
+            "user_id": owner,
+            "created_at": serialize_iso_timestamp(created_at),
+            "created_at_epoch": float(created_at) if isinstance(created_at, (int, float)) else None,
+            "started_at": serialize_iso_timestamp(started_at),
+            "started_at_epoch": float(started_at) if isinstance(started_at, (int, float)) else None,
+            "updated_at": serialize_iso_timestamp(updated_at),
+            "updated_at_epoch": float(updated_at) if isinstance(updated_at, (int, float)) else None,
+            "completed_at": serialize_iso_timestamp(completed_at),
+            "completed_at_epoch": float(completed_at) if isinstance(completed_at, (int, float)) else None,
+            "logs": logs
+        }
+
     def enqueue_task(self, title: str, task_type: str, target_fn, *args, owner_user_id: str = "admin", **kwargs) -> tuple[str | None, dict]:
         res_check = governor.can_start_heavy_task()
         if not res_check["allowed"]:
@@ -1238,19 +1395,32 @@ class BoundedTaskRunner:
             return None, res_check
 
         task_id = f"task_{int(time.time())}_{secrets.token_hex(4)}"
+        now = time.time()
         task_obj = {
             "id": task_id,
+            "task_id": task_id,
             "title": title,
             "type": task_type,
-            "status": "queued",
+            "task_type": task_type,
+            "status": "QUEUED",
+            "state": "QUEUED",
+            "stage": "QUEUED",
             "progress": 0,
+            "eta_seconds": None,
+            "speed_bps": None,
+            "output_path": None,
+            "error": None,
+            "result": None,
+            "metadata": {},
             "logs": [f"[{datetime.now().strftime('%H:%M:%S')}] Task enqueued by '{owner_user_id}'."],
             "target_fn": target_fn,
             "args": args,
             "kwargs": kwargs,
             "process": None,
-            "created_at": time.time(),
-            "updated_at": time.time(),
+            "created_at": now,
+            "started_at": None,
+            "updated_at": now,
+            "completed_at": None,
             "owner_user_id": owner_user_id,
             "partial_files": []
         }
@@ -1268,32 +1438,48 @@ class BoundedTaskRunner:
             task_id = self.task_queue.get()
             with self.lock:
                 task_obj = self.tasks.get(task_id)
-                if not task_obj or task_obj['status'] == 'cancelled':
+                if not task_obj:
+                    task_obj = self._load_task_from_db(task_id)
+                if not task_obj or str(task_obj.get('status', '')).upper() == 'CANCELLED':
                     self.task_queue.task_done()
                     continue
-                task_obj['status'] = 'running'
-                task_obj['updated_at'] = time.time()
+                now = time.time()
+                task_obj['status'] = 'STARTING'
+                task_obj['stage'] = 'STARTING'
+                task_obj['started_at'] = now
+                task_obj['updated_at'] = now
                 self.active_tasks.append(task_obj)
                 self._save_task_to_db(task_obj)
 
             log_event("INFO", "TASK", f"Started task '{task_obj['title']}' ({task_id}).")
 
             try:
-                task_obj['target_fn'](task_obj, *task_obj['args'], **task_obj['kwargs'])
-                if task_obj['status'] != 'cancelled':
-                    task_obj['status'] = 'completed'
-                    task_obj['progress'] = 100
-                    task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task completed successfully.")
-                    log_event("INFO", "TASK", f"Completed task '{task_obj['title']}'.")
+                task_obj['target_fn'](task_obj, *task_obj.get('args', ()), **task_obj.get('kwargs', {}))
+                with self.lock:
+                    if str(task_obj.get('status', '')).upper() not in ['CANCELLED', 'CANCELLING']:
+                        now = time.time()
+                        task_obj['status'] = 'COMPLETED'
+                        task_obj['stage'] = 'COMPLETED'
+                        task_obj['progress'] = 100
+                        task_obj['completed_at'] = now
+                        task_obj['updated_at'] = now
+                        task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task completed successfully.")
+                        self._save_task_to_db(task_obj)
+                        log_event("INFO", "TASK", f"Completed task '{task_obj['title']}'.")
             except Exception as e:
-                task_obj['status'] = 'failed'
-                task_obj['error'] = str(e)
-                task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task failed: {str(e)}")
-                log_event("ERROR", "TASK", f"Task '{task_obj['title']}' failed: {str(e)}")
-                self._cleanup_partial_files(task_obj)
+                with self.lock:
+                    if str(task_obj.get('status', '')).upper() not in ['CANCELLED', 'CANCELLING']:
+                        now = time.time()
+                        task_obj['status'] = 'FAILED'
+                        task_obj['stage'] = 'FAILED'
+                        task_obj['error'] = str(e)
+                        task_obj['updated_at'] = now
+                        task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task failed: {str(e)}")
+                        self._cleanup_partial_files(task_obj)
+                        self._save_task_to_db(task_obj)
+                        log_event("ERROR", "TASK", f"Task '{task_obj['title']}' failed: {str(e)}")
             finally:
                 with self.lock:
-                    task_obj['updated_at'] = time.time()
                     if task_obj in self.active_tasks:
                         self.active_tasks.remove(task_obj)
                     self._save_task_to_db(task_obj)
@@ -1303,47 +1489,43 @@ class BoundedTaskRunner:
         with self.lock:
             task = self.tasks.get(task_id)
             if not task:
-                try:
-                    with DB_LOCK:
-                        conn = get_db_connection()
-                        cur = conn.cursor()
-                        cur.execute("SELECT id, title, type, status, progress, logs, owner_user_id, created_at, updated_at FROM background_tasks WHERE id = ?", (task_id,))
-                        row = cur.fetchone()
-                        conn.close()
-                        if row:
-                            task = {
-                                "id": row["id"],
-                                "title": row["title"],
-                                "type": row["type"],
-                                "status": row["status"],
-                                "progress": row["progress"],
-                                "logs": json.loads(row["logs"]) if row["logs"] else [],
-                                "owner_user_id": row["owner_user_id"],
-                                "created_at": row["created_at"],
-                                "updated_at": row["updated_at"]
-                            }
-                except Exception:
-                    pass
+                task = self._load_task_from_db(task_id)
 
             if not task:
                 return False, "Task not found."
 
-            if not is_admin and requesting_user_id and task["owner_user_id"] != requesting_user_id:
+            if not is_admin and requesting_user_id and task.get("owner_user_id") != requesting_user_id:
                 return False, "Permission denied: You do not own this task."
 
-            if task['status'] in ['completed', 'failed', 'cancelled']:
-                return False, f"Task already {task['status']}."
+            current_status = str(task.get('status', '')).upper()
+            if current_status in ['COMPLETED', 'FAILED', 'CANCELLED']:
+                return False, f"Task already {current_status.lower()}."
 
-            task['status'] = 'cancelled'
-            task['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task cancelled by user.")
+            if current_status == 'QUEUED':
+                task['status'] = 'CANCELLED'
+                task['stage'] = 'CANCELLED'
+                task['updated_at'] = time.time()
+                task['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Queued task cancelled by user.")
+                self._save_task_to_db(task)
+                log_event("WARN", "TASK", f"Queued task '{task['title']}' cancelled by '{requesting_user_id or 'admin'}'.")
+                return True, "Task cancelled successfully."
+
+            # Active task (STARTING, RUNNING, POST_PROCESSING, VERIFYING)
+            task['status'] = 'CANCELLING'
+            task['stage'] = 'CANCELLING'
+            task['updated_at'] = time.time()
+            task['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task cancellation requested.")
+            self._save_task_to_db(task)
 
             if task.get('process'):
-                try:
-                    task['process'].terminate()
-                except Exception:
-                    pass
+                terminate_process_tree(task['process'])
 
             self._cleanup_partial_files(task)
+
+            task['status'] = 'CANCELLED'
+            task['stage'] = 'CANCELLED'
+            task['updated_at'] = time.time()
+            task['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task cancelled and partial files cleaned.")
             self._save_task_to_db(task)
 
         log_event("WARN", "TASK", f"Task '{task['title']}' was cancelled by '{requesting_user_id or 'admin'}'.")
@@ -1366,17 +1548,45 @@ class BoundedTaskRunner:
                 conn = get_db_connection()
                 try:
                     conn.execute("""
-                        INSERT INTO background_tasks (id, title, type, status, progress, logs, owner_user_id, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO background_tasks (
+                            id, title, type, status, stage, progress, logs, error, result,
+                            metadata, owner_user_id, eta_seconds, speed_bps, output_path,
+                            created_at, started_at, updated_at, completed_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(id) DO UPDATE SET
+                            title=excluded.title,
+                            type=excluded.type,
                             status=excluded.status,
+                            stage=excluded.stage,
                             progress=excluded.progress,
                             logs=excluded.logs,
-                            updated_at=excluded.updated_at;
+                            error=excluded.error,
+                            result=excluded.result,
+                            metadata=excluded.metadata,
+                            eta_seconds=excluded.eta_seconds,
+                            speed_bps=excluded.speed_bps,
+                            output_path=excluded.output_path,
+                            started_at=coalesce(excluded.started_at, background_tasks.started_at),
+                            updated_at=excluded.updated_at,
+                            completed_at=excluded.completed_at;
                     """, (
-                        task["id"], task["title"], task.get("type", "task"), task["status"], task["progress"],
-                        json.dumps(task["logs"]), task.get("owner_user_id", "admin"),
-                        task["created_at"], task["updated_at"]
+                        task["id"], task["title"], task.get("type", "generic"),
+                        str(task.get("status", "QUEUED")).upper(),
+                        str(task.get("stage", "QUEUED")).upper(),
+                        int(task.get("progress", 0)),
+                        json.dumps(task.get("logs", [])),
+                        task.get("error"),
+                        task.get("result"),
+                        json.dumps(task.get("metadata", {})) if isinstance(task.get("metadata"), dict) else str(task.get("metadata", "{}")),
+                        task.get("owner_user_id", "admin"),
+                        task.get("eta_seconds"),
+                        task.get("speed_bps"),
+                        task.get("output_path"),
+                        task.get("created_at", time.time()),
+                        task.get("started_at"),
+                        task.get("updated_at", time.time()),
+                        task.get("completed_at")
                     ))
                     conn.commit()
                 finally:
@@ -1384,77 +1594,89 @@ class BoundedTaskRunner:
         except Exception:
             pass
 
-    def get_task(self, task_id: str) -> dict | None:
-        """Fetch task metadata by ID from memory or SQLite."""
-        with self.lock:
-            if task_id in self.tasks:
-                t = dict(self.tasks[task_id])
-                t["task_id"] = t.get("id", task_id)
-                t["task_type"] = t.get("type", "task")
-                return t
+    def _load_task_from_db(self, task_id: str) -> dict | None:
         try:
             with DB_LOCK:
                 conn = get_db_connection()
                 try:
                     cur = conn.cursor()
-                    cur.execute("SELECT id, title, type, status, progress, logs, owner_user_id, created_at, updated_at FROM background_tasks WHERE id = ?", (task_id,))
+                    cur.execute("""
+                        SELECT id, title, type, status, stage, progress, logs, error, result,
+                               metadata, owner_user_id, eta_seconds, speed_bps, output_path,
+                               created_at, started_at, updated_at, completed_at
+                        FROM background_tasks WHERE id = ?
+                    """, (task_id,))
                     row = cur.fetchone()
                     if row:
-                        return {
-                            "id": row["id"],
-                            "task_id": row["id"],
-                            "title": row["title"],
-                            "type": row["type"],
-                            "task_type": row["type"],
-                            "status": row["status"],
-                            "progress": row["progress"],
-                            "logs": json.loads(row["logs"]) if row["logs"] else [],
-                            "owner_user_id": row["owner_user_id"],
-                            "created_at": row["created_at"],
-                            "updated_at": row["updated_at"]
-                        }
+                        return dict(row)
                 finally:
                     conn.close()
         except Exception:
             pass
         return None
 
-    def get_all_tasks(self) -> list[dict]:
-        """Fetch all recent background tasks with owner user metadata."""
+    def get_task(self, task_id: str) -> dict | None:
+        """Fetch task metadata by ID from memory or SQLite, returning normalized schema."""
         with self.lock:
-            mem_tasks = {}
-            for tid, t in self.tasks.items():
-                td = dict(t)
-                td["task_id"] = td.get("id", tid)
-                td["task_type"] = td.get("type", "task")
-                mem_tasks[tid] = td
+            if task_id in self.tasks:
+                return self._normalize_task_record(self.tasks[task_id])
+        
+        row_dict = self._load_task_from_db(task_id)
+        if row_dict:
+            return self._normalize_task_record(row_dict)
+        return None
+
+    def get_all_tasks(self, type_filter: str = None, status_filter: str = None, limit: int = 100) -> list[dict]:
+        """Fetch background tasks merged between active memory and SQLite, returning canonical schemas."""
+        tasks_map = {}
+        
+        # 1. Query SQLite
         try:
             with DB_LOCK:
                 conn = get_db_connection()
                 try:
                     cur = conn.cursor()
-                    cur.execute("SELECT id, title, type, status, progress, logs, owner_user_id, created_at, updated_at FROM background_tasks ORDER BY updated_at DESC LIMIT 100")
-                    rows = cur.fetchall()
-                    for r in rows:
-                        if r["id"] not in mem_tasks:
-                            mem_tasks[r["id"]] = {
-                                "id": r["id"],
-                                "task_id": r["id"],
-                                "title": r["title"],
-                                "type": r["type"],
-                                "task_type": r["type"],
-                                "status": r["status"],
-                                "progress": r["progress"],
-                                "logs": json.loads(r["logs"]) if row["logs"] else [],
-                                "owner_user_id": r["owner_user_id"],
-                                "created_at": r["created_at"],
-                                "updated_at": r["updated_at"]
-                            }
+                    cur.execute("""
+                        SELECT id, title, type, status, stage, progress, logs, error, result,
+                               metadata, owner_user_id, eta_seconds, speed_bps, output_path,
+                               created_at, started_at, updated_at, completed_at
+                        FROM background_tasks ORDER BY updated_at DESC LIMIT ?
+                    """, (limit,))
+                    for row in cur.fetchall():
+                        r_dict = dict(row)
+                        tasks_map[r_dict["id"]] = r_dict
                 finally:
                     conn.close()
         except Exception:
             pass
-        return list(mem_tasks.values())
+
+        # 2. Overlay live in-memory tasks
+        with self.lock:
+            for tid, t in self.tasks.items():
+                tasks_map[tid] = dict(t)
+
+        # 3. Normalize and filter
+        results = []
+        for t in tasks_map.values():
+            norm = self._normalize_task_record(t)
+            if type_filter:
+                t_type = norm.get("type", "").lower()
+                if type_filter.lower() not in t_type and t_type not in type_filter.lower():
+                    continue
+            if status_filter:
+                s_filter = status_filter.upper()
+                if s_filter == "ACTIVE":
+                    if norm.get("status") not in ["STARTING", "RUNNING", "POST_PROCESSING", "VERIFYING", "CANCELLING"]:
+                        continue
+                elif s_filter == "QUEUED":
+                    if norm.get("status") != "QUEUED":
+                        continue
+                elif norm.get("status") != s_filter:
+                    continue
+            results.append(norm)
+
+        results.sort(key=lambda x: x.get("updated_at_epoch") or 0, reverse=True)
+        return results[:limit]
 
 
 task_runner = BoundedTaskRunner()
@@ -2086,21 +2308,15 @@ def sanitized_system_status():
     m, s = divmod(rem, 60)
     uptime_str = f"{h}h {m}m {s}s"
 
-    # Filter tasks owned by current user
+    # Filter active tasks owned by current user
     user_id = g.user.get("user_id") if g.user else "guest"
     is_admin = (g.user.get("role") == "admin") if g.user else False
 
-    user_tasks = []
-    with task_runner.lock:
-        for t in task_runner.active_tasks:
-            if is_admin or t["owner_user_id"] == user_id:
-                user_tasks.append({
-                    "id": t["id"],
-                    "title": t["title"],
-                    "type": t["type"],
-                    "status": t["status"],
-                    "progress": t["progress"]
-                })
+    all_active = [t for t in task_runner.get_all_tasks() if t.get('status') in ['STARTING', 'RUNNING', 'POST_PROCESSING', 'VERIFYING', 'CANCELLING']]
+    if not is_admin:
+        all_active = [t for t in all_active if t.get('owner_user_id') == user_id or t.get('owner') == user_id]
+
+    active_task_obj = all_active[0] if all_active else None
 
     ai_state = ollama_registry.get_ai_state()
     tunnel_status = probe_localtonet_health()
@@ -2110,8 +2326,6 @@ def sanitized_system_status():
     l2n_connected = (tunnel_status.get("public_endpoint") == "reachable" or tunnel_status.get("state") == "TUNNEL_CONNECTED")
     ssh_online = (ssh_status.get("status") == "online")
     ollama_running = (ai_state.get("engine") == "running")
-
-    active_task_obj = user_tasks[0] if user_tasks else None
 
     return jsonify({
         "server": {
@@ -2177,8 +2391,8 @@ def sanitized_system_status():
         },
         "active_task": active_task_obj,
         "tasks": {
-            "active_count": len(user_tasks),
-            "active_tasks": user_tasks
+            "active_count": len(all_active),
+            "active_tasks": all_active
         },
         "rag": {
             "documents_count": rag_engine.get_diagnostics()["document_count"],
@@ -2545,40 +2759,32 @@ def list_tasks():
 
     user_id = g.user.get("user_id")
     is_admin = (g.user.get("role") == "admin")
+    type_filter = request.args.get('type')
+    status_filter = request.args.get('status')
 
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("PRAGMA table_info(background_tasks);")
-            tcols = [c[1] for c in cur.fetchall()]
-            type_col = "type" if "type" in tcols else "task_type"
-            err_col = "error" if "error" in tcols else "NULL as error"
+    all_tasks = task_runner.get_all_tasks(type_filter=type_filter, status_filter=status_filter)
+    if not is_admin:
+        all_tasks = [t for t in all_tasks if t.get('owner_user_id') == user_id or t.get('owner') == user_id]
 
-            query = f"SELECT id, title, {type_col} as task_type, status, progress, logs, {err_col}, owner_user_id, created_at, updated_at FROM background_tasks"
-            if is_admin:
-                cur.execute(f"{query} ORDER BY created_at DESC LIMIT 50")
-            else:
-                cur.execute(f"{query} WHERE owner_user_id = ? ORDER BY created_at DESC LIMIT 50", (user_id,))
-            rows = cur.fetchall()
-            tasks = []
-            for r in rows:
-                tasks.append({
-                    "id": r["id"],
-                    "title": r["title"],
-                    "type": r["task_type"],
-                    "status": r["status"],
-                    "progress": r["progress"],
-                    "logs": json.loads(r["logs"] or "[]"),
-                    "error": r["error"],
-                    "owner": r["owner_user_id"],
-                    "owner_user_id": r["owner_user_id"],
-                    "created_at": r["created_at"],
-                    "updated_at": r["updated_at"]
-                })
-            return jsonify(tasks)
-        finally:
-            conn.close()
+    return jsonify(all_tasks)
+
+
+@app.route('/api/tasks/<task_id>', methods=['GET'])
+def get_task_endpoint(task_id):
+    err = require_auth()
+    if err:
+        return err
+
+    task = task_runner.get_task(task_id)
+    if not task:
+        return jsonify({"error": "Task not found."}), 404
+
+    user_id = g.user.get("user_id")
+    is_admin = (g.user.get("role") == "admin")
+    if not is_admin and task.get("owner_user_id") != user_id and task.get("owner") != user_id:
+        return jsonify({"error": "Permission denied."}), 403
+
+    return jsonify(task)
 
 
 @app.route('/api/tasks/<task_id>/cancel', methods=['POST'])
@@ -2596,19 +2802,87 @@ def cancel_task_endpoint(task_id):
 
     success, msg = task_runner.cancel_task(task_id, requesting_user_id=user_id, is_admin=is_admin)
     if not success:
-        status_code = 403 if "Permission denied" in msg else 400
+        if "not found" in msg.lower():
+            status_code = 404
+        elif "permission denied" in msg.lower():
+            status_code = 403
+        else:
+            status_code = 400
         return jsonify({"cancelled": False, "message": msg}), status_code
 
     return jsonify({"cancelled": True, "message": msg})
 
 
-# --- Storage & Vault Endpoints ---
+# --- Storage & Vault Protected Paths Policy ---
+PROTECTED_INTERNAL_NAMES = {
+    "nexus_vault.db", "nexus_vault.db-wal", "nexus_vault.db-shm",
+    "rag_vault.db", "rag_vault.db-wal", "rag_vault.db-shm",
+    "rag_index.json", "server_config.json",
+    ".env", ".env.local", "localtonet.log", ".gitkeep"
+}
+PROTECTED_INTERNAL_EXTS = {
+    ".db", ".sqlite", ".sqlite3", ".db-wal", ".db-shm", ".pyc", ".pid", ".ragindex"
+}
+PROTECTED_INTERNAL_DIRS = {
+    "__pycache__", ".git", ".ssh", ".tmp", "backups", ".localtonet"
+}
+
+
+def is_protected_internal_path(path_str: str) -> bool:
+    """
+    Authoritative classification helper for NexusNode Vault.
+    Returns True if path represents reserved system databases, indexes, configuration,
+    or internal runtime state that must NEVER be exposed as user-manageable Vault objects.
+    """
+    if not path_str:
+        return False
+    try:
+        decoded = urllib.parse.unquote(str(path_str))
+        cleaned = decoded.replace('\\', '/').strip('/')
+        
+        parts = [p.lower() for p in cleaned.split('/') if p]
+        for part in parts:
+            if part in PROTECTED_INTERNAL_DIRS or part in PROTECTED_INTERNAL_NAMES:
+                return True
+            if part.startswith('.') and part not in ['.', '..']:
+                return True
+            _, ext = os.path.splitext(part)
+            if ext in PROTECTED_INTERNAL_EXTS:
+                return True
+
+        storage_real = os.path.realpath(config.STORAGE_DIR)
+        target_real = os.path.realpath(os.path.join(config.STORAGE_DIR, cleaned)) if not os.path.isabs(cleaned) else os.path.realpath(cleaned)
+        
+        if not target_real.startswith(storage_real):
+            return True
+            
+        rel_real = os.path.relpath(target_real, storage_real).replace('\\', '/')
+        if rel_real != '.':
+            rel_parts = [p.lower() for p in rel_real.split('/') if p]
+            for part in rel_parts:
+                if part in PROTECTED_INTERNAL_DIRS or part in PROTECTED_INTERNAL_NAMES:
+                    return True
+                if part.startswith('.'):
+                    return True
+                _, ext = os.path.splitext(part)
+                if ext in PROTECTED_INTERNAL_EXTS:
+                    return True
+    except Exception:
+        return True
+
+    return False
+
+
 def sanitize_storage_path(filename: str) -> str:
-    cleaned = filename.replace('\\', '/').strip('/')
+    if not filename:
+        return config.STORAGE_DIR
+    decoded = urllib.parse.unquote(str(filename))
+    cleaned = decoded.replace('\\', '/').strip('/')
     if '..' in cleaned:
         raise ValueError("Invalid path: directory traversal prohibited.")
-    full_path = os.path.abspath(os.path.join(config.STORAGE_DIR, cleaned))
-    if not full_path.startswith(os.path.abspath(config.STORAGE_DIR)):
+    full_path = os.path.realpath(os.path.join(config.STORAGE_DIR, cleaned))
+    storage_real = os.path.realpath(config.STORAGE_DIR)
+    if not full_path.startswith(storage_real):
         raise ValueError("Path traversal violation detected.")
     return full_path
 
@@ -2620,6 +2894,9 @@ def list_files():
         return err
 
     subpath = request.args.get('path', '').strip().replace('\\', '/')
+    if is_protected_internal_path(subpath):
+        return jsonify({"error": "Directory not found."}), 404
+
     try:
         current_dir = sanitize_storage_path(subpath) if subpath else config.STORAGE_DIR
     except ValueError as e:
@@ -2631,14 +2908,14 @@ def list_files():
     items = []
     try:
         for entry in os.scandir(current_dir):
-            if entry.name in ['__pycache__', '.tmp', '.git', 'backups']:
+            if is_protected_internal_path(entry.path):
                 continue
-            if entry.name == '.gitkeep':
+            if entry.name.startswith('.'):
                 continue
 
             rel = os.path.relpath(entry.path, config.STORAGE_DIR).replace('\\', '/')
             stat = entry.stat()
-            modified = datetime.fromtimestamp(stat.st_mtime).isoformat()
+            modified = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
             if entry.is_dir():
                 items.append({
                     "name": entry.name,
@@ -2686,6 +2963,9 @@ def upload_file():
 
     dest_folder = request.form.get('path', '').strip().replace('\\', '/')
     filename = os.path.basename(file.filename)
+    if is_protected_internal_path(dest_folder) or is_protected_internal_path(filename):
+        return jsonify({"error": "Invalid destination path or filename."}), 400
+
     try:
         target_dir = sanitize_storage_path(dest_folder) if dest_folder else config.STORAGE_DIR
     except ValueError as e:
@@ -2693,6 +2973,8 @@ def upload_file():
 
     os.makedirs(target_dir, exist_ok=True)
     dest_path = os.path.join(target_dir, filename)
+    if is_protected_internal_path(dest_path):
+        return jsonify({"error": "Forbidden target path."}), 403
 
     try:
         file.save(dest_path)
@@ -2708,9 +2990,12 @@ def download_file(filename):
     if err:
         return err
 
+    if is_protected_internal_path(filename):
+        return jsonify({"error": "File not found."}), 404
+
     try:
         target_path = sanitize_storage_path(filename)
-        if not os.path.exists(target_path):
+        if is_protected_internal_path(target_path) or not os.path.exists(target_path):
             return jsonify({"error": "File not found."}), 404
 
         if os.path.isdir(target_path):
@@ -2721,9 +3006,9 @@ def download_file(filename):
             with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
                 for root, _, files in os.walk(target_path):
                     for f in files:
-                        if f == '.gitkeep':
-                            continue
                         f_full = os.path.join(root, f)
+                        if is_protected_internal_path(f_full):
+                            continue
                         f_rel = os.path.relpath(f_full, target_path)
                         zf.write(f_full, arcname=f_rel)
             memory_file.seek(0)
@@ -2735,8 +3020,10 @@ def download_file(filename):
             )
 
         return send_file(target_path, as_attachment=True)
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 403
+    except ValueError:
+        return jsonify({"error": "File not found."}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/stream/<path:filename>', methods=['GET'])
@@ -2745,9 +3032,12 @@ def stream_media_file(filename):
     if err:
         return err
 
+    if is_protected_internal_path(filename):
+        return jsonify({"error": "Media file not found."}), 404
+
     try:
         target_path = sanitize_storage_path(filename)
-        if not os.path.exists(target_path) or os.path.isdir(target_path):
+        if is_protected_internal_path(target_path) or not os.path.exists(target_path) or os.path.isdir(target_path):
             return jsonify({"error": "Media file not found."}), 404
 
         file_size = os.path.getsize(target_path)
@@ -2785,8 +3075,8 @@ def stream_media_file(filename):
         rv.headers.add('Content-Length', str(length))
         return rv
 
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 403
+    except ValueError:
+        return jsonify({"error": "Media file not found."}), 404
 
 
 @app.route('/files/<path:filename>', methods=['DELETE'])
@@ -2795,9 +3085,12 @@ def delete_file(filename):
     if err:
         return err
 
+    if is_protected_internal_path(filename):
+        return jsonify({"error": "File not found."}), 404
+
     try:
         target_path = sanitize_storage_path(filename)
-        if not os.path.exists(target_path):
+        if is_protected_internal_path(target_path) or not os.path.exists(target_path):
             return jsonify({"error": "File not found."}), 404
         if os.path.isdir(target_path):
             shutil.rmtree(target_path)
@@ -2805,11 +3098,11 @@ def delete_file(filename):
             os.remove(target_path)
         log_event("INFO", "STORAGE", f"User '{g.user.get('user_id')}' deleted '{filename}'.")
         return jsonify({"message": f"'{filename}' deleted successfully."})
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 403
+    except ValueError:
+        return jsonify({"error": "File not found."}), 404
 
 
-# --- Media Center Routes ---
+# --- Media Center Routes & YT-DLP Lifecycle Worker ---
 @app.route('/api/media/download', methods=['POST'])
 def enqueue_media_download():
     err = require_privilege_or_admin("can_download_media")
@@ -2839,38 +3132,149 @@ def enqueue_media_download():
         if task_id:
             enqueued.append(task_id)
 
-    return jsonify({"success": True, "enqueued_count": len(enqueued), "task_ids": enqueued, "task_id": enqueued[0] if enqueued else None})
+    return jsonify({
+        "success": True,
+        "enqueued_count": len(enqueued),
+        "task_ids": enqueued,
+        "task_id": enqueued[0] if enqueued else None,
+        "status": "QUEUED"
+    })
 
 
 def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, destination: str, custom_name: str):
-    task_obj['logs'].append(f"Starting yt-dlp download for: {url}")
+    """
+    Authoritative yt-dlp media downloader execution with lifecycle stages:
+    STARTING -> DOWNLOADING (RUNNING) -> POST_PROCESSING -> VERIFYING -> COMPLETED
+    """
+    task_obj['status'] = 'RUNNING'
+    task_obj['stage'] = 'STARTING'
+    task_obj['updated_at'] = time.time()
+    task_runner._save_task_to_db(task_obj)
+
     dest_dir = os.path.join(config.STORAGE_DIR, destination)
     os.makedirs(dest_dir, exist_ok=True)
 
     out_tmpl = os.path.join(dest_dir, f"{custom_name}.%(ext)s" if custom_name else "%(title)s.%(ext)s")
 
-    cmd = ["yt-dlp", "--no-warnings", "-o", out_tmpl]
+    cmd = [
+        "yt-dlp",
+        "--newline",
+        "--no-warnings",
+        "--no-playlist",
+        "--progress-template", "download:%(progress._percent_str)s %(progress._speed_str)s %(progress._eta_str)s",
+        "-o", out_tmpl
+    ]
     if fmt in ['mp3', 'm4a', 'opus', 'wav', 'flac']:
         cmd.extend(["-x", "--audio-format", fmt])
     else:
         cmd.extend(["-f", "bv*+ba/b", "--merge-output-format", fmt])
     cmd.append(url)
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Spawning yt-dlp download: {url}")
+
+    preexec = os.setsid if os.name != 'nt' else None
+    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        preexec_fn=preexec,
+        creationflags=creationflags
+    )
     task_obj['process'] = proc
+    task_obj['stage'] = 'DOWNLOADING'
+    task_runner._save_task_to_db(task_obj)
+
+    last_db_save = time.time()
 
     for line in proc.stdout:
-        if task_obj['status'] == 'cancelled':
-            proc.terminate()
+        if str(task_obj.get('status', '')).upper() in ['CANCELLED', 'CANCELLING']:
+            terminate_process_tree(proc)
             break
-        task_obj['logs'].append(line.strip())
-        m = re.search(r'(\d+\.\d+)%', line)
-        if m:
-            task_obj['progress'] = min(99, int(float(m.group(1))))
+
+        line_str = line.strip()
+        if not line_str:
+            continue
+
+        task_obj['logs'].append(line_str)
+        if len(task_obj['logs']) > 150:
+            task_obj['logs'] = task_obj['logs'][-150:]
+
+        # Parse download percentage
+        m_pct = re.search(r'(?:download:\s*|\[download\]\s*)(\d+(?:\.\d+)?)%', line_str)
+        if m_pct:
+            pct = float(m_pct.group(1))
+            task_obj['progress'] = min(99, int(pct))
+            task_obj['stage'] = 'DOWNLOADING'
+
+        # Parse speed & ETA
+        m_spd = re.search(r'at\s+([\d\.]+[kMG]?i?B/s)', line_str)
+        if m_spd:
+            task_obj['speed_bps'] = parse_speed_string_to_bps(m_spd.group(1))
+        m_eta = re.search(r'ETA\s+(\d+:\d+(?::\d+)?)', line_str)
+        if m_eta:
+            task_obj['eta_seconds'] = parse_eta_string_to_seconds(m_eta.group(1))
+
+        # Detect post-processing / merger / ffmpeg / audio extraction
+        if any(marker in line_str for marker in ['[Merger]', '[ExtractAudio]', '[ffmpeg]', '[Fixup]', 'Merging formats', 'Destination:']):
+            task_obj['stage'] = 'POST_PROCESSING'
+            task_obj['progress'] = 99
+
+        now = time.time()
+        if now - last_db_save >= 1.0 or task_obj['stage'] == 'POST_PROCESSING':
+            task_obj['updated_at'] = now
+            task_runner._save_task_to_db(task_obj)
+            last_db_save = now
 
     proc.wait()
-    if proc.returncode != 0 and task_obj['status'] != 'cancelled':
-        raise RuntimeError(f"yt-dlp exited with status {proc.returncode}")
+
+    if str(task_obj.get('status', '')).upper() in ['CANCELLED', 'CANCELLING']:
+        return
+
+    if proc.returncode != 0:
+        raise RuntimeError(f"yt-dlp exited with code {proc.returncode}")
+
+    # Stage: VERIFYING output file
+    task_obj['stage'] = 'VERIFYING'
+    task_obj['updated_at'] = time.time()
+    task_runner._save_task_to_db(task_obj)
+
+    verified_file = None
+    time_window = task_obj.get('started_at_epoch') or (time.time() - 300)
+
+    for f in os.listdir(dest_dir):
+        fp = os.path.join(dest_dir, f)
+        if os.path.isfile(fp):
+            if f.endswith('.part') or f.endswith('.ytdl'):
+                task_obj['partial_files'].append(fp)
+                continue
+            if custom_name and custom_name.lower() in f.lower():
+                verified_file = fp
+                break
+            try:
+                st = os.stat(fp)
+                if st.st_mtime >= time_window - 10 and st.st_size > 0:
+                    verified_file = fp
+            except Exception:
+                pass
+
+    if not verified_file or not os.path.exists(verified_file) or os.path.getsize(verified_file) == 0:
+        raise RuntimeError("Media verification failed: Output file missing or 0 bytes after yt-dlp completion.")
+
+    rel_out = os.path.relpath(verified_file, config.STORAGE_DIR).replace('\\', '/')
+    size_mb = round(os.path.getsize(verified_file) / (1024 * 1024), 2)
+
+    task_obj['output_path'] = rel_out
+    task_obj['progress'] = 100
+    task_obj['stage'] = 'COMPLETED'
+    task_obj['status'] = 'COMPLETED'
+    task_obj['completed_at'] = time.time()
+    task_obj['updated_at'] = time.time()
+    task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Media verification succeeded: {rel_out} ({size_mb} MB)")
+    task_runner._save_task_to_db(task_obj)
 
 
 @app.route('/api/media/library', methods=['GET'])
@@ -2885,10 +3289,12 @@ def get_media_library():
 
     for root, _, files in os.walk(config.STORAGE_DIR):
         for f in files:
+            fpath = os.path.join(root, f)
+            if is_protected_internal_path(fpath):
+                continue
             _, ext = os.path.splitext(f)
             ext = ext.lower()
             if ext in audio_exts or ext in video_exts:
-                fpath = os.path.join(root, f)
                 rel_path = os.path.relpath(fpath, config.STORAGE_DIR).replace('\\', '/')
                 size_bytes = os.path.getsize(fpath)
                 size_display = f"{round(size_bytes / (1024*1024), 1)} MB"
@@ -2939,6 +3345,9 @@ def manage_shares():
 
         if not filename:
             return jsonify({"error": "validation_error", "message": "Filename required."}), 400
+
+        if is_protected_internal_path(filename):
+            return jsonify({"error": "validation_error", "message": "Resource unavailable."}), 404
 
         ttl_seconds = 86400
         if duration == '1h': ttl_seconds = 3600
@@ -3006,8 +3415,13 @@ def public_share_access(token):
         finally:
             conn.close()
 
+    if is_protected_internal_path(filename):
+        return jsonify({"error": "Share link not found or invalid."}), 404
+
     try:
         fpath = sanitize_storage_path(filename)
+        if is_protected_internal_path(fpath):
+            return jsonify({"error": "Share link not found or invalid."}), 404
         return send_file(fpath, as_attachment=True)
     except Exception as e:
         return jsonify({"error": str(e)}), 404
@@ -3270,9 +3684,12 @@ def get_file_checksum(filename):
     if err:
         return err
 
+    if is_protected_internal_path(filename):
+        return jsonify({"error": "File not found."}), 404
+
     try:
         fpath = sanitize_storage_path(filename)
-        if not os.path.exists(fpath) or os.path.isdir(fpath):
+        if is_protected_internal_path(fpath) or not os.path.exists(fpath) or os.path.isdir(fpath):
             return jsonify({"error": "File not found."}), 404
 
         sha256 = hashlib.sha256()
@@ -3288,8 +3705,8 @@ def get_file_checksum(filename):
             "md5": md5.hexdigest(),
             "size_bytes": os.path.getsize(fpath)
         })
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 403
+    except ValueError:
+        return jsonify({"error": "File not found."}), 404
 
 
 @app.route('/api/vault/clean-temp', methods=['POST'])

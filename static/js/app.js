@@ -622,7 +622,8 @@ function updateTelemetryUI(data) {
   // 7. Active Task Supervision
   const activeTask = data.active_task || (data.tasks?.active_tasks && data.tasks.active_tasks[0]);
   if (activeTask) {
-    appState.activeTaskId = activeTask.id;
+    const rawTaskId = activeTask.task_id || activeTask.id;
+    appState.activeTaskId = rawTaskId;
     const taskTitle = document.getElementById('activeTaskTitle');
     const taskStatus = document.getElementById('activeTaskStatus');
     const taskFill = document.getElementById('activeTaskMeterFill');
@@ -631,13 +632,24 @@ function updateTelemetryUI(data) {
     const cancelBtn = document.getElementById('activeTaskCancelBtn');
     const idText = document.getElementById('activeTaskIdText');
 
+    const statusUpper = (activeTask.status || 'RUNNING').toUpperCase();
+    const stageUpper = (activeTask.stage || statusUpper).toUpperCase();
+    let stepLabel = activeTask.step_label || 'Executing operation...';
+    if (stageUpper === 'POST_PROCESSING') stepLabel = 'Post-processing media (merging/transcoding)...';
+    else if (stageUpper === 'VERIFYING') stepLabel = 'Verifying output media file...';
+    else if (stageUpper === 'DOWNLOADING') {
+      const spd = activeTask.speed_bps ? `${(activeTask.speed_bps / (1024*1024)).toFixed(1)} MB/s` : '';
+      const eta = activeTask.eta_seconds ? `ETA ${activeTask.eta_seconds}s` : '';
+      if (spd || eta) stepLabel = `Downloading... ${[spd, eta].filter(Boolean).join(' • ')}`;
+    }
+
     if (taskTitle) taskTitle.textContent = activeTask.title || activeTask.type;
-    if (taskStatus) taskStatus.textContent = (activeTask.status || 'RUNNING').toUpperCase();
+    if (taskStatus) taskStatus.textContent = stageUpper !== statusUpper ? `${statusUpper} (${stageUpper})` : statusUpper;
     if (taskFill) taskFill.style.width = `${Math.min(activeTask.progress || 0, 100)}%`;
-    if (taskStep) taskStep.textContent = activeTask.step_label || 'Executing operation...';
+    if (taskStep) taskStep.textContent = stepLabel;
     if (taskPct) taskPct.textContent = `${activeTask.progress || 0}%`;
     if (cancelBtn) cancelBtn.style.display = 'block';
-    if (idText) idText.textContent = `TASK: #${activeTask.id}`;
+    if (idText) idText.textContent = `TASK: #${rawTaskId}`;
   } else {
     appState.activeTaskId = null;
     const taskTitle = document.getElementById('activeTaskTitle');
@@ -648,13 +660,13 @@ function updateTelemetryUI(data) {
     const cancelBtn = document.getElementById('activeTaskCancelBtn');
     const idText = document.getElementById('activeTaskIdText');
 
-    if (taskTitle) taskTitle.textContent = 'No Active Operations';
+    if (taskTitle) taskTitle.textContent = 'Bounded Worker Pool (Concurrency = 1)';
     if (taskStatus) taskStatus.textContent = 'IDLE';
     if (taskFill) taskFill.style.width = '0%';
-    if (taskStep) taskStep.textContent = 'System standby';
+    if (taskStep) taskStep.textContent = 'Bounded runner standing by...';
     if (taskPct) taskPct.textContent = '0%';
     if (cancelBtn) cancelBtn.style.display = 'none';
-    if (idText) idText.textContent = 'TASK: NONE';
+    if (idText) idText.textContent = 'TASK: IDLE';
   }
 
   // 8. Core Services
@@ -986,6 +998,8 @@ async function handleMediaDownloadSubmit(event) {
   }
 }
 
+let lastKnownActiveMediaCount = 0;
+
 async function pollMediaQueue() {
   try {
     const res = await apiFetch('/api/tasks?type=media_download');
@@ -1002,23 +1016,44 @@ function renderMediaQueue(tasks) {
   const countLabel = document.getElementById('mediaQueueCount');
   if (!container) return;
 
-  const active = tasks.filter(t => t.status === 'RUNNING' || t.status === 'QUEUED');
-  if (countLabel) countLabel.textContent = `${active.length} ACTIVE`;
+  const activeTasks = tasks.filter(t => ['STARTING', 'RUNNING', 'POST_PROCESSING', 'VERIFYING', 'CANCELLING'].includes((t.status || '').toUpperCase()));
+  const queuedTasks = tasks.filter(t => (t.status || '').toUpperCase() === 'QUEUED');
+  const currentTotal = activeTasks.length + queuedTasks.length;
 
-  if (active.length === 0) {
+  if (countLabel) {
+    if (queuedTasks.length > 0) {
+      countLabel.textContent = `${activeTasks.length} ACTIVE • ${queuedTasks.length} QUEUED`;
+    } else {
+      countLabel.textContent = `${activeTasks.length} ACTIVE`;
+    }
+  }
+
+  if (lastKnownActiveMediaCount > 0 && currentTotal === 0) {
+    loadMediaLibrary();
+  }
+  lastKnownActiveMediaCount = currentTotal;
+
+  const displayTasks = [...activeTasks, ...queuedTasks];
+  if (displayTasks.length === 0) {
     container.innerHTML = '<div class="font-data-sm" style="color: var(--on-surface-muted); text-align: center; padding: 16px;">Queue is currently empty.</div>';
     return;
   }
 
-  container.innerHTML = active.map(t => `
-    <div style="background-color: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); padding: 10px 12px; display: flex; justify-content: space-between; align-items: center;">
-      <div style="display: flex; flex-direction: column; gap: 4px;">
-        <span class="font-headline-md" style="font-size: 13px; color: var(--on-surface-bright);">${escapeHtml(t.title || 'YT-DLP Operation')}</span>
-        <span class="font-data-sm" style="color: var(--on-surface-variant);">${t.status} • ${t.progress || 0}%</span>
+  container.innerHTML = displayTasks.map(t => {
+    const rawId = t.task_id || t.id;
+    const statusUpper = (t.status || 'QUEUED').toUpperCase();
+    const stageUpper = (t.stage || statusUpper).toUpperCase();
+    const stageDisplay = stageUpper !== statusUpper ? `${statusUpper} (${stageUpper})` : statusUpper;
+    return `
+      <div style="background-color: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); padding: 10px 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span class="font-headline-md" style="font-size: 13px; color: var(--on-surface-bright);">${escapeHtml(t.title || 'YT-DLP Operation')}</span>
+          <span class="font-data-sm" style="color: var(--on-surface-variant);">${stageDisplay} • ${t.progress || 0}%</span>
+        </div>
+        <button class="btn btn-danger" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="cancelTask('${escapeHtml(String(rawId))}')">Cancel</button>
       </div>
-      <button class="btn btn-danger" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="cancelTask(${t.id})">Cancel</button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 async function loadMediaLibrary() {
@@ -1149,23 +1184,30 @@ function renderTasksTable(tasks) {
   }
 
   tbody.innerHTML = tasks.map(t => {
-    const canCancel = (t.status === 'RUNNING' || t.status === 'QUEUED');
-    const created = t.created_at ? t.created_at.substring(0, 16).replace('T', ' ') : '--';
+    const rawId = t.task_id || t.id;
+    const statusUpper = (t.status || 'QUEUED').toUpperCase();
+    const stageUpper = (t.stage || statusUpper).toUpperCase();
+    const canCancel = ['QUEUED', 'STARTING', 'RUNNING', 'POST_PROCESSING', 'VERIFYING'].includes(statusUpper);
+    const created = formatTimestamp(t.created_at);
+
     let statusClass = 'var(--on-surface-variant)';
-    if (t.status === 'RUNNING') statusClass = 'var(--primary)';
-    if (t.status === 'COMPLETED') statusClass = 'var(--status-healthy)';
-    if (t.status === 'FAILED') statusClass = 'var(--status-critical)';
+    if (['STARTING', 'RUNNING', 'POST_PROCESSING', 'VERIFYING'].includes(statusUpper)) statusClass = 'var(--primary)';
+    if (statusUpper === 'COMPLETED') statusClass = 'var(--status-healthy)';
+    if (statusUpper === 'FAILED') statusClass = 'var(--status-critical)';
+    if (statusUpper === 'CANCELLED') statusClass = 'var(--on-surface-dim)';
+
+    const displayStatus = stageUpper !== statusUpper ? `${statusUpper} (${stageUpper})` : statusUpper;
 
     return `
       <tr>
-        <td><span class="font-label-caps" style="color: ${statusClass};">${t.status}</span></td>
-        <td><span class="node-badge">${escapeHtml(t.type || 'TASK')}</span></td>
-        <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(t.title || 'Task #' + t.id)}</td>
+        <td><span class="font-label-caps" style="color: ${statusClass};">${displayStatus}</span></td>
+        <td><span class="node-badge">${escapeHtml(t.type || t.task_type || 'TASK')}</span></td>
+        <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(t.title || 'Task #' + rawId)}</td>
         <td class="font-data-sm">${t.progress || 0}%</td>
-        <td class="font-data-sm">${escapeHtml(t.owner || 'system')}</td>
+        <td class="font-data-sm">${escapeHtml(t.owner || t.owner_user_id || 'system')}</td>
         <td class="font-data-sm" style="color: var(--on-surface-variant);">${created}</td>
         <td style="text-align: right;">
-          ${canCancel ? `<button class="btn btn-danger" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="cancelTask(${t.id})">Abort</button>` : '<span style="color: var(--on-surface-dim); font-size: 11px;">--</span>'}
+          ${canCancel ? `<button class="btn btn-danger" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="cancelTask('${escapeHtml(String(rawId))}')">Abort</button>` : '<span style="color: var(--on-surface-dim); font-size: 11px;">--</span>'}
         </td>
       </tr>
     `;
@@ -1180,11 +1222,15 @@ async function cancelCurrentActiveTask() {
 
 async function cancelTask(taskId) {
   try {
-    const res = await apiFetch(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
+    const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, { method: 'POST' });
     if (res.ok) {
       showToast(`Task #${taskId} cancelled.`, 'warning');
       loadTasksList();
+      pollMediaQueue();
       pollSystemStatus();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.message || 'Failed to cancel task.', 'error');
     }
   } catch (e) {
     showToast('Failed to cancel task.', 'error');
@@ -1853,6 +1899,29 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function formatTimestamp(val) {
+  if (!val) return '--';
+  try {
+    if (typeof val === 'number') {
+      const ms = val < 10000000000 ? val * 1000 : val;
+      const d = new Date(ms);
+      if (!isNaN(d.getTime())) return d.toISOString().substring(0, 16).replace('T', ' ');
+    } else if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (/^\d+(\.\d+)?$/.test(trimmed)) {
+        const num = parseFloat(trimmed);
+        const ms = num < 10000000000 ? num * 1000 : num;
+        const d = new Date(ms);
+        if (!isNaN(d.getTime())) return d.toISOString().substring(0, 16).replace('T', ' ');
+      }
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) return d.toISOString().substring(0, 16).replace('T', ' ');
+      return trimmed.substring(0, 16).replace('T', ' ');
+    }
+  } catch (e) {}
+  return '--';
 }
 
 // ==============================================================================

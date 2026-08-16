@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.2] - 2026-08-16
+
+### 🛡️ Deep Task Queue & Vault Internal Files Security Repair
+
+#### Fixed & Hardened
+- **Authoritative SQLite Task State Machine**:
+  - Promoted SQLite `background_tasks` to the authoritative persistent state store across all task transitions, decoupling execution state from volatile memory caches.
+  - Added explicit lifecycle stages: `QUEUED` -> `STARTING` -> `RUNNING` / `DOWNLOADING` -> `POST_PROCESSING` -> `VERIFYING` -> `COMPLETED`, with failure and cancellation states (`CANCELLING` -> `CANCELLED`, `FAILED`).
+  - Implemented output verification gate: tasks only reach `COMPLETED` when the destination media file is physically verified on disk with non-zero byte size and zero partial residue (`.part` / `.ytdl`).
+  - Added robust process-tree termination (`terminate_process_tree`) supporting POSIX session process groups and Windows `/T /F` process-tree termination, guaranteeing zero orphaned `yt-dlp` or `ffmpeg` child processes on task cancellation.
+  - Normalized task schema with canonical ISO-8601 UTC timestamp strings (`created_at`, `started_at`, `updated_at`, `completed_at`), download speed (`speed_bps`), and ETA (`eta_seconds`).
+- **Protected Internal Files & Vault Boundary Enforcement**:
+  - Implemented authoritative `is_protected_internal_path` helper resolving real paths and preventing directory traversal and symlink escapes.
+  - Enforced system-wide isolation across `/files`, `/download/<path>`, `/stream/<path>`, `/files/<path>` (DELETE), `/upload`, `/api/shares`, `/s/<token>`, and `/api/vault/checksum/<path>`.
+  - Guaranteed internal databases (`nexus_vault.db*`, `rag_vault.db*`), RAG indexes (`rag_index.json`), configuration (`server_config.json`, `.env*`), and sensitive system folders (`__pycache__`, `.git`, `.ssh`, `.tmp`, `backups`, `.localtonet`) are never exposed as user-manageable Vault objects.
+  - Updated folder zip generator in `/download/<folder>` to recursively exclude all protected internal files.
+- **Frontend & CLI Synchronization**:
+  - Added defensive `formatTimestamp()` utility in `static/js/app.js` supporting both numeric epoch and string timestamps, eliminating `t.created_at.substring is not a function` errors.
+  - Updated Media Center queue counter to reflect `${activeCount} ACTIVE • ${queuedCount} QUEUED` and automatically reload the media library upon download completion.
+  - Properly escaped and string-quoted task IDs in `cancelTask('...')` calls.
+  - Hardened Universal Remote CLI `nexus tasks` and `nexus media` commands to seamlessly accept both list and dictionary server responses.
+- **Test Suite Expansion**:
+  - Added regression test suites `test_51_protected_internal_paths_policy_and_vault_isolation`, `test_52_folder_zip_excludes_protected_files`, and `test_53_task_queue_sqlite_persistence_and_lifecycle_stages`.
+  - All **138 unit, client, and security tests** passing with 100% OK.
+
+---
+
 ## [2.3.1] - 2026-08-16
 
 ### 🚀 Live Functionality & Performance Audit & Repair

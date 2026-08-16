@@ -166,7 +166,7 @@ class TestNexusNodeServer(unittest.TestCase):
         # Cancel Task 2
         success, msg = runner.cancel_task(t2_id, is_admin=True)
         self.assertTrue(success)
-        self.assertEqual(runner.tasks[t2_id]['status'], 'cancelled')
+        self.assertIn(runner.tasks[t2_id]['status'].upper(), ['CANCELLED'])
 
     def test_06_partial_download_cleanup_on_cancel(self):
         """Verify partial files are removed on task cleanup."""
@@ -2100,6 +2100,136 @@ class TestNexusNodeServer(unittest.TestCase):
             shell_adm.do_help("")
         self.assertIn("Administrative Commands", out_adm.getvalue())
         self.assertIn("services", out_adm.getvalue())
+
+    def test_51_protected_internal_paths_policy_and_vault_isolation(self):
+        """
+        Verify that internal SQLite databases, WAL files, config files, and hidden directories
+        are strictly hidden and unreachable via normal Vault APIs (/files, /download, /stream, /files DELETE, /api/shares, /api/vault/checksum).
+        """
+        # Create sensitive and internal files inside storage vault root
+        protected_files = [
+            "nexus_vault.db", "nexus_vault.db-wal", "nexus_vault.db-shm",
+            "rag_vault.db", "rag_index.json", "server_config.json",
+            ".env", "custom_secret.sqlite3", "localtonet.log"
+        ]
+        for pf in protected_files:
+            fp = os.path.join(config.STORAGE_DIR, pf)
+            with open(fp, "w") as f:
+                f.write("sensitive internal data")
+
+        # Create normal user file
+        user_file = os.path.join(config.STORAGE_DIR, "legit_document.pdf")
+        with open(user_file, "w") as f:
+            f.write("public document content")
+
+        # 1. GET /files should list user_file but ZERO protected files
+        res_list = self.client.get('/files', headers={'Authorization': f'Bearer {self.admin_token}'})
+        self.assertEqual(res_list.status_code, 200)
+        file_names = [item['name'] for item in res_list.get_json().get('files', [])]
+        self.assertIn("legit_document.pdf", file_names)
+        for pf in protected_files:
+            self.assertNotIn(pf, file_names)
+
+        # 2. GET /download/<protected> must return 404
+        for pf in protected_files:
+            res_dl = self.client.get(f'/download/{pf}', headers={'Authorization': f'Bearer {self.admin_token}'})
+            self.assertEqual(res_dl.status_code, 404, f"Expected 404 for protected download {pf}")
+
+        # 3. GET /stream/<protected> must return 404
+        res_stream = self.client.get('/stream/nexus_vault.db', headers={'Authorization': f'Bearer {self.admin_token}'})
+        self.assertEqual(res_stream.status_code, 404)
+
+        # 4. DELETE /files/<protected> must return 404 and NOT delete file
+        res_del = self.client.delete('/files/nexus_vault.db', headers={'Authorization': f'Bearer {self.admin_token}'})
+        self.assertEqual(res_del.status_code, 404)
+        self.assertTrue(os.path.exists(os.path.join(config.STORAGE_DIR, "nexus_vault.db")))
+
+        # 5. POST /api/shares with protected path must return 404
+        res_share = self.client.post('/api/shares', headers={'Authorization': f'Bearer {self.admin_token}'}, json={'filename': 'nexus_vault.db'})
+        self.assertEqual(res_share.status_code, 404)
+
+        # 6. GET /api/vault/checksum/<protected> must return 404
+        res_chk = self.client.get('/api/vault/checksum/rag_vault.db', headers={'Authorization': f'Bearer {self.admin_token}'})
+        self.assertEqual(res_chk.status_code, 404)
+
+    def test_52_folder_zip_excludes_protected_files(self):
+        """Verify downloading a folder as zip excludes any protected internal files."""
+        import zipfile
+        import io
+
+        test_dir = os.path.join(config.STORAGE_DIR, "project_folder")
+        os.makedirs(test_dir, exist_ok=True)
+        
+        with open(os.path.join(test_dir, "notes.txt"), "w") as f:
+            f.write("regular user notes")
+        with open(os.path.join(test_dir, "internal.db"), "w") as f:
+            f.write("should not be zipped")
+        with open(os.path.join(test_dir, ".env"), "w") as f:
+            f.write("SECRET_KEY=12345")
+
+        res = self.client.get('/download/project_folder', headers={'Authorization': f'Bearer {self.admin_token}'})
+        self.assertEqual(res.status_code, 200)
+
+        zf = zipfile.ZipFile(io.BytesIO(res.data))
+        zipped_names = zf.namelist()
+        self.assertIn("notes.txt", zipped_names)
+        self.assertNotIn("internal.db", zipped_names)
+        self.assertNotIn(".env", zipped_names)
+
+    def test_53_task_queue_sqlite_persistence_and_lifecycle_stages(self):
+        """
+        Verify that BoundedTaskRunner persists all transitions to SQLite background_tasks,
+        records ISO-8601 timestamps, and accurately tracks lifecycle stages.
+        """
+        runner = server_app.task_runner
+
+        def sample_job(task_obj):
+            task_obj['stage'] = 'STARTING'
+            task_obj['progress'] = 10
+            runner._save_task_to_db(task_obj)
+            time.sleep(0.05)
+
+            task_obj['stage'] = 'POST_PROCESSING'
+            task_obj['progress'] = 99
+            runner._save_task_to_db(task_obj)
+            time.sleep(0.05)
+
+            task_obj['stage'] = 'VERIFYING'
+            runner._save_task_to_db(task_obj)
+            time.sleep(0.05)
+
+            task_obj['output_path'] = 'Downloads/sample.mp4'
+            task_obj['status'] = 'COMPLETED'
+            task_obj['stage'] = 'COMPLETED'
+            task_obj['progress'] = 100
+
+        task_id, _ = runner.enqueue_task(
+            "Lifecycle Test Task", "media_download", sample_job,
+            owner_user_id="admin"
+        )
+        self.assertIsNotNone(task_id)
+
+        # Inspect database immediately
+        task_data = runner.get_task(task_id)
+        self.assertIsNotNone(task_data)
+        self.assertEqual(task_data["id"], task_id)
+        self.assertIn("created_at", task_data)
+        self.assertTrue(isinstance(task_data["created_at"], str))
+        self.assertIn("Z", task_data["created_at"])  # ISO-8601 check
+
+        # Wait for job completion
+        for _ in range(50):
+            t = runner.get_task(task_id)
+            if t and t.get("status") == "COMPLETED":
+                break
+            time.sleep(0.05)
+
+        completed_task = runner.get_task(task_id)
+        self.assertEqual(completed_task["status"], "COMPLETED")
+        self.assertEqual(completed_task["stage"], "COMPLETED")
+        self.assertEqual(completed_task["progress"], 100)
+        self.assertEqual(completed_task["output_path"], "Downloads/sample.mp4")
+        self.assertIsNotNone(completed_task.get("completed_at"))
 
 
 if __name__ == '__main__':
