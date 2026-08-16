@@ -132,7 +132,9 @@ def create_parser() -> NexusArgumentParser:
 
     # --- account ---
     p_acc = subparsers.add_parser("account", help="Account and session settings", parents=[common_parser])
-    p_acc.add_argument("account_action", nargs="?", default="whoami", choices=["whoami", "session", "logout"], help="Action")
+    p_acc.add_argument("account_action", nargs="?", default="whoami", choices=["whoami", "session", "logout", "password", "revoke-sessions"], help="Action")
+    p_acc.add_argument("--current-password", help="Current account password", default=None)
+    p_acc.add_argument("--new-password", help="New account password", default=None)
 
     # --- services (Admin) ---
     p_svc = subparsers.add_parser("services", help="Admin: System services supervision", parents=[common_parser])
@@ -140,11 +142,9 @@ def create_parser() -> NexusArgumentParser:
     p_svc.add_argument("service_name", nargs="?", default=None, help="Service name (e.g. ollama, cloudflared, localtonet)")
 
     # --- models (Admin) ---
-    p_mod = subparsers.add_parser("models", help="Admin: Model registry & budget estimator", parents=[common_parser])
-    p_mod.add_argument("model_action", nargs="?", default="list", choices=["list", "ls", "details", "info", "estimate"], help="Action")
-    p_mod.add_argument("model_name", nargs="?", default=None, help="Model name")
-    p_mod.add_argument("--param", default="1.5b", help="Parameter size for estimate")
-    p_mod.add_argument("--quant", default="q4_k_m", help="Quantization for estimate")
+    p_mod = subparsers.add_parser("models", help="Admin: AI Model management", parents=[common_parser])
+    p_mod.add_argument("model_action", nargs="?", default="list", choices=["list", "ls", "pull", "delete", "rm", "active", "set-active"], help="Action")
+    p_mod.add_argument("model_name", nargs="?", default=None, help="Ollama model name (e.g. llama3.2:1b)")
 
     # --- diagnostics (Admin) ---
     p_diag = subparsers.add_parser("diagnostics", help="Admin: Appliance technical diagnostics", parents=[common_parser])
@@ -160,10 +160,11 @@ def create_parser() -> NexusArgumentParser:
 
     # --- users (Admin) ---
     p_users = subparsers.add_parser("users", help="Admin: User accounts & privileges", parents=[common_parser])
-    p_users.add_argument("user_action", nargs="?", default="list", choices=["list", "ls", "create", "add", "delete", "rm", "privileges"], help="Action")
+    p_users.add_argument("user_action", nargs="?", default="list", choices=["list", "ls", "create", "add", "delete", "rm", "privileges", "password", "disable", "enable", "revoke-sessions"], help="Action")
     p_users.add_argument("username", nargs="?", default=None, help="User ID")
-    p_users.add_argument("--password", help="User password for create", default=None)
+    p_users.add_argument("--password", help="User password for create/reset", default=None)
     p_users.add_argument("--role", choices=["admin", "user"], default="user", help="Account role")
+    p_users.add_argument("--is-disabled", action="store_true", help="Mark user as disabled on create")
     p_users.add_argument("--grant", help="Privilege to grant")
     p_users.add_argument("--revoke", help="Privilege to revoke")
     p_users.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompts")

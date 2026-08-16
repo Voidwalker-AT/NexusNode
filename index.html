@@ -950,12 +950,15 @@
       <!-- ===================================================================== -->
       <main class="tab-pane admin-only" id="tab-admin" style="display: none;">
         <section class="tech-card" style="margin-bottom: var(--gap-gutter);">
-          <div class="tech-card-header">
+          <div class="tech-card-header" style="flex-wrap: wrap; gap: 8px;">
             <h2 class="tech-card-title">
               <span class="material-symbols-outlined">admin_panel_settings</span>
               <span>User & Role Governance</span>
             </h2>
-            <button class="btn btn-primary" onclick="openAddUserModal()">Add User</button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input class="form-input" id="adminUserSearchInput" placeholder="Filter users..." style="padding: 4px 8px; font-size: 12px; height: 28px; width: 160px;" oninput="filterAdminUsersTable()">
+              <button class="btn btn-primary" onclick="openAddUserModal()">Add User</button>
+            </div>
           </div>
           <div class="vault-table-container">
             <table class="tech-table">
@@ -963,6 +966,8 @@
                 <tr>
                   <th>USERNAME</th>
                   <th>ROLE</th>
+                  <th>STATUS</th>
+                  <th>PRIVILEGES</th>
                   <th>CREATED</th>
                   <th style="text-align: right;">ACTIONS</th>
                 </tr>
@@ -1018,6 +1023,36 @@
               <input class="form-input" id="settingLogRetention" type="number" value="30">
             </div>
           </div>
+        </div>
+
+        <!-- Self-Service Account Security & Password Card -->
+        <div class="tech-card" style="margin-top: var(--gap-gutter);">
+          <div class="tech-card-header">
+            <h2 class="tech-card-title">
+              <span class="material-symbols-outlined">shield_person</span>
+              <span>Account Security & Password</span>
+            </h2>
+          </div>
+          <form id="accountPasswordForm" onsubmit="handleChangeOwnPassword(event)">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label class="form-label" for="accountCurrentPassword">CURRENT PASSWORD</label>
+                <input class="form-input" id="accountCurrentPassword" type="password" placeholder="••••••••" required autocomplete="current-password">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="accountNewPassword">NEW PASSWORD (MIN 6 CHARS)</label>
+                <input class="form-input" id="accountNewPassword" type="password" placeholder="••••••••" required minlength="6" autocomplete="new-password">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="accountConfirmPassword">CONFIRM NEW PASSWORD</label>
+                <input class="form-input" id="accountConfirmPassword" type="password" placeholder="••••••••" required minlength="6" autocomplete="new-password">
+              </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap;">
+              <button class="btn btn-primary" type="submit" id="savePasswordBtn">Update Password</button>
+              <button class="btn btn-secondary" type="button" onclick="handleRevokeOtherSessions()">Revoke Other Active Sessions</button>
+            </div>
+          </form>
         </div>
       </main>
 
@@ -1148,6 +1183,103 @@
           <span class="material-symbols-outlined">login</span>
           <span>AUTHENTICATE</span>
         </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- ADMIN: USER ADD / EDIT & PRIVILEGES MODAL                                -->
+  <!-- ========================================================================= -->
+  <div class="photo-modal-overlay" id="adminUserModal" style="display: none;" onclick="handleUserModalOverlayClick(event)">
+    <div class="photo-modal-card" style="max-width: 540px;">
+      <div class="photo-modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="material-symbols-outlined" style="color: var(--primary);">manage_accounts</span>
+          <span class="font-data-md" id="adminUserModalTitle" style="color: var(--on-surface);">Create User Account</span>
+        </div>
+        <button class="icon-btn" onclick="closeAdminUserModal()" title="Close">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <form id="adminUserForm" onsubmit="handleSaveAdminUser(event)" style="padding: 16px;">
+        <input type="hidden" id="adminUserMode" value="create">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label" for="adminUserIdInput">USER ID / USERNAME</label>
+            <input class="form-input" id="adminUserIdInput" placeholder="operator_name" required pattern="[a-zA-Z0-9_\-]+" title="Letters, numbers, underscores, and hyphens only">
+          </div>
+          <div class="form-group" id="adminUserPasswordGroup">
+            <label class="form-label" for="adminUserPasswordInput">PASSWORD (MIN 6 CHARS)</label>
+            <input class="form-input" id="adminUserPasswordInput" type="password" placeholder="••••••••" minlength="6">
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+          <div class="form-group">
+            <label class="form-label" for="adminUserRoleSelect">ACCOUNT ROLE</label>
+            <select class="form-select" id="adminUserRoleSelect" onchange="handleRoleChangeInUserModal()">
+              <option value="user">Standard User</option>
+              <option value="admin">Administrator</option>
+            </select>
+          </div>
+          <div class="form-group" style="display: flex; flex-direction: column; justify-content: center;">
+            <label class="form-label" style="margin-bottom: 6px;">ACCOUNT STATUS</label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--on-surface); cursor: pointer;">
+              <input type="checkbox" id="adminUserDisabledInput">
+              <span>Disable Account</span>
+            </label>
+          </div>
+        </div>
+
+        <div style="margin-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <label class="form-label" style="margin-bottom: 0;">GRANULAR RBAC PRIVILEGES</label>
+            <button type="button" class="btn btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: 22px;" onclick="resetModalPrivilegesToRoleDefault()">Reset Defaults</button>
+          </div>
+          <div id="adminUserPrivilegesContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 220px; overflow-y: auto; padding: 8px; background: var(--surface-low); border: 1px solid var(--border-subtle); border-radius: var(--radius-xs);">
+            <!-- Populated dynamically from /api/admin/privileges -->
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button type="button" class="btn btn-secondary" onclick="closeAdminUserModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="adminUserSubmitBtn">Save Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- ADMIN: RESET USER PASSWORD MODAL                                         -->
+  <!-- ========================================================================= -->
+  <div class="photo-modal-overlay" id="adminResetPasswordModal" style="display: none;" onclick="handleResetPasswordModalOverlayClick(event)">
+    <div class="photo-modal-card" style="max-width: 400px;">
+      <div class="photo-modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="material-symbols-outlined" style="color: var(--primary);">key</span>
+          <span class="font-data-md" style="color: var(--on-surface);">Reset User Password</span>
+        </div>
+        <button class="icon-btn" onclick="closeAdminResetPasswordModal()" title="Close">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <form id="adminResetPasswordForm" onsubmit="handleAdminResetPasswordSubmit(event)" style="padding: 16px;">
+        <input type="hidden" id="adminResetPasswordUserId" value="">
+        <p class="font-data-sm" style="color: var(--on-surface-variant); margin-bottom: 12px;">
+          Resetting password for: <strong id="adminResetPasswordUserDisplay" style="color: var(--primary);"></strong>. This will revoke all active sessions for this user.
+        </p>
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label" for="adminResetNewPassword">NEW PASSWORD (MIN 6 CHARS)</label>
+          <input class="form-input" id="adminResetNewPassword" type="password" placeholder="••••••••" required minlength="6" autocomplete="new-password">
+        </div>
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="form-label" for="adminResetConfirmPassword">CONFIRM NEW PASSWORD</label>
+          <input class="form-input" id="adminResetConfirmPassword" type="password" placeholder="••••••••" required minlength="6" autocomplete="new-password">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" onclick="closeAdminResetPasswordModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="adminResetPasswordSubmitBtn">Reset Password</button>
+        </div>
       </form>
     </div>
   </div>

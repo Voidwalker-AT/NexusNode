@@ -55,14 +55,15 @@ Authorization: Bearer <session_token>
       "url": "https://youtube.com/watch?v=...",
       "format": "mp3",
       "quality": "best",
-      "destination": "Music",
+      "destination": "music",
       "custom_filename": "MySong",
       "metadata": { "embed_metadata": true, "embed_thumbnail": true },
       "subtitles": { "mode": "embed" }
     }
     ```
 - `GET /api/media/library`: Returns categorized media library (`music`, `videos`, `podcasts`, `downloads`).
-- `GET /stream/<path:filepath>?auth=<token>`: **HTTP 206 Partial Content** range streaming generator with byte seeking support, exact MIME type detection, and URL query token authentication.
+- `POST /api/media/playback-token`: Generates a short-lived (60–120s) cryptographic token bound to the requesting `user_id` and normalized media path.
+- `GET /stream/<path:filepath>?playback_token=<token>`: **HTTP 206 Partial Content** range streaming generator with byte seeking support, exact MIME type detection, and short-lived playback token authentication.
 
 ---
 
@@ -117,12 +118,22 @@ Authorization: Bearer <session_token>
 
 ---
 
-### 2.10. Admin Hub & User Management (Admin Only)
-- `GET` & `POST /api/admin/users`: User management and provisioning.
-- `POST /api/admin/users/update-privileges`: Updates granular RBAC permissions.
-- `POST /api/admin/users/reset-password`: Resets user password.
-- `DELETE /api/admin/users/<user_id>`: Deletes user.
+### 2.10. Admin Hub & User Governance (Admin Only)
+- `GET /api/admin/privileges`: Exposes complete privilege metadata registry, descriptions, categories, and role defaults.
+- `GET /api/admin/users`: Lists registered user accounts with role, status (`ACTIVE`/`DISABLED`), and privilege counts.
+- `POST /api/admin/users`: Creates a user with custom granular privileges and status.
+- `GET /api/admin/users/<user_id>`: Fetches user details, role, status, and permissions.
+- `PATCH /api/admin/users/<user_id>`: Updates user role, disabled status, or privileges.
+- `DELETE /api/admin/users/<user_id>`: Deletes user account and revokes sessions (protects primary `admin`).
+- `POST /api/admin/users/<user_id>/password`: Admin password reset with automatic session revocation.
+- `POST /api/admin/users/<user_id>/sessions/revoke`: Revokes all active sessions for target user.
 - `GET /api/admin/stats`: Aggregate server performance metrics.
 - `GET /api/admin/db/tables`: Lists SQLite database tables.
 - `GET /api/admin/db/query?table=<table_name>`: Inspects table records with password hash masking.
 - `GET /api/logs/stream`: Realtime Server-Sent Events (SSE) log terminal.
+
+---
+
+### 2.11. Self-Service Account Security
+- `POST /api/account/password`: Changes caller's password (verifying current password) and revokes other active sessions.
+- `POST /api/account/sessions/revoke`: Revokes all other active sessions for current user.

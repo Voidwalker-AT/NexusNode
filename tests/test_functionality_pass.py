@@ -115,7 +115,8 @@ class TestFunctionalityRepairPass(unittest.TestCase):
         usr_dests = [d["path"] for d in res_usr.get_json()["destinations"]]
         self.assertIn("downloads", usr_dests)
         self.assertIn("documents", usr_dests)
-        self.assertIn("media", usr_dests)
+        self.assertIn("music", usr_dests)
+        self.assertIn("videos", usr_dests)
         self.assertNotIn("backups", usr_dests)
         self.assertNotIn(".git", usr_dests)
 

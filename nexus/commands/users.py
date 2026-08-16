@@ -1,6 +1,6 @@
 """
 NexusNode CLI — User & RBAC Account Administration Command (Admin Only)
-Communicates with /api/admin/users and /api/admin/users/update-privileges endpoints.
+Communicates with /api/admin/users, /api/admin/users/<id>/password, and /api/admin/users/<id>/sessions/revoke.
 """
 
 import getpass
@@ -22,6 +22,14 @@ def cmd_users(client: NexusClient, args, as_json: bool = False) -> int:
         return cmd_users_delete(client, args, as_json)
     elif subaction == "privileges":
         return cmd_users_privileges(client, args, as_json)
+    elif subaction == "password":
+        return cmd_users_password(client, args, as_json)
+    elif subaction == "disable":
+        return cmd_users_toggle_disabled(client, args, is_disabled=True, as_json=as_json)
+    elif subaction == "enable":
+        return cmd_users_toggle_disabled(client, args, is_disabled=False, as_json=as_json)
+    elif subaction == "revoke-sessions":
+        return cmd_users_revoke_sessions(client, args, as_json)
     else:
         output.print_error(f"Unknown users subcommand '{subaction}'. Type 'nexus users --help'.")
         return 1
@@ -35,7 +43,7 @@ def cmd_users_list(client: NexusClient, args, as_json: bool = False) -> int:
         return 1
 
     if status_code == 403:
-        output.print_error("Permission denied: your account lacks 'can_manage_users' privilege.")
+        output.print_error("Permission denied: your account lacks administrator privileges.")
         return 1
     if status_code != 200:
         err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
@@ -51,16 +59,18 @@ def cmd_users_list(client: NexusClient, args, as_json: bool = False) -> int:
         print("\nNo user accounts found.\n")
         return 0
 
-    headers = ["USER ID", "ROLE", "PRIVILEGES COUNT", "CREATED AT"]
+    headers = ["USER ID", "ROLE", "STATUS", "PRIVILEGES COUNT", "CREATED AT"]
     rows = []
     for u in users_list:
         if not isinstance(u, dict):
             continue
         privs = u.get("privileges", {})
         enabled_count = sum(1 for v in privs.values() if v) if isinstance(privs, dict) else 0
+        status_str = "DISABLED" if u.get("is_disabled") else "ACTIVE"
         rows.append([
             str(u.get("user_id") or u.get("username", "N/A")),
             str(u.get("role", "user")).upper(),
+            status_str,
             f"{enabled_count} enabled",
             output.format_timestamp(u.get("created_at"))
         ])
@@ -86,20 +96,22 @@ def cmd_users_create(client: NexusClient, args, as_json: bool = False) -> int:
     password = getattr(args, "password", None)
     if not password:
         try:
-            password = getpass.getpass("New User Password: ")
+            password = getpass.getpass("New User Password (min 6 chars): ")
         except (KeyboardInterrupt, EOFError):
             print("\nCancelled.")
             return 1
 
-    if not password:
-        output.print_error("Password is required.")
+    if not password or len(password) < 6:
+        output.print_error("Password must be at least 6 characters.")
         return 1
 
     role = getattr(args, "role", "user") or "user"
+    is_disabled = getattr(args, "is_disabled", False)
     payload = {
         "user_id": user_id,
         "password": password,
-        "role": role
+        "role": role,
+        "is_disabled": is_disabled
     }
 
     try:
@@ -109,7 +121,7 @@ def cmd_users_create(client: NexusClient, args, as_json: bool = False) -> int:
         return 1
 
     if status_code == 403:
-        output.print_error("Permission denied: your account lacks user management privileges.")
+        output.print_error("Permission denied: administrator privileges required.")
         return 1
     if status_code not in [200, 201]:
         err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
@@ -161,32 +173,115 @@ def cmd_users_delete(client: NexusClient, args, as_json: bool = False) -> int:
     return 0
 
 
+def cmd_users_password(client: NexusClient, args, as_json: bool = False) -> int:
+    user_id = getattr(args, "username", None)
+    if not user_id:
+        output.print_error("User ID is required.")
+        return 1
+
+    new_pwd = getattr(args, "password", None)
+    if not new_pwd:
+        try:
+            new_pwd = getpass.getpass(f"New Password for '{user_id}' (min 6 chars): ")
+        except (KeyboardInterrupt, EOFError):
+            print("\nCancelled.")
+            return 1
+
+    if not new_pwd or len(new_pwd) < 6:
+        output.print_error("Password must be at least 6 characters.")
+        return 1
+
+    try:
+        status_code, resp = client.post(f"/api/admin/users/{user_id}/password", data={"password": new_pwd})
+    except NexusConnectionError as e:
+        output.print_error(str(e))
+        return 1
+
+    if status_code != 200:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Password reset failed: {err}")
+        return 1
+
+    if as_json or getattr(args, "json", False):
+        output.print_json(resp)
+    else:
+        output.print_success(f"Password reset successfully for '{user_id}'. Active sessions revoked.")
+    return 0
+
+
+def cmd_users_toggle_disabled(client: NexusClient, args, is_disabled: bool, as_json: bool = False) -> int:
+    user_id = getattr(args, "username", None)
+    if not user_id:
+        output.print_error("User ID is required.")
+        return 1
+
+    try:
+        status_code, resp = client.patch(f"/api/admin/users/{user_id}", data={"is_disabled": is_disabled})
+    except NexusConnectionError as e:
+        output.print_error(str(e))
+        return 1
+
+    if status_code != 200:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        action_name = "disable" if is_disabled else "enable"
+        output.print_error(f"Failed to {action_name} user '{user_id}': {err}")
+        return 1
+
+    if as_json or getattr(args, "json", False):
+        output.print_json(resp)
+    else:
+        state_str = "disabled" if is_disabled else "enabled"
+        output.print_success(f"User '{user_id}' has been {state_str}.")
+    return 0
+
+
+def cmd_users_revoke_sessions(client: NexusClient, args, as_json: bool = False) -> int:
+    user_id = getattr(args, "username", None)
+    if not user_id:
+        output.print_error("User ID is required.")
+        return 1
+
+    try:
+        status_code, resp = client.post(f"/api/admin/users/{user_id}/sessions/revoke", data={})
+    except NexusConnectionError as e:
+        output.print_error(str(e))
+        return 1
+
+    if status_code != 200:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to revoke sessions: {err}")
+        return 1
+
+    if as_json or getattr(args, "json", False):
+        output.print_json(resp)
+    else:
+        revoked = resp.get("revoked_count", 0) if isinstance(resp, dict) else 0
+        output.print_success(f"Revoked {revoked} active session(s) for user '{user_id}'.")
+    return 0
+
+
 def cmd_users_privileges(client: NexusClient, args, as_json: bool = False) -> int:
     user_id = getattr(args, "username", None)
     if not user_id:
         output.print_error("User ID is required.")
         return 1
 
-    priv_key = getattr(args, "privilege", None)
-    priv_val_raw = getattr(args, "enable", None)
+    priv_key = getattr(args, "grant", None) or getattr(args, "revoke", None) or getattr(args, "privilege", None)
+    is_grant = getattr(args, "grant", None) is not None
+    is_revoke = getattr(args, "revoke", None) is not None
 
-    # 1. If key and value provided, update privilege
-    if priv_key and priv_val_raw is not None:
-        val_bool = priv_val_raw.lower() in ["true", "1", "yes", "enable"]
+    if priv_key and (is_grant or is_revoke):
+        val_bool = is_grant
         payload = {
-            "user_id": user_id,
             "privileges": {priv_key: val_bool}
         }
         try:
-            status_code, resp = client.post("/api/admin/users/update-privileges", data=payload)
+            status_code, resp = client.patch(f"/api/admin/users/{user_id}", data=payload)
         except NexusConnectionError as e:
             output.print_error(str(e))
             return 1
 
-        if status_code == 403:
-            output.print_error("Permission denied.")
-            return 1
-        if status_code not in [200, 201]:
+        if status_code != 200:
             err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
             output.print_error(f"Failed to update privilege: {err}")
             return 1
@@ -194,23 +289,22 @@ def cmd_users_privileges(client: NexusClient, args, as_json: bool = False) -> in
         if as_json or getattr(args, "json", False):
             output.print_json(resp)
         else:
-            output.print_success(f"Privilege '{priv_key}' for user '{user_id}' set to {val_bool}.")
+            action_word = "granted to" if val_bool else "revoked from"
+            output.print_success(f"Privilege '{priv_key}' {action_word} user '{user_id}'.")
         return 0
 
-    # 2. Otherwise display user's current privileges
+    # Otherwise display user's current privileges
     try:
-        status_code, resp = client.get("/api/admin/users")
+        status_code, resp = client.get(f"/api/admin/users/{user_id}")
     except NexusConnectionError as e:
         output.print_error(str(e))
         return 1
 
-    users_list = normalize.normalize_list(resp, "users")
-    target = next((u for u in users_list if isinstance(u, dict) and str(u.get("user_id") or u.get("username")).lower() == user_id.lower()), None)
-    if not target:
+    if status_code != 200 or not isinstance(resp, dict):
         output.print_error(f"User '{user_id}' not found.")
         return 1
 
-    privs = target.get("privileges", {})
+    privs = resp.get("privileges", {})
     if as_json or getattr(args, "json", False):
         output.print_json(privs)
         return 0

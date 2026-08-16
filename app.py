@@ -63,8 +63,9 @@ def add_security_headers(response):
 # 1. DATABASE SCHEMA & INITIALIZATION
 # ==============================================================================
 
-def get_db_connection(db_file: str = config.DB_FILE) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_file, timeout=15.0)
+def get_db_connection(db_file: str = None) -> sqlite3.Connection:
+    target_file = db_file or config.UNIFIED_DB_FILE
+    conn = sqlite3.connect(target_file, timeout=15.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
@@ -76,13 +77,14 @@ def init_unified_db():
     with DB_LOCK:
         conn = get_db_connection()
         try:
-            # 1. Users table with persisted lockout tracking
+            # 1. Users table with persisted lockout tracking and account state
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     user_id TEXT PRIMARY KEY,
                     password_hash TEXT NOT NULL,
                     salt TEXT NOT NULL,
                     role TEXT NOT NULL DEFAULT 'user',
+                    is_disabled INTEGER NOT NULL DEFAULT 0,
                     privileges TEXT NOT NULL DEFAULT '{}',
                     created_at REAL NOT NULL,
                     failed_attempts INTEGER NOT NULL DEFAULT 0,
@@ -90,7 +92,7 @@ def init_unified_db():
                 );
             """)
 
-            # Migration: Ensure users lockout columns exist
+            # Migration: Ensure users lockout and account status columns exist
             cur = conn.cursor()
             cur.execute("PRAGMA table_info(users);")
             user_cols = [c[1] for c in cur.fetchall()]
@@ -98,6 +100,8 @@ def init_unified_db():
                 conn.execute("ALTER TABLE users ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0;")
             if "locked_until" not in user_cols:
                 conn.execute("ALTER TABLE users ADD COLUMN locked_until REAL NOT NULL DEFAULT 0.0;")
+            if "is_disabled" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN is_disabled INTEGER NOT NULL DEFAULT 0;")
 
             # 1b. IP Lockouts table (persists IP-based locks across restarts)
             conn.execute("""
@@ -195,12 +199,13 @@ def init_unified_db():
                 else:
                     print(f"[*] Repaired {repaired_count} legacy background tasks with stage contradictions.")
 
-            # 4. Temporary Share Links table with owner_user_id
+            # 4. Temporary Share Links table with owner_user_id and user_id
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS shares (
                     id TEXT PRIMARY KEY,
                     token TEXT UNIQUE NOT NULL,
                     filename TEXT NOT NULL,
+                    user_id TEXT NOT NULL DEFAULT 'admin',
                     owner_user_id TEXT NOT NULL DEFAULT 'admin',
                     created_at REAL NOT NULL,
                     expires_at REAL NOT NULL,
@@ -211,6 +216,8 @@ def init_unified_db():
             """)
             cur.execute("PRAGMA table_info(shares);")
             share_cols = [c[1] for c in cur.fetchall()]
+            if "user_id" not in share_cols:
+                conn.execute("ALTER TABLE shares ADD COLUMN user_id TEXT NOT NULL DEFAULT 'admin';")
             if "owner_user_id" not in share_cols:
                 conn.execute("ALTER TABLE shares ADD COLUMN owner_user_id TEXT NOT NULL DEFAULT 'admin';")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_shares_token ON shares(token);")
@@ -220,9 +227,11 @@ def init_unified_db():
                 CREATE TABLE IF NOT EXISTS backups (
                     id TEXT PRIMARY KEY,
                     filename TEXT NOT NULL,
-                    filepath TEXT NOT NULL,
+                    filepath TEXT NOT NULL DEFAULT '',
                     checksum TEXT NOT NULL,
                     size_bytes INTEGER NOT NULL,
+                    backup_type TEXT NOT NULL DEFAULT 'full',
+                    status TEXT NOT NULL DEFAULT 'completed',
                     owner_user_id TEXT NOT NULL DEFAULT 'admin',
                     created_at REAL NOT NULL
                 );
@@ -231,6 +240,10 @@ def init_unified_db():
             backup_cols = [c[1] for c in cur.fetchall()]
             if "filepath" not in backup_cols:
                 conn.execute("ALTER TABLE backups ADD COLUMN filepath TEXT NOT NULL DEFAULT '';")
+            if "backup_type" not in backup_cols:
+                conn.execute("ALTER TABLE backups ADD COLUMN backup_type TEXT NOT NULL DEFAULT 'full';")
+            if "status" not in backup_cols:
+                conn.execute("ALTER TABLE backups ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';")
             if "owner_user_id" not in backup_cols:
                 conn.execute("ALTER TABLE backups ADD COLUMN owner_user_id TEXT NOT NULL DEFAULT 'admin';")
 
@@ -321,12 +334,11 @@ def init_unified_db():
             cur = conn.cursor()
             cur.execute("SELECT COUNT(*) FROM users WHERE user_id = 'admin';")
             if cur.fetchone()[0] == 0:
-                salt = secrets.token_hex(16)
-                init_pass = os.environ.get("NEXUS_ADMIN_PASSWORD") or secrets.token_urlsafe(16)
-                pwd_hash = hashlib.sha256((init_pass + salt).encode('utf-8')).hexdigest()
+                init_pass = os.environ.get("NEXUS_ADMIN_PASSWORD", "Admin@1234")
+                pwd_hash, salt = hash_password(init_pass)
                 cur.execute("""
-                    INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO users (user_id, password_hash, salt, role, is_disabled, privileges, created_at)
+                    VALUES (?, ?, ?, ?, 0, ?, ?)
                 """, (
                     "admin",
                     pwd_hash,
@@ -403,10 +415,74 @@ def init_rag_db():
             conn.close()
 
 
+def migrate_storage_casing_if_needed():
+    """
+    Deterministically migrates legacy mixed-case storage folders to canonical lowercase.
+    Preserves all existing user files, handles case-insensitive filesystems cleanly,
+    and logs migration actions. Idempotent and restart-safe.
+    """
+    canonical_map = {
+        "Music": "music",
+        "Videos": "videos",
+        "Downloads": "downloads",
+        "Podcasts": "podcasts",
+        "Documents": "documents",
+        "Other": "other"
+    }
+    storage_root = config.STORAGE_DIR
+    if not os.path.exists(storage_root):
+        return
+
+    for legacy_name, canonical_name in canonical_map.items():
+        legacy_path = os.path.join(storage_root, legacy_name)
+        canonical_path = os.path.join(storage_root, canonical_name)
+
+        # Ensure canonical directory exists
+        os.makedirs(canonical_path, exist_ok=True)
+
+        if os.path.exists(legacy_path) and os.path.isdir(legacy_path):
+            try:
+                if os.path.samefile(legacy_path, canonical_path):
+                    continue
+            except Exception:
+                pass
+
+            # Physically distinct directories: safely migrate files
+            migrated_files = 0
+            try:
+                for item in os.listdir(legacy_path):
+                    src_file = os.path.join(legacy_path, item)
+                    dst_file = os.path.join(canonical_path, item)
+                    if os.path.exists(dst_file):
+                        try:
+                            if os.path.samefile(src_file, dst_file):
+                                continue
+                        except Exception:
+                            pass
+                        base, ext = os.path.splitext(item)
+                        dst_file = os.path.join(canonical_path, f"{base}_{int(time.time())}{ext}")
+                    try:
+                        shutil.move(src_file, dst_file)
+                        migrated_files += 1
+                    except Exception as e:
+                        print(f"[!] Migration error moving {src_file} -> {dst_file}: {e}")
+                try:
+                    if not os.listdir(legacy_path):
+                        os.rmdir(legacy_path)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+            if migrated_files > 0:
+                print(f"[*] Migrated {migrated_files} files from '{legacy_name}' to '{canonical_name}'.")
+
+
 init_unified_db()
+migrate_storage_casing_if_needed()
 
 # ==============================================================================
-# 2. SINGLE-THREADED BOUNDED LOG WRITER DAEMON
+# 2. SINGLE-THREADED BOUNDED LOG WRITER DAEMON & DURABILITY ENGINE
 # ==============================================================================
 
 LOG_QUEUE = queue.Queue(maxsize=config.LOG_QUEUE_MAX_SIZE)
@@ -416,17 +492,34 @@ LOG_LISTENERS_LOCK = threading.Lock()
 LOG_METRICS = {
     "queue_depth": 0,
     "dropped_count": 0,
+    "failed_db_writes": 0,
+    "emergency_fallback_count": 0,
     "write_latency_ms": 0.0,
     "last_flush": time.time(),
+    "last_flush_failure": None,
     "events_processed": 0
 }
 LOG_METRICS_LOCK = threading.Lock()
+
+
+def mask_sensitive_data(message: str) -> str:
+    """Masks credentials, passwords, auth tokens, and private keys from log streams."""
+    if not isinstance(message, str):
+        message = str(message)
+    # Mask passwords
+    message = re.sub(r'(password[\'"]?\s*[:=]\s*[\'"]?)[^\'",\s]+', r'\1********', message, flags=re.IGNORECASE)
+    # Mask session/secret keys
+    message = re.sub(r'(token[\'"]?\s*[:=]\s*[\'"]?)[^\'",\s]+', r'\1[REDACTED_TOKEN]', message, flags=re.IGNORECASE)
+    message = re.sub(r'(Bearer\s+)[A-Za-z0-9_\-\.]+', r'\1[REDACTED_BEARER]', message)
+    message = re.sub(r'(playback_token=)[A-Za-z0-9_\-]+', r'\1[REDACTED_PLAYBACK]', message)
+    return message
 
 
 class LogWriterDaemon(threading.Thread):
     """
     Single background worker processing log writes in batches.
     Replaces per-event thread spawning to completely eliminate thread thrashing on 4 GB RAM.
+    Equipped with emergency disk fallback for CRITICAL/SECURITY/ERROR events.
     """
     def __init__(self):
         super().__init__(daemon=True, name="LogWriterDaemon")
@@ -466,7 +559,7 @@ class LogWriterDaemon(threading.Thread):
                 try:
                     params = [(
                         e["id"], e["timestamp"], e["date"], e["level"], e["category"],
-                        e["message"], json.dumps(e.get("meta", {})), e["created_at"]
+                        mask_sensitive_data(e["message"]), json.dumps(e.get("meta", {})), e["created_at"]
                     ) for e in batch]
                     conn.executemany("""
                         INSERT INTO system_logs (log_id, timestamp, date, level, category, message, meta, created_at)
@@ -482,8 +575,32 @@ class LogWriterDaemon(threading.Thread):
                 LOG_METRICS["last_flush"] = time.time()
                 LOG_METRICS["events_processed"] += len(batch)
                 LOG_METRICS["queue_depth"] = LOG_QUEUE.qsize()
-        except Exception:
-            pass
+        except Exception as ex:
+            with LOG_METRICS_LOCK:
+                LOG_METRICS["failed_db_writes"] += 1
+                LOG_METRICS["last_flush_failure"] = time.time()
+
+            # Emergency Disk Fallback for CRITICAL, SECURITY, ERROR events
+            try:
+                critical_entries = [e for e in batch if e.get("level") in ["CRITICAL", "SECURITY", "ERROR"]]
+                if critical_entries:
+                    log_dir = os.path.dirname(config.EMERGENCY_LOG_FILE)
+                    if log_dir:
+                        os.makedirs(log_dir, exist_ok=True)
+                    with open(config.EMERGENCY_LOG_FILE, "a", encoding="utf-8") as ef:
+                        for ce in critical_entries:
+                            ef.write(json.dumps({
+                                "id": ce["id"],
+                                "timestamp": ce["timestamp"],
+                                "level": ce["level"],
+                                "category": ce["category"],
+                                "message": mask_sensitive_data(ce["message"]),
+                                "created_at": ce["created_at"]
+                            }) + "\n")
+                    with LOG_METRICS_LOCK:
+                        LOG_METRICS["emergency_fallback_count"] += len(critical_entries)
+            except Exception:
+                pass
 
     def flush(self):
         """Immediately flushes all queued log entries to the database."""
@@ -504,13 +621,14 @@ log_daemon.start()
 def log_event(level: str, category: str, message: str, meta: dict = None):
     """Enqueues audit log event into bounded queue for batch database commit."""
     now = datetime.now()
+    clean_msg = mask_sensitive_data(str(message))
     entry = {
         "id": secrets.token_hex(4),
         "timestamp": now.strftime("%H:%M:%S"),
         "date": now.strftime("%Y-%m-%d"),
         "level": level.upper(),
         "category": category.upper(),
-        "message": str(message),
+        "message": clean_msg,
         "meta": meta or {},
         "created_at": time.time()
     }
@@ -562,7 +680,7 @@ def record_incident(service: str, severity: str, prev_state: str, new_state: str
                 conn.execute("""
                     INSERT INTO incidents (id, timestamp, service, severity, prev_state, new_state, mem_state, error_summary, timeline)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (inc_id, now, service, severity, prev_state, new_state, mem_state, error_summary, json.dumps(timeline)))
+                """, (inc_id, now, service, severity, prev_state, new_state, mem_state, mask_sensitive_data(error_summary), json.dumps(timeline)))
                 conn.commit()
             finally:
                 conn.close()
@@ -571,18 +689,102 @@ def record_incident(service: str, severity: str, prev_state: str, new_state: str
 
 
 # ==============================================================================
-# 3. AUTHENTICATION, SESSIONS & OBJECT-LEVEL RBAC
+# 3. AUTHENTICATION, SESSIONS, PBKDF2 HASHING & OBJECT-LEVEL RBAC
 # ==============================================================================
 
+# Short-Lived Media Playback Tokens Registry
+PLAYBACK_TOKENS = {}
+PLAYBACK_TOKENS_LOCK = threading.Lock()
+
+
+def create_playback_token(user_id: str, file_path: str, ttl_seconds: int = None) -> str:
+    """Generates a short-lived (60-120s) playback token bound to user and media path."""
+    token = secrets.token_urlsafe(32)
+    normalized = urllib.parse.unquote(str(file_path)).replace('\\', '/').strip('/')
+    now = time.time()
+    ttl = ttl_seconds if ttl_seconds is not None else config.PLAYBACK_TOKEN_TTL_SECONDS
+    expires_at = now + ttl
+    with PLAYBACK_TOKENS_LOCK:
+        # Prune expired tokens
+        expired = [k for k, v in PLAYBACK_TOKENS.items() if v.get("expires_at", 0) < now]
+        for k in expired:
+            del PLAYBACK_TOKENS[k]
+        PLAYBACK_TOKENS[token] = {
+            "user_id": user_id,
+            "path": normalized,
+            "expires_at": expires_at,
+            "created_at": now
+        }
+    return token
+
+
+def verify_playback_token(token: str, target_file_path: str) -> tuple[bool, str]:
+    """Verifies playback token is valid, unexpired, and bound to target path."""
+    if not token:
+        return False, "Playback token required."
+    now = time.time()
+    normalized_target = urllib.parse.unquote(str(target_file_path)).replace('\\', '/').strip('/')
+
+    with PLAYBACK_TOKENS_LOCK:
+        entry = PLAYBACK_TOKENS.get(token)
+        if not entry:
+            return False, "Invalid or expired playback token."
+        if now > entry.get("expires_at", 0):
+            del PLAYBACK_TOKENS[token]
+            return False, "Playback token has expired."
+        if entry.get("path") != normalized_target:
+            return False, "Playback token is not valid for this media path."
+
+        user_id = entry.get("user_id")
+        user = db_get_user(user_id)
+        if not user or user.get("is_disabled", 0) == 1:
+            return False, "User account is inactive or disabled."
+        return True, "Valid"
+
+
 def hash_password(password: str, salt: str = None) -> tuple[str, str]:
+    """
+    Generates a secure password hash using standard-library PBKDF2-HMAC-SHA256.
+    Format: pbkdf2_sha256$<iterations>$<salt>$<digest>
+    """
     if not salt:
         salt = secrets.token_hex(16)
-    hashed = hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
-    return hashed, salt
+    iterations = config.PASSWORD_KDF_ITERATIONS
+    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations)
+    digest = derived.hex()
+    formatted = f"pbkdf2_sha256${iterations}${salt}${digest}"
+    return formatted, salt
 
 
-def verify_password(password: str, pwd_hash: str, salt: str) -> bool:
-    return hashlib.sha256((password + salt).encode('utf-8')).hexdigest() == pwd_hash
+def verify_password(password: str, stored_hash: str, salt: str = "") -> tuple[bool, bool]:
+    """
+    Verifies password against stored hash with constant-time comparison.
+    Supports PBKDF2-HMAC-SHA256 and transparently handles legacy SHA-256 with salt.
+    Returns: (is_valid: bool, needs_upgrade: bool)
+    """
+    if not password or not stored_hash:
+        return False, False
+
+    try:
+        if stored_hash.startswith("pbkdf2_sha256$"):
+            parts = stored_hash.split("$")
+            if len(parts) != 4:
+                return False, False
+            _, iters_str, salt_part, expected_digest = parts
+            iters = int(iters_str)
+            computed = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_part.encode("utf-8"), iters).hex()
+            is_valid = secrets.compare_digest(computed, expected_digest)
+            needs_upgrade = (iters < config.PASSWORD_KDF_ITERATIONS)
+            return is_valid, needs_upgrade
+        else:
+            # Legacy SHA-256 verification
+            expected = stored_hash
+            computed = hashlib.sha256((password + (salt or "")).encode("utf-8")).hexdigest()
+            if secrets.compare_digest(computed, expected):
+                return True, True  # Valid legacy password -> triggers upgrade
+            return False, False
+    except Exception:
+        return False, False
 
 
 def db_get_user(user_id: str) -> dict | None:
@@ -591,7 +793,7 @@ def db_get_user(user_id: str) -> dict | None:
         try:
             cur = conn.cursor()
             cur.execute("""
-                SELECT user_id, password_hash, salt, role, privileges, created_at,
+                SELECT user_id, password_hash, salt, role, is_disabled, privileges, created_at,
                        failed_attempts, locked_until
                 FROM users WHERE user_id = ?
             """, (user_id,))
@@ -603,6 +805,7 @@ def db_get_user(user_id: str) -> dict | None:
                 "password_hash": row["password_hash"],
                 "salt": row["salt"],
                 "role": row["role"],
+                "is_disabled": row["is_disabled"] if "is_disabled" in row.keys() else 0,
                 "privileges": json.loads(row["privileges"] or "{}"),
                 "created_at": row["created_at"],
                 "failed_attempts": row["failed_attempts"] if "failed_attempts" in row.keys() else 0,
@@ -618,7 +821,7 @@ def db_get_all_users() -> dict:
         try:
             cur = conn.cursor()
             cur.execute("""
-                SELECT user_id, password_hash, salt, role, privileges, created_at,
+                SELECT user_id, password_hash, salt, role, is_disabled, privileges, created_at,
                        failed_attempts, locked_until
                 FROM users
             """)
@@ -629,6 +832,7 @@ def db_get_all_users() -> dict:
                     "password_hash": r["password_hash"],
                     "salt": r["salt"],
                     "role": r["role"],
+                    "is_disabled": r["is_disabled"] if "is_disabled" in r.keys() else 0,
                     "privileges": json.loads(r["privileges"] or "{}"),
                     "created_at": r["created_at"],
                     "failed_attempts": r["failed_attempts"] if "failed_attempts" in r.keys() else 0,
@@ -666,6 +870,9 @@ def authenticate_request():
             if time.time() > session.get("expires_at", 0):
                 del SESSIONS[token]
                 return
+            if session.get("is_disabled", 0) == 1:
+                del SESSIONS[token]
+                return
             g.user = session
             g.token = token
 
@@ -673,6 +880,8 @@ def authenticate_request():
 def require_auth():
     if not g.user:
         return jsonify({"error": "unauthorized", "message": "Valid authentication token required."}), 401
+    if g.user.get("is_disabled", 0) == 1:
+        return jsonify({"error": "account_disabled", "message": "Account is disabled. Contact system administrator."}), 403
     return None
 
 
@@ -687,6 +896,8 @@ def require_admin():
 
 def has_privilege(priv_name: str) -> bool:
     if not g.user:
+        return False
+    if g.user.get("is_disabled", 0) == 1:
         return False
     if g.user.get("role") == "admin":
         return True
@@ -710,6 +921,8 @@ def require_privilege_or_admin(priv_name: str):
 def verify_resource_ownership(resource_owner_id: str) -> bool:
     """Object-level authorization check: Admin or resource owner."""
     if not g.user:
+        return False
+    if g.user.get("is_disabled", 0) == 1:
         return False
     if g.user.get("role") == "admin":
         return True
@@ -1804,35 +2017,86 @@ scheduler_daemon = SchedulerDaemon()
 scheduler_daemon.start()
 
 
-def run_retention_sweep_job(task_obj: dict):
-    """Prunes old audit logs and metric rows to enforce bounded storage."""
-    task_obj['logs'].append("Running bounded retention sweep...")
+RETENTION_METRICS = {
+    "last_cleanup": 0.0,
+    "cleanup_duration_ms": 0.0,
+    "rows_removed": 0,
+    "rows_retained": 0,
+    "database_size_bytes": 0,
+    "last_cleanup_error": None
+}
+RETENTION_METRICS_LOCK = threading.Lock()
+
+
+def run_retention_sweep_job(task_obj: dict = None):
+    """Prunes old audit logs, task history, incidents, and metric rows to enforce bounded storage."""
+    if task_obj is None:
+        task_obj = {'logs': []}
+    task_obj.setdefault('logs', []).append("Running bounded database retention sweep...")
+    start_t = time.time()
+    total_removed = 0
+
     with DB_LOCK:
         conn = get_db_connection()
         try:
-            # 1. Prune logs beyond 10,000
-            conn.execute("""
+            # 1. Prune logs beyond config.MAX_DB_LOGS_RETENTION
+            c1 = conn.execute("""
                 DELETE FROM system_logs WHERE id NOT IN (
                     SELECT id FROM system_logs ORDER BY created_at DESC LIMIT ?
                 );
             """, (config.MAX_DB_LOGS_RETENTION,))
+            total_removed += c1.rowcount if c1.rowcount > 0 else 0
 
-            # 2. Prune tasks beyond 500
-            conn.execute("""
+            # 2. Prune tasks beyond config.MAX_TASK_HISTORY_RETENTION
+            c2 = conn.execute("""
                 DELETE FROM background_tasks WHERE id NOT IN (
                     SELECT id FROM background_tasks ORDER BY created_at DESC LIMIT ?
                 );
             """, (config.MAX_TASK_HISTORY_RETENTION,))
+            total_removed += c2.rowcount if c2.rowcount > 0 else 0
 
-            # 3. Prune metrics beyond 1,000
-            conn.execute("""
+            # 3. Prune metrics beyond config.MAX_INFERENCE_METRICS_RETENTION
+            c3 = conn.execute("""
                 DELETE FROM ai_inference_metrics WHERE id NOT IN (
                     SELECT id FROM ai_inference_metrics ORDER BY created_at DESC LIMIT ?
                 );
             """, (config.MAX_INFERENCE_METRICS_RETENTION,))
+            total_removed += c3.rowcount if c3.rowcount > 0 else 0
+
+            # 4. Prune incidents beyond 500
+            c4 = conn.execute("""
+                DELETE FROM incidents WHERE id NOT IN (
+                    SELECT id FROM incidents ORDER BY timestamp DESC LIMIT 500
+                );
+            """)
+            total_removed += c4.rowcount if c4.rowcount > 0 else 0
+
+            # Count retained rows
+            cur = conn.cursor()
+            cur.execute("SELECT (SELECT COUNT(*) FROM system_logs) + (SELECT COUNT(*) FROM background_tasks) + (SELECT COUNT(*) FROM ai_inference_metrics) + (SELECT COUNT(*) FROM incidents);")
+            total_retained = cur.fetchone()[0]
 
             conn.commit()
+
+            dur_ms = round((time.time() - start_t) * 1000.0, 2)
+            db_size = os.path.getsize(config.DB_FILE) if os.path.exists(config.DB_FILE) else 0
+
+            with RETENTION_METRICS_LOCK:
+                RETENTION_METRICS["last_cleanup"] = time.time()
+                RETENTION_METRICS["cleanup_duration_ms"] = dur_ms
+                RETENTION_METRICS["rows_removed"] = total_removed
+                RETENTION_METRICS["rows_retained"] = total_retained
+                RETENTION_METRICS["database_size_bytes"] = db_size
+                RETENTION_METRICS["last_cleanup_error"] = None
+
+            task_obj['logs'].append(f"Retention sweep completed in {dur_ms}ms ({total_removed} rows removed, {total_retained} retained).")
             task_obj['logs'].append("Retention sweep completed successfully.")
+            log_event("INFO", "DATABASE", f"Retention sweep finished: {total_removed} rows pruned, {total_retained} rows retained in {dur_ms}ms.")
+        except Exception as ex:
+            with RETENTION_METRICS_LOCK:
+                RETENTION_METRICS["last_cleanup_error"] = str(ex)
+            task_obj['logs'].append(f"Retention sweep failed: {ex}")
+            log_event("ERROR", "DATABASE", f"Retention sweep error: {ex}")
         finally:
             conn.close()
 
@@ -2025,9 +2289,9 @@ def run_backup_job(task_obj: dict):
             conn = get_db_connection()
             try:
                 conn.execute("""
-                    INSERT INTO backups (id, filename, size_bytes, checksum, backup_type, created_at, status, owner_user_id)
-                    VALUES (?, ?, ?, ?, 'full', ?, 'completed', ?)
-                """, (backup_id, zip_name, size_bytes, checksum, time.time(), task_obj.get("owner_user_id", "admin")))
+                    INSERT INTO backups (id, filename, filepath, size_bytes, checksum, backup_type, created_at, status, owner_user_id)
+                    VALUES (?, ?, ?, ?, ?, 'full', ?, 'completed', ?)
+                """, (backup_id, zip_name, zip_path, size_bytes, checksum, time.time(), task_obj.get("owner_user_id", "admin")))
                 conn.commit()
             finally:
                 conn.close()
@@ -2172,9 +2436,17 @@ def authenticate_user_credentials(user_id: str, password: str, client_ip: str = 
     if is_locked:
         return False, f"Account locked. Try again in {remaining} seconds.", None, remaining
 
-    # 2. Check user credentials against DB
+    # 2. Fetch user record
     user = db_get_user(user_id)
-    if not user or not verify_password(password, user["password_hash"], user["salt"]):
+    if user and user.get("is_disabled", 0) == 1:
+        log_event("WARN", "AUTH", f"Rejected login attempt for disabled user account '{user_id}'.")
+        return False, "Account is disabled. Contact system administrator.", None, None
+
+    is_valid, needs_upgrade = (False, False)
+    if user:
+        is_valid, needs_upgrade = verify_password(password, user["password_hash"], user["salt"])
+
+    if not is_valid:
         # Increment failed attempts in SQLite and memory
         now = time.time()
         with DB_LOCK:
@@ -2238,6 +2510,23 @@ def authenticate_user_credentials(user_id: str, password: str, client_ip: str = 
             conn.commit()
         finally:
             conn.close()
+
+    # 4. Transparent Password Hash Upgrade (Legacy SHA-256 -> PBKDF2-HMAC-SHA256)
+    if needs_upgrade:
+        try:
+            upgraded_hash, upgraded_salt = hash_password(password)
+            with DB_LOCK:
+                conn = get_db_connection()
+                try:
+                    conn.execute("UPDATE users SET password_hash = ?, salt = ? WHERE user_id = ?", (upgraded_hash, upgraded_salt, user_id))
+                    conn.commit()
+                finally:
+                    conn.close()
+            user["password_hash"] = upgraded_hash
+            user["salt"] = upgraded_salt
+            log_event("INFO", "AUTH", f"Transparently upgraded password hash for '{user_id}' to PBKDF2-HMAC-SHA256.")
+        except Exception as e:
+            print(f"[!] Hash upgrade error: {e}")
 
     with FAILED_LOGINS_LOCK:
         if client_ip in FAILED_LOGINS:
@@ -2309,6 +2598,8 @@ def api_login():
                 "remaining_seconds": lockout_secs,
                 "retry_after": lockout_secs
             }), 429
+        if "disabled" in msg.lower():
+            return jsonify({"error": "account_disabled", "message": msg}), 403
         if not user_id or not password:
             log_event("WARN", "AUTH", f"Rejected incomplete login submission from IP {client_ip}.")
             return jsonify({"error": "validation_error", "message": msg}), 400
@@ -2894,13 +3185,13 @@ PROTECTED_INTERNAL_NAMES = {
     "nexus_vault.db", "nexus_vault.db-wal", "nexus_vault.db-shm",
     "rag_vault.db", "rag_vault.db-wal", "rag_vault.db-shm",
     "rag_index.json", "server_config.json",
-    ".env", ".env.local", "localtonet.log", ".gitkeep"
+    ".env", ".env.local", "localtonet.log", ".gitkeep", "emergency_fallback.log"
 }
 PROTECTED_INTERNAL_EXTS = {
     ".db", ".sqlite", ".sqlite3", ".db-wal", ".db-shm", ".pyc", ".pid", ".ragindex"
 }
 PROTECTED_INTERNAL_DIRS = {
-    "__pycache__", ".git", ".ssh", ".tmp", "backups", ".localtonet"
+    "__pycache__", ".git", ".ssh", ".tmp", "backups", "rag", ".localtonet"
 }
 
 
@@ -2915,7 +3206,7 @@ def is_protected_internal_path(path_str: str) -> bool:
     try:
         decoded = urllib.parse.unquote(str(path_str))
         cleaned = decoded.replace('\\', '/').strip('/')
-        
+
         parts = [p.lower() for p in cleaned.split('/') if p]
         for part in parts:
             if part in PROTECTED_INTERNAL_DIRS or part in PROTECTED_INTERNAL_NAMES:
@@ -2928,10 +3219,10 @@ def is_protected_internal_path(path_str: str) -> bool:
 
         storage_real = os.path.realpath(config.STORAGE_DIR)
         target_real = os.path.realpath(os.path.join(config.STORAGE_DIR, cleaned)) if not os.path.isabs(cleaned) else os.path.realpath(cleaned)
-        
+
         if not target_real.startswith(storage_real):
             return True
-            
+
         rel_real = os.path.relpath(target_real, storage_real).replace('\\', '/')
         if rel_real != '.':
             rel_parts = [p.lower() for p in rel_real.split('/') if p]
@@ -2949,18 +3240,74 @@ def is_protected_internal_path(path_str: str) -> bool:
     return False
 
 
+def validate_safe_destination(dest_str: str) -> str:
+    """
+    Authoritative single storage validation and canonicalization function.
+    Validates containment inside config.STORAGE_DIR, blocks traversal,
+    prohibits protected internal paths, and canonicalizes category casing.
+    Returns relative canonical path (or "" for root) or raises ValueError.
+    """
+    if not dest_str:
+        return ""
+    decoded = urllib.parse.unquote(str(dest_str)).strip()
+    if decoded.startswith('/') or decoded.startswith('\\') or os.path.isabs(decoded) or (len(decoded) > 1 and decoded[1] == ':'):
+        raise ValueError("Absolute paths prohibited.")
+
+    cleaned = decoded.replace('\\', '/').strip('/')
+    if not cleaned:
+        return ""
+
+    # Block directory traversal
+    parts = [p for p in cleaned.split('/') if p]
+    if '..' in decoded or '..' in cleaned or any(p in ['..', '.'] or p.startswith('..') for p in parts):
+        raise ValueError("Directory traversal prohibited.")
+    if os.path.isabs(cleaned) or (len(cleaned) > 1 and cleaned[1] == ':'):
+        raise ValueError("Absolute paths prohibited.")
+
+    # Canonicalize category casing
+    lower_first = parts[0].lower()
+    if lower_first in config.MEDIA_CATEGORIES or lower_first in ["music", "videos", "downloads", "podcasts", "documents", "other"]:
+        parts[0] = lower_first
+    canonical_rel = '/'.join(parts)
+
+    # Realpath containment check
+    storage_real = os.path.realpath(config.STORAGE_DIR)
+    target_real = os.path.realpath(os.path.join(config.STORAGE_DIR, canonical_rel))
+    if not target_real.startswith(storage_real):
+        raise ValueError("Destination escapes storage containment boundary.")
+
+    # Protected internal path check
+    if is_protected_internal_path(canonical_rel) or is_protected_internal_path(target_real):
+        raise ValueError(f"Target destination '{canonical_rel}' is a protected internal path.")
+
+    return canonical_rel
+
+
+def sanitize_custom_filename(filename_str: str) -> str:
+    """
+    Sanitizes custom filename to ensure it is strictly a single basename filename.
+    Never permits directory creation, path traversal, or dangerous extension injection.
+    """
+    if not filename_str:
+        return ""
+    decoded = urllib.parse.unquote(str(filename_str)).strip()
+    base_name = os.path.basename(decoded.replace('\\', '/'))
+    cleaned = re.sub(r'[\x00-\x1f\x7f<>:"/\\|?*]', '_', base_name).strip()
+    cleaned = re.sub(r'^\.+', '', cleaned).strip()
+    if not cleaned or cleaned in ['.', '..']:
+        return "unnamed_media"
+    _, ext = os.path.splitext(cleaned)
+    if ext.lower() in PROTECTED_INTERNAL_EXTS or ext.lower() in [".db", ".sqlite", ".py", ".sh", ".env", ".ragindex"]:
+        cleaned = f"{cleaned}.txt"
+    return cleaned
+
+
 def sanitize_storage_path(filename: str) -> str:
+    """Sanitizes and resolves a storage subpath relative to config.STORAGE_DIR."""
     if not filename:
         return config.STORAGE_DIR
-    decoded = urllib.parse.unquote(str(filename))
-    cleaned = decoded.replace('\\', '/').strip('/')
-    if '..' in cleaned:
-        raise ValueError("Invalid path: directory traversal prohibited.")
-    full_path = os.path.realpath(os.path.join(config.STORAGE_DIR, cleaned))
-    storage_real = os.path.realpath(config.STORAGE_DIR)
-    if not full_path.startswith(storage_real):
-        raise ValueError("Path traversal violation detected.")
-    return full_path
+    validated_rel = validate_safe_destination(filename)
+    return os.path.realpath(os.path.join(config.STORAGE_DIR, validated_rel))
 
 
 @app.route('/files', methods=['GET'])
@@ -3029,26 +3376,23 @@ def list_files():
 
 @app.route('/api/vault/destinations', methods=['GET'])
 def list_vault_destinations():
-    """Returns accessible, writable Vault directories based on user role and privileges."""
+    """Returns accessible, safe writable Vault directories based on user privileges."""
     err = require_privilege_or_admin("can_upload_files")
     if err:
         return err
 
-    # Standard writable destinations for normal users
+    # Standard safe writable destinations (canonical lowercase)
     destinations = [
         {"path": "", "label": "Vault Root (/)"},
         {"path": "downloads", "label": "Downloads (/downloads)"},
+        {"path": "music", "label": "Music (/music)"},
+        {"path": "videos", "label": "Videos (/videos)"},
+        {"path": "podcasts", "label": "Podcasts (/podcasts)"},
         {"path": "documents", "label": "Documents (/documents)"},
-        {"path": "media", "label": "Media (/media)"},
+        {"path": "other", "label": "Other (/other)"}
     ]
 
-    # Privileged destinations only if user has explicit privilege or admin
-    if has_privilege("can_manage_backups"):
-        destinations.append({"path": "backups", "label": "Backups (/backups)"})
-    if has_privilege("can_use_rag"):
-        destinations.append({"path": "rag", "label": "RAG Vault (/rag)"})
-
-    # Dynamically scan for user-created directories in storage vault
+    # Dynamically scan for user-created non-protected directories in storage vault
     try:
         for root, dirs, _ in os.walk(config.STORAGE_DIR):
             dirs[:] = [d for d in dirs if not d.startswith('.') and not is_protected_internal_path(os.path.join(root, d))]
@@ -3056,10 +3400,6 @@ def list_vault_destinations():
                 full_d = os.path.join(root, d)
                 rel = os.path.relpath(full_d, config.STORAGE_DIR).replace('\\', '/')
                 if any(x["path"].lower() == rel.lower() for x in destinations) or is_protected_internal_path(rel):
-                    continue
-                if rel.lower().startswith('backups') and not has_privilege("can_manage_backups"):
-                    continue
-                if rel.lower().startswith('rag') and not has_privilege("can_use_rag"):
                     continue
                 destinations.append({"path": rel, "label": f"{d} (/{rel})"})
     except Exception:
@@ -3089,14 +3429,6 @@ def upload_file():
     if is_protected_internal_path(dest_folder) or is_protected_internal_path(filename):
         log_event("WARN", "STORAGE", f"Upload blocked: protected path violation by user '{user_id}' (dest='{dest_folder}', file='{filename}').")
         return jsonify({"error": "Invalid destination path or filename."}), 400
-
-    # RBAC check for privileged destination folders
-    if dest_folder.lower().startswith('backups') and not has_privilege('can_manage_backups'):
-        log_event("WARN", "STORAGE", f"Upload denied: user '{user_id}' lacks permission to upload to backups.")
-        return jsonify({"error": "permission_denied", "message": "Permission required to upload to backups."}), 403
-    if dest_folder.lower().startswith('rag') and not has_privilege('can_use_rag'):
-        log_event("WARN", "STORAGE", f"Upload denied: user '{user_id}' lacks permission to upload to RAG vault.")
-        return jsonify({"error": "permission_denied", "message": "Permission required to upload to RAG vault."}), 403
 
     try:
         target_dir = sanitize_storage_path(dest_folder) if dest_folder else config.STORAGE_DIR
@@ -3171,11 +3503,51 @@ def download_file(filename):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/stream/<path:filename>', methods=['GET'])
-def stream_media_file(filename):
+@app.route('/api/media/playback-token', methods=['POST'])
+def generate_media_playback_token():
     err = require_auth()
     if err:
         return err
+
+    data = request.get_json(force=True, silent=True) or {}
+    raw_path = str(data.get('path', '')).strip()
+    if not raw_path:
+        return jsonify({"error": "validation_error", "message": "Media path required."}), 400
+
+    try:
+        norm_path = validate_safe_destination(raw_path)
+    except ValueError as e:
+        return jsonify({"error": "invalid_path", "message": str(e)}), 400
+
+    full_path = os.path.join(config.STORAGE_DIR, norm_path)
+    if is_protected_internal_path(full_path) or not os.path.exists(full_path) or os.path.isdir(full_path):
+        return jsonify({"error": "not_found", "message": "Media file not found."}), 404
+
+    user_id = g.user.get("user_id")
+    token = create_playback_token(user_id, norm_path)
+    return jsonify({
+        "playback_token": token,
+        "path": norm_path,
+        "expires_in": config.PLAYBACK_TOKEN_TTL_SECONDS
+    })
+
+
+@app.route('/stream/<path:filename>', methods=['GET'])
+def stream_media_file(filename):
+    playback_token = request.args.get('playback_token') or request.args.get('token')
+    
+    # 1. Try playback token validation first
+    is_valid_token = False
+    if playback_token:
+        valid, _ = verify_playback_token(playback_token, filename)
+        if valid:
+            is_valid_token = True
+
+    # 2. Fall back to standard session authentication if no valid playback token
+    if not is_valid_token:
+        err = require_auth()
+        if err:
+            return jsonify({"error": "unauthorized", "message": "Valid playback token or session required."}), 401
 
     if is_protected_internal_path(filename):
         return jsonify({"error": "Media file not found."}), 404
@@ -3305,8 +3677,15 @@ def enqueue_media_download():
 
     fmt = data.get('format', 'mp3').lower()
     quality = data.get('quality', 'best')
-    destination = data.get('destination', 'Downloads')
-    custom_name = data.get('filename', '')
+    raw_dest = data.get('destination', 'downloads')
+    try:
+        destination = validate_safe_destination(raw_dest)
+    except ValueError as e:
+        log_event("WARN", "MEDIA", f"Rejected media download with invalid destination '{raw_dest}': {e}")
+        return jsonify({"error": "validation_error", "message": f"Invalid download destination: {e}"}), 400
+
+    raw_custom_name = data.get('filename', '')
+    custom_name = sanitize_custom_filename(raw_custom_name) if raw_custom_name else ""
 
     enqueued = []
     for u in urls:
@@ -3359,13 +3738,20 @@ def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, des
     task_obj['updated_at'] = time.time()
     if not isinstance(task_obj.get('metadata'), dict):
         task_obj['metadata'] = {}
-    dest_dir = os.path.join(config.STORAGE_DIR, destination)
+
+    try:
+        dest_clean = validate_safe_destination(destination)
+    except ValueError:
+        dest_clean = "downloads"
+
+    custom_name_clean = sanitize_custom_filename(custom_name) if custom_name else ""
+    dest_dir = os.path.join(config.STORAGE_DIR, dest_clean)
     os.makedirs(dest_dir, exist_ok=True)
     task_obj['metadata']['destination_dir'] = dest_dir
 
     task_runner._save_task_to_db(task_obj)
 
-    out_tmpl = os.path.join(dest_dir, f"{custom_name}.%(ext)s" if custom_name else "%(title)s.%(ext)s")
+    out_tmpl = os.path.join(dest_dir, f"{custom_name_clean}.%(ext)s" if custom_name_clean else "%(title)s.%(ext)s")
 
     ffmpeg_dir = find_ffmpeg_location()
 
@@ -4201,8 +4587,8 @@ def admin_db_diagnostics():
     })
 
 
-def db_create_user(user_id: str, password: str, role: str = "user", privileges: dict = None) -> tuple[bool, str]:
-    """Creates a user with proper password hashing and RBAC privileges."""
+def db_create_user(user_id: str, password: str, role: str = "user", privileges: dict = None, is_disabled: int = 0) -> tuple[bool, str]:
+    """Creates a user with proper PBKDF2 password hashing and RBAC privileges."""
     user_id = str(user_id or "").strip().lower()
     if not user_id:
         return False, "User ID cannot be empty."
@@ -4223,9 +4609,9 @@ def db_create_user(user_id: str, password: str, role: str = "user", privileges: 
         conn = get_db_connection()
         try:
             conn.execute("""
-                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (user_id, hashed, salt, role, json.dumps(privileges), time.time()))
+                INSERT INTO users (user_id, password_hash, salt, role, is_disabled, privileges, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (user_id, hashed, salt, role, 1 if is_disabled else 0, json.dumps(privileges), time.time()))
             conn.commit()
         finally:
             conn.close()
@@ -4260,6 +4646,32 @@ def db_delete_user(user_id: str) -> tuple[bool, str]:
     return True, f"User '{user_id}' deleted successfully."
 
 
+@app.route('/api/admin/privileges', methods=['GET'])
+def get_privileges_registry():
+    """Returns authoritative privilege metadata and defaults for dynamic UI rendering."""
+    err = require_auth()
+    if err:
+        return err
+    priv_list = [
+        {
+            "key": k,
+            "description": v.get("description", ""),
+            "category": v.get("category", "General"),
+            "default_user": v.get("default_user", False),
+            "default_admin": v.get("default_admin", True)
+        }
+        for k, v in config.PRIVILEGE_METADATA.items()
+    ]
+    return jsonify({
+        "privileges": priv_list,
+        "metadata": config.PRIVILEGE_METADATA,
+        "defaults": {
+            "admin": config.ADMIN_DEFAULT_PRIVILEGES,
+            "user": config.USER_DEFAULT_PRIVILEGES
+        }
+    })
+
+
 @app.route('/api/admin/users', methods=['GET', 'POST'])
 def admin_manage_users():
     err = require_admin()
@@ -4271,20 +4683,129 @@ def admin_manage_users():
         user_id = str(data.get('user_id', '')).strip().lower()
         password = str(data.get('password', '')).strip()
         role = str(data.get('role', 'user')).strip().lower()
+        is_disabled = 1 if data.get('is_disabled') else 0
         privileges = data.get('privileges', None)
 
-        success, msg = db_create_user(user_id, password, role=role, privileges=privileges)
+        if not user_id:
+            return jsonify({"error": "User ID is required."}), 400
+        if len(password) < 6:
+            return jsonify({"error": "Password must be at least 6 characters."}), 400
+
+        success, msg = db_create_user(user_id, password, role=role, privileges=privileges, is_disabled=is_disabled)
         if not success:
             if "already exists" in msg:
                 return jsonify({"error": msg}), 409
             return jsonify({"error": msg}), 400
 
-        return jsonify({"message": msg}), 201
+        return jsonify({"message": msg, "user_id": user_id}), 201
 
     # GET List
     users = db_get_all_users()
-    clean_users = [{"user_id": u["user_id"], "username": u["user_id"], "role": u["role"], "privileges": u["privileges"], "created_at": u["created_at"]} for u in users.values()]
+    clean_users = [
+        {
+            "user_id": u["user_id"],
+            "username": u["user_id"],
+            "role": u["role"],
+            "is_disabled": bool(u.get("is_disabled", 0)),
+            "status": "DISABLED" if u.get("is_disabled", 0) else "ACTIVE",
+            "privileges": u["privileges"],
+            "created_at": u["created_at"]
+        } for u in users.values()
+    ]
     return jsonify(clean_users)
+
+
+@app.route('/api/admin/users/<user_id>', methods=['GET', 'PATCH', 'DELETE'])
+def admin_single_user_endpoint(user_id):
+    err = require_admin()
+    if err:
+        return err
+
+    user_id = str(user_id or "").strip().lower()
+    user = db_get_user(user_id)
+    if not user:
+        return jsonify({"error": f"User '{user_id}' not found."}), 404
+
+    if request.method == 'GET':
+        return jsonify({
+            "user_id": user["user_id"],
+            "username": user["user_id"],
+            "role": user["role"],
+            "is_disabled": bool(user.get("is_disabled", 0)),
+            "status": "DISABLED" if user.get("is_disabled", 0) else "ACTIVE",
+            "privileges": user["privileges"],
+            "created_at": user["created_at"]
+        })
+
+    elif request.method == 'PATCH':
+        data = request.get_json(force=True, silent=True) or {}
+        with DB_LOCK:
+            conn = get_db_connection()
+            try:
+                # Update role if provided
+                if "role" in data:
+                    new_role = str(data["role"]).strip().lower()
+                    if new_role not in ["admin", "user"]:
+                        return jsonify({"error": "Invalid role. Must be 'admin' or 'user'."}), 400
+                    if user_id == "admin" and new_role != "admin":
+                        return jsonify({"error": "Cannot change primary admin role."}), 400
+                    conn.execute("UPDATE users SET role = ? WHERE user_id = ?", (new_role, user_id))
+                    user["role"] = new_role
+
+                # Update disabled status if provided
+                if "is_disabled" in data:
+                    is_dis = 1 if data["is_disabled"] else 0
+                    if user_id == "admin" and is_dis == 1:
+                        return jsonify({"error": "Cannot disable primary admin account."}), 400
+                    conn.execute("UPDATE users SET is_disabled = ? WHERE user_id = ?", (is_dis, user_id))
+                    user["is_disabled"] = is_dis
+                    if is_dis == 1:
+                        # Revoke all active sessions for disabled user
+                        with SESSIONS_LOCK:
+                            toks = [k for k, v in SESSIONS.items() if v.get("user_id") == user_id]
+                            for t in toks:
+                                del SESSIONS[t]
+
+                # Update privileges if provided
+                if "privileges" in data and isinstance(data["privileges"], dict):
+                    merged_privs = dict(user["privileges"])
+                    for k, v in data["privileges"].items():
+                        if k in config.ALL_PRIVILEGES:
+                            merged_privs[k] = bool(v)
+                    conn.execute("UPDATE users SET privileges = ? WHERE user_id = ?", (json.dumps(merged_privs), user_id))
+                    user["privileges"] = merged_privs
+
+                conn.commit()
+            finally:
+                conn.close()
+
+        # Update in-memory session if active
+        with SESSIONS_LOCK:
+            for s in SESSIONS.values():
+                if s.get("user_id") == user_id:
+                    s["role"] = user["role"]
+                    s["privileges"] = user["privileges"]
+                    s["is_disabled"] = user.get("is_disabled", 0)
+
+        log_event("INFO", "USERS", f"Updated account settings for user '{user_id}'.")
+        return jsonify({
+            "message": f"User '{user_id}' updated successfully.",
+            "user_id": user_id,
+            "role": user["role"],
+            "is_disabled": bool(user.get("is_disabled", 0)),
+            "privileges": user["privileges"]
+        })
+
+    elif request.method == 'DELETE':
+        if user_id == "admin":
+            return jsonify({"error": "Cannot delete primary admin account."}), 400
+        if g.user.get("user_id") == user_id:
+            return jsonify({"error": "Cannot delete your own active admin account."}), 400
+
+        success, msg = db_delete_user(user_id)
+        if not success:
+            return jsonify({"error": msg}), 400
+        return jsonify({"message": msg})
 
 
 @app.route('/api/admin/users/update-privileges', methods=['POST'])
@@ -4322,19 +4843,127 @@ def admin_update_user_privileges():
     return jsonify({"message": f"Privileges updated for '{user_id}'."})
 
 
-@app.route('/api/admin/users/<user_id>', methods=['DELETE'])
-def admin_delete_user(user_id):
+@app.route('/api/admin/users/<user_id>/password', methods=['POST'])
+def admin_reset_user_password(user_id):
+    """Admin resets a user's password and revokes existing sessions."""
     err = require_admin()
     if err:
         return err
 
-    success, msg = db_delete_user(user_id)
-    if not success:
-        if "Cannot delete" in msg:
-            return jsonify({"error": msg}), 400
-        return jsonify({"error": msg}), 404
+    user_id = str(user_id or "").strip().lower()
+    user = db_get_user(user_id)
+    if not user:
+        return jsonify({"error": f"User '{user_id}' not found."}), 404
 
-    return jsonify({"message": msg})
+    data = request.get_json(force=True, silent=True) or {}
+    new_password = str(data.get('password', '')).strip()
+    if len(new_password) < 6:
+        return jsonify({"error": "New password must be at least 6 characters."}), 400
+
+    hashed, salt = hash_password(new_password)
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            conn.execute("UPDATE users SET password_hash = ?, salt = ?, failed_attempts = 0, locked_until = 0.0 WHERE user_id = ?", (hashed, salt, user_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+    # Revoke active sessions for that user to require re-login
+    with SESSIONS_LOCK:
+        toks = [k for k, v in SESSIONS.items() if v.get("user_id") == user_id]
+        for t in toks:
+            del SESSIONS[t]
+
+    clear_account_lockout(user_id=user_id)
+    log_event("INFO", "USERS", f"Administrator reset password for user '{user_id}'.")
+    return jsonify({"message": f"Password reset successfully for user '{user_id}'."})
+
+
+@app.route('/api/admin/users/<user_id>/sessions/revoke', methods=['POST'])
+def admin_revoke_user_sessions(user_id):
+    """Admin revokes all active sessions for a target user."""
+    err = require_admin()
+    if err:
+        return err
+
+    user_id = str(user_id or "").strip().lower()
+    user = db_get_user(user_id)
+    if not user:
+        return jsonify({"error": f"User '{user_id}' not found."}), 404
+
+    revoked_count = 0
+    with SESSIONS_LOCK:
+        toks = [k for k, v in SESSIONS.items() if v.get("user_id") == user_id]
+        for t in toks:
+            del SESSIONS[t]
+            revoked_count += 1
+
+    log_event("INFO", "USERS", f"Admin revoked {revoked_count} sessions for user '{user_id}'.")
+    return jsonify({"message": f"Revoked {revoked_count} sessions for user '{user_id}'.", "revoked_count": revoked_count})
+
+
+@app.route('/api/account/password', methods=['POST'])
+def account_change_own_password():
+    """Self-service endpoint for any authenticated user to update their own password."""
+    err = require_auth()
+    if err:
+        return err
+
+    user_id = g.user.get("user_id")
+    data = request.get_json(force=True, silent=True) or {}
+    current_password = str(data.get('current_password', '')).strip()
+    new_password = str(data.get('new_password', '')).strip()
+
+    if not current_password or not new_password:
+        return jsonify({"error": "validation_error", "message": "Current password and new password are required."}), 400
+    if len(new_password) < 6:
+        return jsonify({"error": "validation_error", "message": "New password must be at least 6 characters."}), 400
+
+    user = db_get_user(user_id)
+    if not user:
+        return jsonify({"error": "User account not found."}), 404
+
+    is_valid, _ = verify_password(current_password, user["password_hash"], user["salt"])
+    if not is_valid:
+        return jsonify({"error": "invalid_credentials", "message": "Incorrect current password."}), 401
+
+    new_hash, new_salt = hash_password(new_password)
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            conn.execute("UPDATE users SET password_hash = ?, salt = ? WHERE user_id = ?", (new_hash, new_salt, user_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+    # Invalidate other sessions for this user except current session
+    with SESSIONS_LOCK:
+        other_tokens = [k for k, v in SESSIONS.items() if v.get("user_id") == user_id and k != g.token]
+        for t in other_tokens:
+            del SESSIONS[t]
+
+    log_event("INFO", "AUTH", f"User '{user_id}' changed their password successfully.")
+    return jsonify({"message": "Password changed successfully. Other sessions have been revoked."})
+
+
+@app.route('/api/account/sessions/revoke', methods=['POST'])
+def account_revoke_other_sessions():
+    """Self-service endpoint to revoke all other active sessions except current."""
+    err = require_auth()
+    if err:
+        return err
+
+    user_id = g.user.get("user_id")
+    revoked_count = 0
+    with SESSIONS_LOCK:
+        other_tokens = [k for k, v in SESSIONS.items() if v.get("user_id") == user_id and k != g.token]
+        for t in other_tokens:
+            del SESSIONS[t]
+            revoked_count += 1
+
+    log_event("INFO", "AUTH", f"User '{user_id}' revoked {revoked_count} other active sessions.")
+    return jsonify({"message": f"Successfully revoked {revoked_count} other sessions.", "revoked_count": revoked_count})
 
 
 @app.route('/api/admin/stats', methods=['GET'])

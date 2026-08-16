@@ -7,16 +7,22 @@ Engineered specifically for unrooted Android 13 Termux on ~4 GB RAM hardware (TE
 import os
 import secrets
 
-VERSION = "2.3.0"
+# Authoritative Server Version
+NEXUS_SERVER_VERSION = "2.3.8"
+VERSION = NEXUS_SERVER_VERSION
 
 # Base Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STORAGE_DIR = os.environ.get("NEXUS_STORAGE_DIR", os.path.join(BASE_DIR, "storage_vault"))
-DB_FILE = os.environ.get("NEXUS_DB_FILE", os.path.join(STORAGE_DIR, "nexus_vault.db"))
+UNIFIED_DB_FILE = os.path.join(STORAGE_DIR, "nexus_unified.db")
+DB_FILE = UNIFIED_DB_FILE
+DB_PATH = UNIFIED_DB_FILE
+AUDIT_DB_FILE = UNIFIED_DB_FILE
 RAG_INDEX_FILE = os.environ.get("NEXUS_RAG_INDEX_FILE", os.path.join(STORAGE_DIR, "rag_index.json"))
 RAG_DB_FILE = os.environ.get("NEXUS_RAG_DB_FILE", os.path.join(STORAGE_DIR, "rag_vault.db"))
 BACKUP_DIR = os.environ.get("NEXUS_BACKUP_DIR", os.path.join(STORAGE_DIR, "backups"))
 CONFIG_FILE = os.path.join(STORAGE_DIR, "server_config.json")
+EMERGENCY_LOG_FILE = os.environ.get("NEXUS_EMERGENCY_LOG", os.path.join(BASE_DIR, "emergency_fallback.log"))
 
 # Ensure critical storage directories exist
 os.makedirs(STORAGE_DIR, exist_ok=True)
@@ -38,9 +44,11 @@ LOCALTONET_LOG_PATHS = [
     "/data/data/com.termux/files/home/localtonet.log"
 ]
 
-# Security & Secrets
+# Security, Passwords & Credentials
 SECRET_KEY = os.environ.get("NEXUS_SECRET_KEY", secrets.token_hex(32))
 SESSION_EXPIRY_SECONDS = int(os.environ.get("NEXUS_SESSION_TTL", 7 * 24 * 3600))  # 7 days
+PLAYBACK_TOKEN_TTL_SECONDS = int(os.environ.get("NEXUS_PLAYBACK_TOKEN_TTL", 120))  # 120 seconds
+PASSWORD_KDF_ITERATIONS = int(os.environ.get("NEXUS_PASSWORD_KDF_ITERATIONS", 100000))
 LOCKOUT_THRESHOLD = int(os.environ.get("NEXUS_LOCKOUT_THRESHOLD", 5))
 LOCKOUT_DURATION_SECONDS = int(os.environ.get("NEXUS_LOCKOUT_DURATION", 600))  # 10 minutes
 
@@ -66,9 +74,17 @@ THERMAL_CRITICAL_C = int(os.environ.get("NEXUS_THERMAL_CRITICAL_C", 55))
 MAX_HEAVY_CONCURRENCY = int(os.environ.get("NEXUS_MAX_HEAVY_CONCURRENCY", 1))
 SUBPROCESS_TIMEOUT_SECONDS = int(os.environ.get("NEXUS_TASK_TIMEOUT", 3600))
 
-# Media Center & Vault Categories
-MEDIA_CATEGORIES = ["Music", "Videos", "Podcasts", "Downloads", "Other"]
-for cat in ["Music", "Videos", "Podcasts", "Downloads"]:
+# Canonical Storage Paths & Vault Categories (Canonical Lowercase Internal)
+MEDIA_CATEGORIES = ["downloads", "music", "videos", "podcasts", "documents", "other"]
+MEDIA_CATEGORY_LABELS = {
+    "downloads": "Downloads",
+    "music": "Music",
+    "videos": "Videos",
+    "podcasts": "Podcasts",
+    "documents": "Documents",
+    "other": "Other"
+}
+for cat in MEDIA_CATEGORIES:
     os.makedirs(os.path.join(STORAGE_DIR, cat), exist_ok=True)
 
 # RAG & Memory Protection (SQLite FTS5 Inverted Index)
@@ -79,7 +95,8 @@ for src in RAG_DEFAULT_SOURCES:
     os.makedirs(os.path.join(STORAGE_DIR, src), exist_ok=True)
 
 RAG_EXCLUDE_DIRS = [
-    "backups", "Music", "Videos", "Podcasts", "Downloads", ".tmp", ".git", "__pycache__", "node_modules"
+    "backups", "music", "videos", "podcasts", "downloads", "Music", "Videos", "Podcasts", "Downloads",
+    ".tmp", ".git", "__pycache__", "node_modules", ".ssh", ".localtonet"
 ]
 RAG_EXCLUDE_EXTENSIONS = [
     ".mp3", ".mp4", ".mkv", ".webm", ".wav", ".opus", ".m4a", ".flac",
@@ -114,7 +131,7 @@ LOG_BROADCAST_QUEUE_SIZE = 100
 TELEMETRY_CACHE_TTL_SECONDS = float(os.environ.get("NEXUS_TELEMETRY_TTL", 2.5))
 TUNNEL_HEALTH_PROBE_TTL_SECONDS = float(os.environ.get("NEXUS_TUNNEL_PROBE_TTL", 30.0))
 
-# Permissions Registry (Principle of Least Privilege)
+# Permissions Registry (Authoritative Single Source of Truth)
 ALL_PRIVILEGES = [
     "can_upload_files",
     "can_manage_files",
@@ -131,21 +148,114 @@ ALL_PRIVILEGES = [
     "can_manage_settings"
 ]
 
+PRIVILEGE_METADATA = {
+    "can_upload_files": {
+        "name": "can_upload_files",
+        "label": "Upload Files",
+        "description": "Upload files into user-accessible Vault directories",
+        "category": "Storage & Vault",
+        "default_user": True,
+        "default_admin": True
+    },
+    "can_manage_files": {
+        "name": "can_manage_files",
+        "label": "Manage Files",
+        "description": "Rename, move, and delete user-accessible Vault files",
+        "category": "Storage & Vault",
+        "default_user": True,
+        "default_admin": True
+    },
+    "can_create_shares": {
+        "name": "can_create_shares",
+        "label": "Create File Shares",
+        "description": "Generate temporary cryptographic public download links",
+        "category": "Storage & Vault",
+        "default_user": False,
+        "default_admin": True
+    },
+    "can_download_media": {
+        "name": "can_download_media",
+        "label": "Download Media",
+        "description": "Enqueue background audio/video media extraction downloads",
+        "category": "Media Center",
+        "default_user": True,
+        "default_admin": True
+    },
+    "can_use_ai": {
+        "name": "can_use_ai",
+        "label": "AI Studio Inference",
+        "description": "Execute conversational LLM inference and model chat",
+        "category": "AI & Inference",
+        "default_user": True,
+        "default_admin": True
+    },
+    "can_use_rag": {
+        "name": "can_use_rag",
+        "label": "RAG Knowledge Search",
+        "description": "Search inverted index knowledge base and document chunks",
+        "category": "AI & Inference",
+        "default_user": True,
+        "default_admin": True
+    },
+    "can_control_services": {
+        "name": "can_control_services",
+        "label": "Control Services",
+        "description": "Start, stop, and restart daemon services (OpenSSH, LocalToNet, Ollama)",
+        "category": "System & Daemons",
+        "default_user": False,
+        "default_admin": True
+    },
+    "can_manage_models": {
+        "name": "can_manage_models",
+        "label": "Manage LLM Models",
+        "description": "Pull, delete, and inspect Ollama quantization models",
+        "category": "AI & Inference",
+        "default_user": False,
+        "default_admin": True
+    },
+    "can_view_system_logs": {
+        "name": "can_view_system_logs",
+        "label": "View Audit Logs",
+        "description": "Inspect raw system event and audit log streams",
+        "category": "Monitoring & Logs",
+        "default_user": False,
+        "default_admin": True
+    },
+    "can_manage_users": {
+        "name": "can_manage_users",
+        "label": "User & Role Governance",
+        "description": "Create, edit, disable, and delete user accounts and RBAC roles",
+        "category": "Administration",
+        "default_user": False,
+        "default_admin": True
+    },
+    "can_manage_backups": {
+        "name": "can_manage_backups",
+        "label": "Backup & Recovery",
+        "description": "Create, download, and restore system snapshots and databases",
+        "category": "Administration",
+        "default_user": False,
+        "default_admin": True
+    },
+    "can_manage_automation": {
+        "name": "can_manage_automation",
+        "label": "Automation Scheduler",
+        "description": "Create, configure, and trigger scheduled system tasks",
+        "category": "Administration",
+        "default_user": False,
+        "default_admin": True
+    },
+    "can_manage_settings": {
+        "name": "can_manage_settings",
+        "label": "Appliance Settings",
+        "description": "Modify core ports, hostname, and resource governor thresholds",
+        "category": "Administration",
+        "default_user": False,
+        "default_admin": True
+    }
+}
+
 ADMIN_DEFAULT_PRIVILEGES = {p: True for p in ALL_PRIVILEGES}
 USER_DEFAULT_PRIVILEGES = {
-    # Core User capabilities (permitted by default)
-    "can_upload_files": True,
-    "can_manage_files": True,
-    "can_create_shares": False,
-    "can_download_media": True,
-    "can_use_ai": True,
-    "can_use_rag": True,
-    # Infrastructure & Admin capabilities (strictly disabled by default)
-    "can_control_services": False,
-    "can_manage_models": False,
-    "can_view_system_logs": False,
-    "can_manage_users": False,
-    "can_manage_backups": False,
-    "can_manage_automation": False,
-    "can_manage_settings": False
+    p: PRIVILEGE_METADATA[p]["default_user"] for p in ALL_PRIVILEGES
 }

@@ -9,26 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.3.8] - 2026-08-16
 
-### ⚡ Central Frontend Cache, In-Flight Request De-duplication & Tab Preloading
+### 🛡️ Unified Production Hardening, PBKDF2 Password Security & Authoritative RBAC User Governance
 
 #### Added & Enhanced
-- **Central Frontend Data Cache & State Registry (`appData`)**:
-  - Implemented a unified in-memory cache tracking `data`, `loadedAt`, `loading`, `error`, and section-specific `ttl` for all major application subsystems (`status`, `vault`, `media`, `mediaQueue`, `tasks`, `aiState`, `aiModels`, `services`, `events`, `backups`, `automation`, `storageIntel`, `settings`, `users`, `diagnostics`).
-  - Section TTLs configured for optimum responsiveness without stale drift (status: 3s, tasks: 2s, media queue: 2.5s, AI: 4s, vault: 20s, events: 20s, backups: 45s, automation: 45s, storage intel: 30s, diagnostics: 60s).
-- **In-Flight Request Tracking & Promise De-duplication (`inFlightRequests`)**:
-  - GET requests reuse active in-flight Promises, preventing redundant duplicate network traffic when multiple UI components or polling loops query the same endpoint simultaneously.
-- **Parallel Background Tab Preloading (`preloadAppData()`)**:
-  - Immediately upon authentication (`setAuthenticatedState()`), all lightweight datasets across Vault, Media, Tasks, AI, Services, Events, Settings, Backups, and Admin Users are fetched concurrently in parallel using `Promise.allSettled()`.
-  - Non-blocking execution ensures the main dashboard renders immediately while background tabs populate ahead of user navigation.
-- **Stale-While-Revalidate Tab Navigation**:
-  - Clicking any tab renders cached data instantly with 0ms perceived lag and zero blank loading placeholders.
-  - Transparently revalidates expired datasets in the background and updates the UI in place without wiping existing tables on temporary network blips.
-- **Session Purge & Lifecycle Resilience**:
-  - Purges the entire `appData` cache and resets all in-flight request tracking on logout or 401 session expiration.
-- **RAG Subsystem Summary Route (`/api/rag/status`)**:
-  - Added `/api/rag/status` GET route alias returning RAG diagnostics, indexing metrics, and health state.
-- **Test Suite Expansion (236 Total Tests Passing - 100% OK)**:
-  - Added `tests/test_tab_preloading_cache.py` verifying all preload endpoints, RBAC isolation, frontend cache architecture, and stale-while-revalidate invariants.
+- **Storage Boundary & Canonical Directory Migration**:
+  - Authoritative validation function (`validate_safe_destination()`) strictly enforces canonical lowercase storage directories (`downloads/`, `music/`, `videos/`, `podcasts/`, `documents/`, `other/`).
+  - Prohibits all directory traversal variations (`..`, `.`, absolute paths, Windows drive letters, URL encodings) and blocks access to sensitive internal paths (`backups/`, `rag/`, `.git/`, `.ssh/`, `.tmp/`, `*.db*`, `*.sqlite*`, `.env*`, `server_config.json`, `localtonet.log`).
+  - Deterministic storage casing migration (`migrate_storage_casing_if_needed()`) converts legacy mixed-case folders without data loss.
+- **Short-Lived Playback Token Security (`/api/media/playback-token`)**:
+  - Implemented 60–120 second ephemeral playback credentials bound to `user_id` and normalized media path.
+  - Generates cryptographically secure opaque tokens via `secrets.token_urlsafe(32)`.
+  - Media streaming (`GET /stream/<path>?playback_token=<token>`) validates path binding and expiration, never exposing the primary 7-day session token in URLs.
+- **PBKDF2-HMAC-SHA256 Password Security**:
+  - Replaced legacy unsalted/single-SHA256 hashing with standard library `hashlib.pbkdf2_hmac` using `PASSWORD_KDF_ITERATIONS = 100000`.
+  - Format: `pbkdf2_sha256$<iterations>$<salt>$<digest>`.
+  - Transparent on-login migration seamlessly upgrades legacy password hashes on successful authentication.
+- **Authoritative User Administration & RBAC APIs (`/api/admin/users`, `/api/admin/privileges`)**:
+  - `GET /api/admin/privileges`: Exposes complete privilege metadata, descriptions, categories, and role defaults.
+  - `GET /api/admin/users`: Lists registered user accounts with role, active/disabled status, and privilege counts.
+  - `POST /api/admin/users`: Creates users with custom granular privileges and status.
+  - `GET /api/admin/users/<user_id>`: Fetches user details and assigned permissions.
+  - `PATCH /api/admin/users/<user_id>`: Updates role, disabled flag, or privileges.
+  - `DELETE /api/admin/users/<user_id>`: Purges user account and revokes active sessions (protects primary `admin`).
+  - `POST /api/admin/users/<user_id>/password`: Admin password reset with automatic session revocation.
+  - `POST /api/admin/users/<user_id>/sessions/revoke`: Invalidate all active sessions for a target user.
+- **Self-Service Account Security (`/api/account/password`, `/api/account/sessions/revoke`)**:
+  - Authenticated users can securely change passphrases (verifying current password) and revoke other active sessions.
+- **Logging Durability, Masking & Emergency Disk Fallback**:
+  - Sensitive data masking (`mask_sensitive_data()`) redacts passwords, salts, bearer tokens, and session keys.
+  - `LogWriterDaemon` features disk emergency fallback logging (`emergency_fallback.log`) if SQLite is locked.
+  - Automated bounded retention sweep metrics tracking (`RETENTION_METRICS`).
+- **Interactive Web UI & CLI Synchronization**:
+  - Rendered User & Role Governance table, dynamic Add/Edit User modal with RBAC checklists, and password reset dialogs in web frontend.
+  - Extended CLI commands (`nexus account password`, `nexus account revoke-sessions`, `nexus users password`, `nexus users disable/enable`, `nexus users revoke-sessions`).
+- **Full Test Suite & Live DevTools Verification (254 Tests Passing - 100% OK)**:
+  - Added `tests/test_production_hardening.py` covering storage boundaries, PBKDF2 migration, playback tokens, and RBAC APIs.
+  - Full automated suite passes cleanly (254 tests, 0 failures, 0 errors).
+  - Verified across Desktop (1440x900) and all 5 mobile viewports (320x568, 360x800, 375x812, 390x844, 412x915) using Chrome DevTools MCP.
 
 ---
 

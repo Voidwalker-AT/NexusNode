@@ -1389,10 +1389,8 @@ function renderMediaLibrary(items) {
   }).join('');
 }
 
-function playMediaFile(encodedPath, type, title) {
+async function playMediaFile(encodedPath, type, title) {
   const path = decodeURIComponent(encodedPath);
-  const authQuery = authState.token ? `?auth=${encodeURIComponent(authState.token)}` : '';
-  const streamUrl = `/stream/${encodeURIComponent(path)}${authQuery}`;
   const playerBox = document.getElementById('mediaPlayerBox');
   const nowPlayingTitle = document.getElementById('nowPlayingTitle');
   const audio = document.getElementById('globalAudioPlayer');
@@ -1400,6 +1398,28 @@ function playMediaFile(encodedPath, type, title) {
 
   if (!playerBox) return;
   playerBox.style.display = 'block';
+  if (nowPlayingTitle) nowPlayingTitle.textContent = `Preparing stream: ${title || path}...`;
+
+  let streamUrl = `/stream/${encodeURIComponent(path)}`;
+  try {
+    const res = await fetch('/api/media/playback-token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authState.token || ''}`
+      },
+      body: JSON.stringify({ path: path })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.playback_token) {
+        streamUrl = `/stream/${encodeURIComponent(path)}?playback_token=${encodeURIComponent(data.playback_token)}`;
+      }
+    }
+  } catch (e) {
+    console.warn('Playback token request fallback:', e);
+  }
+
   if (nowPlayingTitle) nowPlayingTitle.textContent = `Streaming: ${title || path}`;
 
   const isVid = (type && (type.toLowerCase() === 'video' || type.toLowerCase() === 'videos' || ['mp4', 'mkv', 'webm', 'mov', 'm4v', 'avi'].includes(type.toLowerCase()))) ||
@@ -2341,13 +2361,29 @@ function renderEventsArchiveUI(events) {
     const ts = ev.timestamp ? ev.timestamp.substring(11, 19) : (ev.date ? ev.date : '--');
     const lvl = (ev.level || 'INFO').toUpperCase();
     return `
-      <div class="log-entry">
+        <div class="log-entry">
         <span class="log-time">[${ts}]</span>
         <span class="log-level ${lvl}">${lvl}</span>
         <span class="log-msg">${escapeHtml(ev.message || '')}</span>
       </div>
     `;
   }).join('');
+}
+
+let privilegesRegistryCache = null;
+
+async function loadPrivilegesRegistry() {
+  if (privilegesRegistryCache) return privilegesRegistryCache;
+  try {
+    const res = await apiFetch('/api/admin/privileges');
+    if (!res.ok) return null;
+    const data = await res.json();
+    privilegesRegistryCache = data;
+    return data;
+  } catch (e) {
+    console.error('Failed to fetch privileges registry:', e);
+    return null;
+  }
 }
 
 async function loadAdminUsers(opts = {}) {
@@ -2357,7 +2393,7 @@ async function loadAdminUsers(opts = {}) {
   if (appData.users.data && !opts.isPreload) {
     renderAdminUsersUI(appData.users.data);
   } else if (!opts.isPreload && tbody && !tbody.children.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--on-surface-muted); padding: 16px;">Loading users...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--on-surface-muted); padding: 16px;">Loading users...</td></tr>';
   }
 
   const now = Date.now();
@@ -2381,33 +2417,431 @@ async function loadAdminUsers(opts = {}) {
     if (appData.users.data) {
       showToast('Users list refresh failed.', 'warning');
     } else if (!opts.isPreload && tbody) {
-      tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--status-critical); padding: 16px;">User load error: ${escapeHtml(e.message || 'Request failed')}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--status-critical); padding: 16px;">User load error: ${escapeHtml(e.message || 'Request failed')}</td></tr>`;
     }
   }
+}
+
+function filterAdminUsersTable() {
+  const q = (document.getElementById('adminUserSearchInput')?.value || '').toLowerCase().trim();
+  if (!appData.users.data) return;
+  if (!q) {
+    renderAdminUsersUI(appData.users.data);
+    return;
+  }
+  const filtered = appData.users.data.filter(u => {
+    const name = (u.user_id || u.username || '').toLowerCase();
+    const role = (u.role || '').toLowerCase();
+    return name.includes(q) || role.includes(q);
+  });
+  renderAdminUsersUI(filtered);
 }
 
 function renderAdminUsersUI(users) {
   const tbody = document.getElementById('adminUserTableBody');
   if (!tbody) return;
-  if (!users || users.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--on-surface-muted); padding: 16px;">No registered user accounts found.</td></tr>';
+
+  if (!users || !users.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--on-surface-muted); padding: 16px;">No users registered.</td></tr>';
     return;
   }
+
   tbody.innerHTML = users.map(u => {
-    const uname = u.username || u.user_id || 'user';
-    const urole = (u.role || 'USER').toUpperCase();
-    const created = u.created_at ? (typeof u.created_at === 'string' ? u.created_at.substring(0, 10) : new Date(u.created_at * 1000).toISOString().substring(0, 10)) : '--';
+    const uname = u.user_id || u.username || 'unknown';
+    const role = (u.role || 'user').toUpperCase();
+    const isDisabled = Boolean(u.is_disabled);
+    const isPrimaryAdmin = (uname === 'admin');
+    const privCount = u.privileges ? Object.values(u.privileges).filter(Boolean).length : 0;
+    const createdStr = formatTimestamp(u.created_at || Date.now());
+
     return `
       <tr>
-        <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(uname)}</td>
-        <td><span class="node-badge" style="color: ${urole === 'ADMIN' ? 'var(--primary)' : 'var(--on-surface-variant)'};">${urole}</span></td>
-        <td class="font-data-sm">${created}</td>
+        <td style="font-weight: 500; font-family: 'JetBrains Mono', monospace;">${escapeHtml(uname)}</td>
+        <td>
+          <span class="badge ${role === 'ADMIN' ? 'badge-primary' : 'badge-neutral'}">${escapeHtml(role)}</span>
+        </td>
+        <td>
+          <span class="badge ${isDisabled ? 'badge-critical' : 'badge-healthy'}">
+            ${isDisabled ? 'DISABLED' : 'ACTIVE'}
+          </span>
+        </td>
+        <td style="font-size: 11px; color: var(--on-surface-muted);">
+          ${privCount} granted
+        </td>
+        <td style="font-size: 11px; color: var(--on-surface-muted);">${createdStr}</td>
         <td style="text-align: right;">
-          <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="showToast('User account active.', 'info')">Details</button>
+          <div style="display: inline-flex; gap: 4px; flex-wrap: nowrap;">
+            <button class="btn btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: 24px;" onclick="openEditUserModal('${escapeHtml(uname)}')">Edit</button>
+            <button class="btn btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: 24px;" onclick="openAdminResetPasswordModal('${escapeHtml(uname)}')">Reset Pwd</button>
+            <button class="btn btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: 24px; color: ${isDisabled ? 'var(--status-healthy)' : 'var(--status-warning)'};" onclick="handleToggleUserDisabled('${escapeHtml(uname)}', ${isDisabled})">
+              ${isDisabled ? 'Enable' : 'Disable'}
+            </button>
+            <button class="btn btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: 24px;" title="Revoke all active sessions" onclick="handleAdminRevokeUserSessions('${escapeHtml(uname)}')">Revoke</button>
+            ${!isPrimaryAdmin ? `<button class="btn btn-secondary" style="padding: 2px 6px; font-size: 10px; min-height: 24px; color: var(--status-critical);" onclick="handleDeleteUser('${escapeHtml(uname)}')">Delete</button>` : ''}
+          </div>
         </td>
       </tr>
     `;
   }).join('');
+}
+
+async function populatePrivilegeCheckboxes(selectedPrivs = {}) {
+  const container = document.getElementById('adminUserPrivilegesContainer');
+  if (!container) return;
+  const reg = await loadPrivilegesRegistry();
+  if (!reg || !reg.privileges) {
+    container.innerHTML = '<span class="font-data-sm" style="color: var(--on-surface-muted);">No privileges metadata loaded.</span>';
+    return;
+  }
+
+  container.innerHTML = reg.privileges.map(p => {
+    const isChecked = Boolean(selectedPrivs[p.key]);
+    return `
+      <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--on-surface); cursor: pointer; padding: 4px; border-radius: var(--radius-xs); background: var(--surface-1);">
+        <input type="checkbox" name="privilege_item" value="${escapeHtml(p.key)}" ${isChecked ? 'checked' : ''} style="margin-top: 2px;">
+        <div>
+          <div style="font-weight: 500; font-family: 'JetBrains Mono', monospace; font-size: 11px;">${escapeHtml(p.key)}</div>
+          <div style="font-size: 10px; color: var(--on-surface-muted); line-height: 1.2;">${escapeHtml(p.description || '')}</div>
+        </div>
+      </label>
+    `;
+  }).join('');
+}
+
+async function openAddUserModal() {
+  const modal = document.getElementById('adminUserModal');
+  const title = document.getElementById('adminUserModalTitle');
+  const mode = document.getElementById('adminUserMode');
+  const userIdInput = document.getElementById('adminUserIdInput');
+  const pwdGroup = document.getElementById('adminUserPasswordGroup');
+  const pwdInput = document.getElementById('adminUserPasswordInput');
+  const roleSelect = document.getElementById('adminUserRoleSelect');
+  const disabledInput = document.getElementById('adminUserDisabledInput');
+
+  if (!modal) return;
+  if (title) title.textContent = 'Create User Account';
+  if (mode) mode.value = 'create';
+  if (userIdInput) { userIdInput.value = ''; userIdInput.disabled = false; }
+  if (pwdGroup) pwdGroup.style.display = 'block';
+  if (pwdInput) { pwdInput.value = ''; pwdInput.required = true; }
+  if (roleSelect) roleSelect.value = 'user';
+  if (disabledInput) disabledInput.checked = false;
+
+  const reg = await loadPrivilegesRegistry();
+  const defaultPrivs = (reg && reg.defaults && reg.defaults.user) || {};
+  await populatePrivilegeCheckboxes(defaultPrivs);
+
+  modal.style.display = 'flex';
+}
+
+async function openEditUserModal(userId) {
+  const modal = document.getElementById('adminUserModal');
+  const title = document.getElementById('adminUserModalTitle');
+  const mode = document.getElementById('adminUserMode');
+  const userIdInput = document.getElementById('adminUserIdInput');
+  const pwdGroup = document.getElementById('adminUserPasswordGroup');
+  const pwdInput = document.getElementById('adminUserPasswordInput');
+  const roleSelect = document.getElementById('adminUserRoleSelect');
+  const disabledInput = document.getElementById('adminUserDisabledInput');
+
+  if (!modal) return;
+
+  let userData = (appData.users.data || []).find(u => (u.user_id || u.username) === userId);
+  if (!userData) {
+    try {
+      const res = await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}`);
+      if (!res.ok) throw new Error('User fetch failed');
+      const data = await res.json();
+      userData = data.user || data;
+    } catch (e) {
+      showToast(`Failed to load user info: ${e.message}`, 'error');
+      return;
+    }
+  }
+
+  if (title) title.textContent = `Edit User: ${userId}`;
+  if (mode) mode.value = 'edit';
+  if (userIdInput) { userIdInput.value = userId; userIdInput.disabled = true; }
+  if (pwdGroup) pwdGroup.style.display = 'none';
+  if (pwdInput) { pwdInput.value = ''; pwdInput.required = false; }
+  if (roleSelect) roleSelect.value = userData.role || 'user';
+  if (disabledInput) disabledInput.checked = Boolean(userData.is_disabled);
+
+  await populatePrivilegeCheckboxes(userData.privileges || {});
+  modal.style.display = 'flex';
+}
+
+function closeAdminUserModal() {
+  const modal = document.getElementById('adminUserModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function handleUserModalOverlayClick(event) {
+  if (event.target && event.target.id === 'adminUserModal') {
+    closeAdminUserModal();
+  }
+}
+
+async function handleRoleChangeInUserModal() {
+  const mode = document.getElementById('adminUserMode')?.value;
+  if (mode === 'create') {
+    resetModalPrivilegesToRoleDefault();
+  }
+}
+
+async function resetModalPrivilegesToRoleDefault() {
+  const role = document.getElementById('adminUserRoleSelect')?.value || 'user';
+  const reg = await loadPrivilegesRegistry();
+  const defs = (reg && reg.defaults && reg.defaults[role]) || {};
+  await populatePrivilegeCheckboxes(defs);
+}
+
+async function handleSaveAdminUser(event) {
+  event.preventDefault();
+  const mode = document.getElementById('adminUserMode')?.value || 'create';
+  const userId = (document.getElementById('adminUserIdInput')?.value || '').trim();
+  const role = document.getElementById('adminUserRoleSelect')?.value || 'user';
+  const isDisabled = Boolean(document.getElementById('adminUserDisabledInput')?.checked);
+  const submitBtn = document.getElementById('adminUserSubmitBtn');
+
+  if (!userId) {
+    showToast('User ID is required.', 'warning');
+    return;
+  }
+
+  // Collect checked privileges
+  const privileges = {};
+  const checkboxes = document.querySelectorAll('#adminUserPrivilegesContainer input[name="privilege_item"]');
+  checkboxes.forEach(cb => {
+    privileges[cb.value] = cb.checked;
+  });
+
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    if (mode === 'create') {
+      const password = document.getElementById('adminUserPasswordInput')?.value || '';
+      if (!password || password.length < 6) {
+        showToast('Password must be at least 6 characters.', 'warning');
+        if (submitBtn) submitBtn.disabled = false;
+        return;
+      }
+      const res = await apiFetch('/api/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: userId,
+          password: password,
+          role: role,
+          is_disabled: isDisabled,
+          privileges: privileges
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || errData.message || 'Failed to create user');
+      }
+      showToast(`User '${userId}' created successfully.`, 'success');
+    } else {
+      const res = await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          role: role,
+          is_disabled: isDisabled,
+          privileges: privileges
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || errData.message || 'Failed to update user');
+      }
+      showToast(`User '${userId}' updated successfully.`, 'success');
+    }
+    closeAdminUserModal();
+    invalidateCache('/api/admin/users');
+    await loadAdminUsers({ force: true });
+  } catch (e) {
+    showToast(`Error saving user: ${e.message}`, 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+function openAdminResetPasswordModal(userId) {
+  const modal = document.getElementById('adminResetPasswordModal');
+  const targetId = document.getElementById('adminResetPasswordUserId');
+  const targetDisplay = document.getElementById('adminResetPasswordUserDisplay');
+  const newPwd = document.getElementById('adminResetNewPassword');
+  const confPwd = document.getElementById('adminResetConfirmPassword');
+
+  if (!modal) return;
+  if (targetId) targetId.value = userId;
+  if (targetDisplay) targetDisplay.textContent = userId;
+  if (newPwd) newPwd.value = '';
+  if (confPwd) confPwd.value = '';
+
+  modal.style.display = 'flex';
+}
+
+function closeAdminResetPasswordModal() {
+  const modal = document.getElementById('adminResetPasswordModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function handleResetPasswordModalOverlayClick(event) {
+  if (event.target && event.target.id === 'adminResetPasswordModal') {
+    closeAdminResetPasswordModal();
+  }
+}
+
+async function handleAdminResetPasswordSubmit(event) {
+  event.preventDefault();
+  const userId = document.getElementById('adminResetPasswordUserId')?.value;
+  const newPwd = document.getElementById('adminResetNewPassword')?.value;
+  const confPwd = document.getElementById('adminResetConfirmPassword')?.value;
+  const btn = document.getElementById('adminResetPasswordSubmitBtn');
+
+  if (!userId || !newPwd) return;
+  if (newPwd !== confPwd) {
+    showToast('Passwords do not match.', 'warning');
+    return;
+  }
+  if (newPwd.length < 6) {
+    showToast('Password must be at least 6 characters.', 'warning');
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  try {
+    const res = await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}/password`, {
+      method: 'POST',
+      body: JSON.stringify({ password: newPwd })
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || errData.message || 'Failed to reset password');
+    }
+    showToast(`Password for '${userId}' reset successfully. Active sessions revoked.`, 'success');
+    closeAdminResetPasswordModal();
+  } catch (e) {
+    showToast(`Failed to reset password: ${e.message}`, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function handleToggleUserDisabled(userId, isCurrentlyDisabled) {
+  const targetState = !isCurrentlyDisabled;
+  const actionLabel = targetState ? 'disable' : 'enable';
+  if (!confirm(`Are you sure you want to ${actionLabel} user '${userId}'?`)) return;
+
+  try {
+    const res = await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_disabled: targetState })
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || errData.message || `Failed to ${actionLabel} user`);
+    }
+    showToast(`User '${userId}' has been ${targetState ? 'disabled' : 'enabled'}.`, 'success');
+    invalidateCache('/api/admin/users');
+    await loadAdminUsers({ force: true });
+  } catch (e) {
+    showToast(`Failed to ${actionLabel} user: ${e.message}`, 'error');
+  }
+}
+
+async function handleAdminRevokeUserSessions(userId) {
+  if (!confirm(`Revoke all active sessions for user '${userId}'?`)) return;
+  try {
+    const res = await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}/sessions/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || errData.message || 'Failed to revoke sessions');
+    }
+    const data = await res.json().catch(() => ({}));
+    showToast(`Revoked ${data.revoked_count || 0} session(s) for '${userId}'.`, 'success');
+  } catch (e) {
+    showToast(`Failed to revoke sessions: ${e.message}`, 'error');
+  }
+}
+
+async function handleDeleteUser(userId) {
+  if (!confirm(`Are you sure you want to permanently delete user '${userId}'? This cannot be undone.`)) return;
+  try {
+    const res = await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || errData.message || 'Failed to delete user');
+    }
+    showToast(`User '${userId}' deleted successfully.`, 'success');
+    invalidateCache('/api/admin/users');
+    await loadAdminUsers({ force: true });
+  } catch (e) {
+    showToast(`Failed to delete user: ${e.message}`, 'error');
+  }
+}
+
+async function handleChangeOwnPassword(event) {
+  event.preventDefault();
+  const curPwd = document.getElementById('accountCurrentPassword')?.value;
+  const newPwd = document.getElementById('accountNewPassword')?.value;
+  const confPwd = document.getElementById('accountConfirmPassword')?.value;
+  const btn = document.getElementById('savePasswordBtn');
+
+  if (!curPwd || !newPwd) return;
+  if (newPwd !== confPwd) {
+    showToast('New passwords do not match.', 'warning');
+    return;
+  }
+  if (newPwd.length < 6) {
+    showToast('Password must be at least 6 characters.', 'warning');
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  try {
+    const res = await apiFetch('/api/account/password', {
+      method: 'POST',
+      body: JSON.stringify({
+        current_password: curPwd,
+        new_password: newPwd
+      })
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || errData.message || 'Failed to update password');
+    }
+    showToast('Password updated successfully. Other sessions revoked.', 'success');
+    document.getElementById('accountPasswordForm')?.reset();
+  } catch (e) {
+    showToast(`Password update failed: ${e.message}`, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function handleRevokeOtherSessions() {
+  if (!confirm('Revoke all other active sessions for your account?')) return;
+  try {
+    const res = await apiFetch('/api/account/sessions/revoke', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || errData.message || 'Failed to revoke sessions');
+    }
+    const data = await res.json().catch(() => ({}));
+    showToast(`Revoked ${data.revoked_count || 0} other active session(s).`, 'success');
+  } catch (e) {
+    showToast(`Failed to revoke sessions: ${e.message}`, 'error');
+  }
 }
 
 async function loadNetworkInterfaces(opts = {}) {
