@@ -2772,6 +2772,7 @@ def chat_stream():
 
 
 # --- RAG Subsystem Endpoints ---
+@app.route('/api/rag/status', methods=['GET'])
 @app.route('/api/rag/diagnostics', methods=['GET'])
 def rag_diagnostics_endpoint():
     err = require_privilege_or_admin("can_use_rag")

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.8] - 2026-08-16
+
+### ⚡ Central Frontend Cache, In-Flight Request De-duplication & Tab Preloading
+
+#### Added & Enhanced
+- **Central Frontend Data Cache & State Registry (`appData`)**:
+  - Implemented a unified in-memory cache tracking `data`, `loadedAt`, `loading`, `error`, and section-specific `ttl` for all major application subsystems (`status`, `vault`, `media`, `mediaQueue`, `tasks`, `aiState`, `aiModels`, `services`, `events`, `backups`, `automation`, `storageIntel`, `settings`, `users`, `diagnostics`).
+  - Section TTLs configured for optimum responsiveness without stale drift (status: 3s, tasks: 2s, media queue: 2.5s, AI: 4s, vault: 20s, events: 20s, backups: 45s, automation: 45s, storage intel: 30s, diagnostics: 60s).
+- **In-Flight Request Tracking & Promise De-duplication (`inFlightRequests`)**:
+  - GET requests reuse active in-flight Promises, preventing redundant duplicate network traffic when multiple UI components or polling loops query the same endpoint simultaneously.
+- **Parallel Background Tab Preloading (`preloadAppData()`)**:
+  - Immediately upon authentication (`setAuthenticatedState()`), all lightweight datasets across Vault, Media, Tasks, AI, Services, Events, Settings, Backups, and Admin Users are fetched concurrently in parallel using `Promise.allSettled()`.
+  - Non-blocking execution ensures the main dashboard renders immediately while background tabs populate ahead of user navigation.
+- **Stale-While-Revalidate Tab Navigation**:
+  - Clicking any tab renders cached data instantly with 0ms perceived lag and zero blank loading placeholders.
+  - Transparently revalidates expired datasets in the background and updates the UI in place without wiping existing tables on temporary network blips.
+- **Session Purge & Lifecycle Resilience**:
+  - Purges the entire `appData` cache and resets all in-flight request tracking on logout or 401 session expiration.
+- **RAG Subsystem Summary Route (`/api/rag/status`)**:
+  - Added `/api/rag/status` GET route alias returning RAG diagnostics, indexing metrics, and health state.
+- **Test Suite Expansion (236 Total Tests Passing - 100% OK)**:
+  - Added `tests/test_tab_preloading_cache.py` verifying all preload endpoints, RBAC isolation, frontend cache architecture, and stale-while-revalidate invariants.
+
+---
+
 ## [2.3.7] - 2026-08-16
 
 ### 🛠️ Vault Destinations, Photo Lightbox, Media Streaming & Mobile UX Repair Pass
