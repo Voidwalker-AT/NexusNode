@@ -32,9 +32,9 @@ class TestPackageMetadata(unittest.TestCase):
         self.assertTrue(len(nexus.__version__) > 0)
 
     def test_expected_release_version(self):
-        """Verify package version matches intended release version 1.0.1."""
+        """Verify package version matches intended release version 1.0.2."""
         import nexus
-        self.assertEqual(nexus.__version__, "1.0.1", "Package version must be 1.0.1")
+        self.assertEqual(nexus.__version__, "1.0.2", "Package version must be 1.0.2")
 
     def test_dist_artifacts_match_package_version(self):
         """If dist/ directory exists, ensure all built packages match nexus.__version__."""

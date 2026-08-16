@@ -25,7 +25,7 @@ class TestWindowsInstallationUX(unittest.TestCase):
         try:
             import nexus
             self.assertTrue(hasattr(nexus, "__version__"))
-            self.assertEqual(nexus.__version__, "1.0.1")
+            self.assertEqual(nexus.__version__, "1.0.2")
         except ImportError as e:
             self.fail(f"Package 'nexus' is not installed or importable: {e}")
 
@@ -87,12 +87,13 @@ class TestWindowsInstallationUX(unittest.TestCase):
         env = {k: os.path.expandvars(v) for k, v in env.items()}
 
         # 1. Test nexus --version
+        import nexus
         res_ver = subprocess.run(
             ["nexus", "--version"],
             capture_output=True, text=True, timeout=10, shell=True, env=env
         )
         self.assertEqual(res_ver.returncode, 0, f"nexus --version failed: {res_ver.stderr}")
-        self.assertIn("NexusNode CLI v1.0.1", res_ver.stdout)
+        self.assertIn(f"NexusNode CLI v{nexus.__version__}", res_ver.stdout)
 
         # 2. Test nexus --help
         res_help = subprocess.run(
