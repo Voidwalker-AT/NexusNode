@@ -185,5 +185,46 @@ class TestZeroDependencies(unittest.TestCase):
             pass
 
 
+class TestPython38Compatibility(unittest.TestCase):
+    """
+    Regression tests verifying strict Python 3.8 syntax and type annotation compatibility.
+    Guarantees no PEP 604 union operators (|) or unquoted PEP 585 built-in subscripts (list[])
+    exist in function signatures across the package.
+    """
+
+    def test_no_pep604_unions_or_pep585_generics_in_annotations(self):
+        import ast
+        import glob
+        import nexus
+
+        pkg_root = os.path.dirname(nexus.__file__)
+        py_files = glob.glob(os.path.join(pkg_root, "**", "*.py"), recursive=True)
+        self.assertGreater(len(py_files), 0, "No python files found in nexus package")
+
+        violations = []
+        for py_path in py_files:
+            with open(py_path, "r", encoding="utf-8") as f:
+                source = f.read()
+            tree = ast.parse(source, filename=py_path)
+            for node in ast.walk(tree):
+                # Check for BitOr in returns or arguments (PEP 604)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if node.returns and isinstance(node.returns, ast.BinOp) and isinstance(node.returns.op, ast.BitOr):
+                        violations.append(f"{py_path}:{node.lineno}: BitOr in return annotation ({node.name})")
+                    for arg in node.args.args + node.args.kwonlyargs:
+                        if arg.annotation and isinstance(arg.annotation, ast.BinOp) and isinstance(arg.annotation.op, ast.BitOr):
+                            violations.append(f"{py_path}:{arg.lineno}: BitOr in arg annotation ({arg.arg})")
+                if isinstance(node, ast.AnnAssign):
+                    if isinstance(node.annotation, ast.BinOp) and isinstance(node.annotation.op, ast.BitOr):
+                        violations.append(f"{py_path}:{node.lineno}: BitOr in variable annotation")
+
+                # Check for Subscript on bare built-in types (PEP 585)
+                if isinstance(node, ast.Subscript):
+                    if isinstance(node.value, ast.Name) and node.value.id in ("list", "dict", "tuple", "set"):
+                        violations.append(f"{py_path}:{node.lineno}: Subscript on built-in '{node.value.id}' (use typing.{node.value.id.capitalize()})")
+
+        self.assertEqual(violations, [], f"Found Python 3.8 incompatible type annotations:\n" + "\n".join(violations))
+
+
 if __name__ == '__main__':
     unittest.main()

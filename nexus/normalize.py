@@ -1,10 +1,6 @@
-"""
-NexusNode CLI — Authoritative Central API Response Normalization Layer
-Normalizes varying backend response shapes (top-level lists, nested objects, legacy keys)
-into canonical schemas without synthesizing fake data or hiding missing fields.
-"""
+from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, List, Dict
 
 
 def normalize_list(resp: Any, preferred_key: Optional[str] = None) -> list:
@@ -34,7 +30,7 @@ def normalize_dict(resp: Any, preferred_key: Optional[str] = None) -> dict:
     return {}
 
 
-def normalize_models(resp: Any) -> list[dict]:
+def normalize_models(resp: Any) -> List[dict]:
     """
     Normalizes /api/ai/models response into list of model dictionaries.
     """
@@ -120,7 +116,7 @@ def normalize_task(raw_task: Any) -> dict:
     }
 
 
-def normalize_tasks(resp: Any) -> list[dict]:
+def normalize_tasks(resp: Any) -> List[dict]:
     """
     Normalizes /api/tasks response into list of canonical task dictionaries.
     """
@@ -164,7 +160,7 @@ def normalize_system_status(resp: Any) -> dict:
     }
 
 
-def normalize_services(resp: Any) -> dict[str, dict]:
+def normalize_services(resp: Any) -> Dict[str, dict]:
     """
     Normalizes /api/services/status into a mapping of service_name -> service_data dict.
     Deduplicates alias keys (e.g. sshd -> ssh).

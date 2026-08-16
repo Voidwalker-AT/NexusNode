@@ -2,10 +2,12 @@
 NexusNode CLI — Authoritative Authentication & Session Manager
 Handles login, logout, whoami, session token persistence, and the worldwide connect sequence.
 """
+from __future__ import annotations
 
 import sys
 import time
 import getpass
+from typing import Optional, Dict, Any
 
 from . import config
 from . import output
@@ -183,7 +185,7 @@ def connect_sequence(client: NexusClient, server_url: str = None, username: str 
     print("Connecting to NexusNode...")
     print()
 
-    # 2. Handshake & Health Probe
+    # 2. Handshake & Health probe
     probe = client.probe_handshake(timeout=6)
     if not probe.get("ok"):
         output.print_step("Endpoint", "FAIL")
@@ -194,12 +196,12 @@ def connect_sequence(client: NexusClient, server_url: str = None, username: str 
             output.print_error(f"Connection failed: {probe.get('error')}")
         return False
 
-    # 3. Connection Steps
+    # 3. Connection steps
     output.print_step("Endpoint", "OK")
     output.print_step("TLS", "OK")
     output.print_step("API", "OK")
 
-    # 4. Server Metadata Panel
+    # 4. Server metadata panel
     output.print_panel("Server", [
         ("Name", probe.get("name", "NexusNode Mobile Appliance")),
         ("Device", probe.get("device", "TECNO BG6")),
@@ -232,7 +234,7 @@ def logout(client: NexusClient, as_json: bool = False) -> bool:
     return True
 
 
-def whoami(client: NexusClient, as_json: bool = False) -> dict | None:
+def whoami(client: NexusClient, as_json: bool = False) -> Optional[Dict[str, Any]]:
     """
     Inspects current authenticated session state against /api/auth/me.
     """

@@ -1,13 +1,11 @@
-"""
-NexusNode CLI — Local Configuration & Session Token Storage Manager
-Handles server URL resolution, local client settings, and secure session persistence across OS platforms.
-"""
+from __future__ import annotations
 
 import os
 import sys
 import json
 import urllib.parse
 from pathlib import Path
+from typing import Optional, Dict, Any
 
 
 def get_config_dir() -> Path:
@@ -61,7 +59,7 @@ def save_config(data: dict) -> None:
         pass
 
 
-def load_session() -> dict | None:
+def load_session() -> Optional[Dict[str, Any]]:
     """Loads active session data from disk if present."""
     sess_file = get_session_file()
     if sess_file.exists():
@@ -120,7 +118,7 @@ def normalize_server_url(url_str: str) -> str:
     return clean.rstrip("/")
 
 
-def resolve_server_url(cli_server: str = None, prompt_if_missing: bool = False) -> str | None:
+def resolve_server_url(cli_server: str = None, prompt_if_missing: bool = False) -> Optional[str]:
     """
     Resolves the remote NexusNode server URL with strict precedence:
     1. CLI argument (--server or positional connect url)

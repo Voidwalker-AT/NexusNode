@@ -1,7 +1,4 @@
-"""
-NexusNode Universal Remote CLI Client — Entry Point & Argument Parser
-Cross-platform command-line client for NexusNode HTTPS server.
-"""
+from __future__ import annotations
 
 import sys
 import argparse

@@ -1,8 +1,4 @@
-"""
-NexusNode CLI — Authoritative Remote HTTPS REST Client
-Communicates exclusively over HTTPS using Python standard library (urllib.request).
-Enforces TLS verification, session token injection, error handling, and streaming.
-"""
+from __future__ import annotations
 
 import os
 import sys
@@ -13,6 +9,7 @@ import urllib.request
 import urllib.error
 import urllib.parse
 from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, Union, Callable
 
 from . import config
 from . import output
@@ -121,7 +118,7 @@ class NexusClient:
         except Exception as e:
             return {"ok": False, "error": f"Handshake failed: {e}"}
 
-    def request(self, method: str, path: str, data: dict = None, params: dict = None, timeout: int = 30) -> tuple[int, any]:
+    def request(self, method: str, path: str, data: dict = None, params: dict = None, timeout: int = 30) -> Tuple[int, Any]:
         """
         Executes an HTTP request against the NexusNode server and returns (status_code, response_data).
         """
@@ -241,16 +238,16 @@ class NexusClient:
                 err_msg = str(e.reason)
             raise NexusConnectionError(f"Unable to reach NexusNode server at '{self.server_url}': {err_msg}")
 
-    def get(self, path: str, params: dict = None, timeout: int = 30) -> tuple[int, any]:
+    def get(self, path: str, params: dict = None, timeout: int = 30) -> Tuple[int, Any]:
         return self.request("GET", path, params=params, timeout=timeout)
 
-    def post(self, path: str, data: dict = None, timeout: int = 30) -> tuple[int, any]:
+    def post(self, path: str, data: dict = None, timeout: int = 30) -> Tuple[int, Any]:
         return self.request("POST", path, data=data, timeout=timeout)
 
-    def delete(self, path: str, params: dict = None, timeout: int = 30) -> tuple[int, any]:
+    def delete(self, path: str, params: dict = None, timeout: int = 30) -> Tuple[int, Any]:
         return self.request("DELETE", path, params=params, timeout=timeout)
 
-    def stream_post(self, path: str, data: dict = None, on_chunk: callable = None, timeout: int = 120):
+    def stream_post(self, path: str, data: dict = None, on_chunk: Optional[Callable] = None, timeout: int = 120):
         """
         Executes a POST request and streams text chunks line by line (used for /chat/stream and /api/logs/stream).
         """
@@ -283,7 +280,7 @@ class NexusClient:
         except Exception as e:
             raise NexusConnectionError(f"Streaming error: {e}")
 
-    def download_file(self, path: str, dest_file: Path | str, timeout: int = 120) -> bool:
+    def download_file(self, path: str, dest_file: Union[Path, str], timeout: int = 120) -> bool:
         """Downloads a remote file path to a local destination file path."""
         url = self.build_url(path)
         headers = {"User-Agent": "NexusNode-CLI/1.0"}

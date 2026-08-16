@@ -1,8 +1,4 @@
-"""
-NexusNode CLI — Interactive REPL Application Shell
-Dedicated application terminal with role-aware command grouping, autocompletion, and error handling.
-Does NOT execute arbitrary OS commands.
-"""
+from __future__ import annotations
 
 import sys
 import cmd

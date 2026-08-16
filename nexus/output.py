@@ -1,13 +1,11 @@
-"""
-NexusNode CLI — Terminal Output, Colors & Table Formatting Utilities
-Zero-dependency ANSI color system, compact table formatter, byte/time formatters, panels, and ASCII banner.
-"""
+from __future__ import annotations
 
 import os
 import re
 import sys
 import json
 import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # --- Color Configuration & State ---
 _COLOR_OVERRIDE = None
@@ -226,7 +224,7 @@ def print_step(name: str, status: str = "OK", total_width: int = 24):
         print(f"{name} {'.' * dots_count} {strip_ansi(status_colored)}")
 
 
-def print_panel(title: str, items: list[tuple[str, str]], width: int = 40):
+def print_panel(title: str, items: List[Tuple[str, str]], width: int = 40):
     """Prints a clean key-value panel block."""
     print()
     print(cyan(title, bold=True) if is_color_enabled() else title)
@@ -244,7 +242,7 @@ def print_panel(title: str, items: list[tuple[str, str]], width: int = 40):
     print()
 
 
-def format_bytes(b: int | float | None) -> str:
+def format_bytes(b: Optional[Union[int, float]]) -> str:
     """Formats numeric bytes into human-readable unit string."""
     if b is None:
         return "0 B"
@@ -265,7 +263,7 @@ def format_bytes(b: int | float | None) -> str:
         return f"{n / (1024 * 1024 * 1024 * 1024):.2f} TB"
 
 
-def format_duration(seconds: float | int | None) -> str:
+def format_duration(seconds: Optional[Union[float, int]]) -> str:
     """Formats seconds into human-readable duration."""
     if seconds is None:
         return "0s"
@@ -287,7 +285,7 @@ def format_duration(seconds: float | int | None) -> str:
         return f"{hrs:02d}:{mins:02d}:{secs:02d}"
 
 
-def format_timestamp(ts: float | int | str | None) -> str:
+def format_timestamp(ts: Optional[Union[float, int, str]]) -> str:
     """Formats unix timestamp or ISO string into readable date string."""
     if not ts:
         return "N/A"
@@ -301,7 +299,7 @@ def format_timestamp(ts: float | int | str | None) -> str:
     return str(ts)
 
 
-def print_table(headers: list[str], rows: list[list[any]], empty_message: str = "No records found."):
+def print_table(headers: List[str], rows: List[List[Any]], empty_message: str = "No records found."):
     """
     Renders an aligned ASCII table to stdout with ANSI-aware column width calculation.
     """
