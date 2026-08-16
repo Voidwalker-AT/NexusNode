@@ -62,16 +62,18 @@ Authorization: Bearer <session_token>
     }
     ```
 - `GET /api/media/library`: Returns categorized media library (`music`, `videos`, `podcasts`, `downloads`).
-- `GET /stream/<path:filepath>`: **HTTP 206 Partial Content** range streaming generator with byte seeking support.
+- `GET /stream/<path:filepath>?auth=<token>`: **HTTP 206 Partial Content** range streaming generator with byte seeking support, exact MIME type detection, and URL query token authentication.
 
 ---
 
 ### 2.5. Storage Vault & Intelligence
-- `GET /files?path=<subpath>`: Lists files and folders in vault, automatically filtering `.gitkeep`.
-- `POST /upload`: Multipart file upload with directory path parameter.
-- `GET /download/<path:filename>`: Downloads file, or zips directory on the fly if target is a folder.
+- `GET /files?path=<subpath>`: Lists files and folders in vault, categorizing images as `photos` and filtering protected internal system paths.
+- `GET /api/vault/destinations`: Dynamically returns accessible, writable Vault destination directories based on user role and permissions.
+- `POST /upload`: Multipart file upload with directory path destination parameter (`path`).
+- `GET /download/<path:filename>?auth=<token>&inline=true`: Downloads file as attachment or renders inline with appropriate MIME type (images, pdfs).
 - `GET /preview/<path:filename>`: In-browser preview for text, images, audio, video.
 - `DELETE /files/<path:filename>`: Deletes file from vault.
+- `POST /delete`: Alternative deletion endpoint (`{"filename": "..."}`).
 - `POST /api/vault/clean-temp`: Safely removes `.part`, `.ytdl`, and `.tmp` artifacts.
 - `GET /api/storage/intelligence`: Categorized volume analysis and large file finder (>50 MB).
 
@@ -93,11 +95,11 @@ Authorization: Bearer <session_token>
 
 ### 2.8. Authoritative AI Model Serving & SQLite FTS5 RAG
 - `GET /api/ai/models`: Queries Ollama `/api/tags` for authoritative installed models list.
-- `GET /api/ai/state`: Queries Ollama `/api/ps` for live model memory residency, processor assignment, and supervisor state.
+- `GET /api/ai/state`: Unified endpoint returning engine supervisor state (`running`, `stopped`, `unavailable`), resident model memory, and selected model.
+- `POST /api/ai/start` & `POST /api/ai/stop`: Canonical endpoints to start/stop the Ollama daemon via the runit service supervisor.
 - `POST /api/ai/models/select`: Selects active target model.
 - `POST /api/models/estimate`: Pre-checks model RAM requirement against available memory (`SAFE` vs `BLOCKED`).
 - `POST /api/models/pull`: Enqueues Ollama model pull task.
-- `POST /start` / `POST /stop`: Starts/stops Ollama daemon via runit supervisor (`sv up/down ollama`).
 - `GET /api/rag/status`: Returns SQLite FTS5 document and chunk counts.
 - `GET /api/rag/diagnostics`: Returns SQLite FTS5 inverted index metrics, database file size, and chunk distribution.
 - `POST /api/rag/index`: Triggers serialized SQLite FTS5 knowledge base rebuild.

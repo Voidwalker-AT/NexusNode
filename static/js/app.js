@@ -428,6 +428,7 @@ function switchTab(tabId) {
       break;
     case 'storage':
       loadVaultFiles();
+      loadVaultDestinations();
       break;
     case 'media':
       loadMediaLibrary();
@@ -776,7 +777,25 @@ function clearEventFeed() {
 // 5. VAULT FILE MANAGER
 // ==============================================================================
 
-async function loadVaultFiles(folderPath = '') {
+async function loadVaultDestinations() {
+  const select = document.getElementById('vaultUploadDestination');
+  if (!select) return;
+  try {
+    const res = await apiFetch('/api/vault/destinations');
+    if (res.ok) {
+      const data = await res.json();
+      const destinations = data.destinations || [];
+      const currentVal = select.value;
+      select.innerHTML = destinations.map(d => `
+        <option value="${escapeHtml(d.path)}" ${d.path === currentVal ? 'selected' : ''}>${escapeHtml(d.label)}</option>
+      `).join('');
+    }
+  } catch (e) {
+    console.warn('Failed to load dynamic vault destinations:', e);
+  }
+}
+
+async function loadVaultFiles(folderPath) {
   const tbody = document.getElementById('vaultTableBody');
   const countLabel = document.getElementById('vaultFileCount');
 
@@ -791,6 +810,19 @@ async function loadVaultFiles(folderPath = '') {
       const data = await res.json();
       appState.cachedFiles = data.files || (Array.isArray(data) ? data : []);
       renderVaultTable(appState.cachedFiles);
+
+      // Sync destination dropdown with current folder if available
+      const destSelect = document.getElementById('vaultUploadDestination');
+      if (destSelect && folderPath !== undefined) {
+        let optExists = Array.from(destSelect.options).some(o => o.value === (folderPath || ''));
+        if (!optExists && folderPath) {
+          const newOpt = document.createElement('option');
+          newOpt.value = folderPath;
+          newOpt.textContent = `${folderPath.split('/').pop()} (/${folderPath})`;
+          destSelect.appendChild(newOpt);
+        }
+        destSelect.value = folderPath || '';
+      }
     } else {
       if (countLabel) countLabel.textContent = 'UNAVAILABLE';
       if (tbody) {
@@ -844,28 +876,37 @@ function renderVaultTable(files) {
     return;
   }
 
+  const authQuery = authState.token ? `?auth=${encodeURIComponent(authState.token)}` : '';
+
   rowsHtml += filtered.map(file => {
     const isDir = Boolean(file.is_dir);
     const ext = isDir ? 'FOLDER' : (file.name.split('.').pop() || 'FILE').toUpperCase();
     const size = isDir ? '--' : formatBytes(file.size || 0);
     const date = file.modified ? file.modified.substring(0, 16).replace('T', ' ') : '--';
-    const isMedia = !isDir && ['MP3', 'MP4', 'MKV', 'WEBM', 'M4A', 'FLAC', 'WAV'].includes(ext);
+    const isMedia = !isDir && ['MP3', 'MP4', 'MKV', 'WEBM', 'M4A', 'FLAC', 'WAV', 'AAC', 'OGG', 'MOV', 'AVI'].includes(ext);
+    const isPhoto = !isDir && ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'SVG', 'BMP', 'ICO', 'TIFF'].includes(ext);
+
+    let iconName = 'draft';
+    if (isDir) iconName = 'folder';
+    else if (isPhoto) iconName = 'image';
+    else if (isMedia) iconName = 'movie';
 
     return `
       <tr>
         <td style="font-weight: 500; color: var(--on-surface-bright);">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="material-symbols-outlined" style="color: ${isDir ? 'var(--primary)' : 'var(--on-surface-muted)'};">${isDir ? 'folder' : 'draft'}</span>
-            ${isDir ? `<a href="#" onclick="loadVaultFiles('${encodeURIComponent(file.path || file.name)}'); return false;" style="color: var(--primary); text-decoration: underline;">${escapeHtml(file.name)}</a>` : `<span>${escapeHtml(file.name)}</span>`}
+            <span class="material-symbols-outlined" style="color: ${isDir ? 'var(--primary)' : isPhoto ? 'var(--secondary)' : 'var(--on-surface-muted)'};">${iconName}</span>
+            ${isDir ? `<a href="#" onclick="loadVaultFiles('${encodeURIComponent(file.path || file.name)}'); return false;" style="color: var(--primary); text-decoration: underline;">${escapeHtml(file.name)}</a>` : isPhoto ? `<span style="cursor: pointer; color: var(--on-surface-bright);" onclick="openPhotoPreview('${encodeURIComponent(file.path || file.name)}', '${escapeHtml(file.name)}')">${escapeHtml(file.name)}</span>` : `<span>${escapeHtml(file.name)}</span>`}
           </div>
         </td>
-        <td><span class="node-badge" style="${isDir ? 'color: var(--primary); border-color: rgba(0, 218, 243, 0.4);' : ''}">${ext}</span></td>
+        <td><span class="node-badge" style="${isDir ? 'color: var(--primary); border-color: rgba(0, 218, 243, 0.4);' : isPhoto ? 'color: var(--secondary);' : ''}">${ext}</span></td>
         <td class="font-data-sm">${size}</td>
         <td class="font-data-sm" style="color: var(--on-surface-variant);">${date}</td>
         <td style="text-align: right;">
           <div style="display: inline-flex; gap: 4px;">
+            ${isPhoto ? `<button class="icon-btn" title="View Photo" onclick="openPhotoPreview('${encodeURIComponent(file.path || file.name)}', '${escapeHtml(file.name)}')"><span class="material-symbols-outlined" style="font-size: 16px;">visibility</span></button>` : ''}
             ${isMedia ? `<button class="icon-btn" title="Stream" onclick="playMediaFile('${encodeURIComponent(file.path || file.name)}', '${ext.toLowerCase()}', '${escapeHtml(file.name)}')"><span class="material-symbols-outlined" style="font-size: 16px;">play_arrow</span></button>` : ''}
-            <a class="icon-btn" title="${isDir ? 'Download Zip' : 'Download'}" href="/download/${encodeURIComponent(file.path || file.name)}" download><span class="material-symbols-outlined" style="font-size: 16px;">${isDir ? 'folder_zip' : 'download'}</span></a>
+            <a class="icon-btn" title="${isDir ? 'Download Zip' : 'Download'}" href="/download/${encodeURIComponent(file.path || file.name)}${authQuery}" download><span class="material-symbols-outlined" style="font-size: 16px;">${isDir ? 'folder_zip' : 'download'}</span></a>
             <button class="icon-btn" title="Delete" onclick="handleVaultDelete('${encodeURIComponent(file.path || file.name)}')"><span class="material-symbols-outlined" style="font-size: 16px;">delete</span></button>
           </div>
         </td>
@@ -882,6 +923,13 @@ function filterVaultLocation(location, elem) {
   if (elem) elem.classList.add('active');
   if (location === 'all') {
     loadVaultFiles('');
+  } else if (location === 'photos') {
+    // Show all files filtered by photos category
+    if (appState.currentVaultPath) {
+      loadVaultFiles(appState.currentVaultPath);
+    } else {
+      loadVaultFiles('');
+    }
   } else if (['documents', 'media', 'downloads', 'backups', 'rag'].includes(location)) {
     loadVaultFiles(location);
   } else {
@@ -898,46 +946,56 @@ async function handleVaultUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
 
+  const destSelect = document.getElementById('vaultUploadDestination');
+  const selectedDest = (destSelect ? destSelect.value : '') || appState.currentVaultPath || '';
+
   const formData = new FormData();
   formData.append('file', file);
+  if (selectedDest) {
+    formData.append('path', selectedDest);
+  }
 
   try {
-    showToast(`Uploading ${file.name}...`, 'info');
+    const destDisplay = selectedDest ? `/${selectedDest}` : 'Vault Root';
+    showToast(`Uploading ${file.name} to ${destDisplay}...`, 'info');
     const res = await apiFetch('/upload', {
       method: 'POST',
-      body: formData
+      body: formData,
+      timeoutMs: 0 // File uploads must not time out
     });
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      showToast('File uploaded successfully.', 'success');
-      loadVaultFiles();
+      showToast(data.message || 'File uploaded successfully.', 'success');
+      loadVaultFiles(selectedDest);
+      loadVaultDestinations();
     } else {
-      const err = await res.json();
-      showToast(err.error || 'Upload failed.', 'error');
+      showToast(data.message || data.error || `Upload failed (HTTP ${res.status}).`, 'error');
     }
   } catch (e) {
-    showToast('Failed to upload file.', 'error');
+    showToast(`Failed to upload file: ${e.message || 'Network error'}`, 'error');
   } finally {
     event.target.value = '';
   }
 }
 
 async function handleVaultDelete(filename) {
-  if (!confirm(`Are you sure you want to delete ${decodeURIComponent(filename)}?`)) return;
+  const decoded = decodeURIComponent(filename);
+  if (!confirm(`Are you sure you want to delete ${decoded}?`)) return;
 
   try {
     const res = await apiFetch('/delete', {
       method: 'POST',
-      body: JSON.stringify({ filename: decodeURIComponent(filename) })
+      body: JSON.stringify({ filename: decoded })
     });
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      showToast('Object deleted.', 'success');
-      loadVaultFiles();
+      showToast(data.message || 'Object deleted successfully.', 'success');
+      loadVaultFiles(appState.currentVaultPath);
     } else {
-      const err = await res.json();
-      showToast(err.error || 'Delete failed.', 'error');
+      showToast(data.message || data.error || 'Delete failed.', 'error');
     }
   } catch (e) {
-    showToast('Failed to delete object.', 'error');
+    showToast(`Failed to delete object: ${e.message || 'Network error'}`, 'error');
   }
 }
 
@@ -1115,7 +1173,8 @@ function renderMediaLibrary(items) {
 
 function playMediaFile(encodedPath, type, title) {
   const path = decodeURIComponent(encodedPath);
-  const streamUrl = `/stream/${encodeURIComponent(path)}`;
+  const authQuery = authState.token ? `?auth=${encodeURIComponent(authState.token)}` : '';
+  const streamUrl = `/stream/${encodeURIComponent(path)}${authQuery}`;
   const playerBox = document.getElementById('mediaPlayerBox');
   const nowPlayingTitle = document.getElementById('nowPlayingTitle');
   const audio = document.getElementById('globalAudioPlayer');
@@ -1123,21 +1182,26 @@ function playMediaFile(encodedPath, type, title) {
 
   if (!playerBox) return;
   playerBox.style.display = 'block';
-  if (nowPlayingTitle) nowPlayingTitle.textContent = `Streaming: ${title}`;
+  if (nowPlayingTitle) nowPlayingTitle.textContent = `Streaming: ${title || path}`;
 
-  if (type === 'video' || path.endsWith('.mp4') || path.endsWith('.mkv') || path.endsWith('.webm')) {
+  const isVid = (type && (type.toLowerCase() === 'video' || type.toLowerCase() === 'videos' || ['mp4', 'mkv', 'webm', 'mov', 'm4v', 'avi'].includes(type.toLowerCase()))) ||
+                ['.mp4', '.mkv', '.webm', '.mov', '.m4v', '.avi'].some(ext => path.toLowerCase().endsWith(ext));
+
+  if (isVid) {
     if (audio) { audio.pause(); audio.style.display = 'none'; }
     if (video) {
       video.src = streamUrl;
       video.style.display = 'block';
-      video.play();
+      video.onerror = () => showToast(`Unable to decode or stream video: ${title || path}`, 'error');
+      video.play().catch(e => console.warn('Autoplay prevented or video play error:', e));
     }
   } else {
     if (video) { video.pause(); video.style.display = 'none'; }
     if (audio) {
       audio.src = streamUrl;
       audio.style.display = 'block';
-      audio.play();
+      audio.onerror = () => showToast(`Unable to decode or stream audio: ${title || path}`, 'error');
+      audio.play().catch(e => console.warn('Autoplay prevented or audio play error:', e));
     }
   }
 }
@@ -1249,6 +1313,11 @@ async function loadAiState() {
   const loadedName = document.getElementById('aiLoadedModelName');
   const loadedMem = document.getElementById('aiLoadedModelMemory');
   const unloadBtn = document.getElementById('aiUnloadModelBtn');
+  const powerBadge = document.getElementById('aiEngineStatusBadge');
+  const powerDetail = document.getElementById('aiEngineDetailText');
+  const toggleBtn = document.getElementById('aiEngineToggleBtn');
+  const toggleLabel = document.getElementById('aiEngineToggleLabel');
+  const toggleIcon = document.getElementById('aiEngineToggleIcon');
 
   try {
     const [modelsResult, stateResult] = await Promise.allSettled([
@@ -1256,7 +1325,60 @@ async function loadAiState() {
       apiFetch('/api/ai/state')
     ]);
 
-    // 1. Process Models List
+    // 1. Process Runtime State & Power Switch
+    let isRunning = false;
+    if (stateResult.status === 'fulfilled' && stateResult.value.ok) {
+      const stateData = await stateResult.value.json();
+      const engineState = (stateData.engine || 'stopped').toLowerCase();
+      isRunning = (engineState === 'running');
+
+      if (powerBadge) {
+        powerBadge.textContent = engineState.toUpperCase();
+        powerBadge.className = isRunning ? 'status-indicator status-healthy' : 'status-indicator status-offline';
+      }
+      if (powerDetail) {
+        powerDetail.textContent = isRunning ? `Engine: Active (v${stateData.version || '0.x'})` : 'Engine: Offline / Suspended';
+      }
+      if (toggleBtn && toggleLabel) {
+        if (isRunning) {
+          toggleBtn.className = 'btn btn-danger';
+          toggleLabel.textContent = 'TURN OFF';
+          if (toggleIcon) toggleIcon.textContent = 'power_settings_new';
+        } else {
+          toggleBtn.className = 'btn btn-primary';
+          toggleLabel.textContent = 'TURN ON';
+          if (toggleIcon) toggleIcon.textContent = 'power_settings_new';
+        }
+      }
+
+      if (stateData.loaded_model) {
+        appState.loadedModel = stateData.loaded_model;
+        if (loadedName) loadedName.textContent = stateData.loaded_model;
+        const ramMb = stateData.loaded_model_details ? stateData.loaded_model_details.runtime_size_mb : (stateData.memory_mb || 0);
+        if (loadedMem) loadedMem.textContent = `Resident RAM: ${ramMb} MB`;
+        if (unloadBtn) unloadBtn.style.display = 'block';
+      } else {
+        appState.loadedModel = '';
+        if (loadedName) loadedName.textContent = 'None (Unloaded)';
+        if (loadedMem) loadedMem.textContent = 'Resident RAM: 0 MB';
+        if (unloadBtn) unloadBtn.style.display = 'none';
+      }
+      if (stateData.selected_model && select && !select.value) {
+        select.value = stateData.selected_model;
+      }
+    } else {
+      if (powerBadge) {
+        powerBadge.textContent = 'OFFLINE';
+        powerBadge.className = 'status-indicator status-offline';
+      }
+      if (powerDetail) powerDetail.textContent = 'Engine: Service unreachable';
+      if (toggleBtn && toggleLabel) {
+        toggleBtn.className = 'btn btn-primary';
+        toggleLabel.textContent = 'TURN ON';
+      }
+    }
+
+    // 2. Process Models List
     if (modelsResult.status === 'fulfilled' && modelsResult.value.ok) {
       const modelsData = await modelsResult.value.json();
       const modelsList = Array.isArray(modelsData) ? modelsData : (modelsData.models || []);
@@ -1275,29 +1397,42 @@ async function loadAiState() {
     } else if (select) {
       select.innerHTML = '<option value="">Unable to load models</option>';
     }
-
-    // 2. Process Runtime Residency State
-    if (stateResult.status === 'fulfilled' && stateResult.value.ok) {
-      const stateData = await stateResult.value.json();
-      if (stateData.loaded_model) {
-        appState.loadedModel = stateData.loaded_model;
-        if (loadedName) loadedName.textContent = stateData.loaded_model;
-        const ramMb = stateData.loaded_model_details ? stateData.loaded_model_details.runtime_size_mb : (stateData.memory_mb || 0);
-        if (loadedMem) loadedMem.textContent = `Resident RAM: ${ramMb} MB`;
-        if (unloadBtn) unloadBtn.style.display = 'block';
-      } else {
-        appState.loadedModel = '';
-        if (loadedName) loadedName.textContent = 'None (Unloaded)';
-        if (loadedMem) loadedMem.textContent = 'Resident RAM: 0 MB';
-        if (unloadBtn) unloadBtn.style.display = 'none';
-      }
-      if (stateData.selected_model && select && !select.value) {
-        select.value = stateData.selected_model;
-      }
-    }
   } catch (e) {
     console.error('Failed to load AI state:', e);
     if (select) select.innerHTML = '<option value="">Unable to load models (Error)</option>';
+  }
+}
+
+async function handleToggleAiEngine() {
+  const badge = document.getElementById('aiEngineStatusBadge');
+  const btn = document.getElementById('aiEngineToggleBtn');
+  const label = document.getElementById('aiEngineToggleLabel');
+  const detail = document.getElementById('aiEngineDetailText');
+
+  const isRunning = badge && badge.textContent === 'RUNNING';
+  const targetAction = isRunning ? 'stop' : 'start';
+  const targetUrl = isRunning ? '/api/ai/stop' : '/api/ai/start';
+
+  try {
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = isRunning ? 'STOPPING...' : 'STARTING...';
+    if (detail) detail.textContent = isRunning ? 'Stopping AI Engine service...' : 'Starting AI Engine daemon...';
+    showToast(isRunning ? 'Stopping AI Engine...' : 'Starting AI Engine...', 'info');
+
+    const res = await apiFetch(targetUrl, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok) {
+      showToast(data.message || (isRunning ? 'AI Engine stopped.' : 'AI Engine started.'), 'success');
+    } else {
+      showToast(data.message || data.error || `Failed to ${targetAction} AI Engine.`, 'error');
+    }
+  } catch (e) {
+    showToast(`Network error attempting to ${targetAction} AI Engine.`, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    await loadAiState();
+    pollSystemStatus();
   }
 }
 
@@ -1332,6 +1467,67 @@ async function handleUnloadAiModel() {
     showToast('Failed to unload model.', 'error');
   }
 }
+
+// ==============================================================================
+// PHOTO LIGHTBOX MODAL
+// ==============================================================================
+
+function openPhotoPreview(encodedPath, title) {
+  const path = decodeURIComponent(encodedPath);
+  const modal = document.getElementById('photoPreviewModal');
+  const img = document.getElementById('photoPreviewImg');
+  const titleEl = document.getElementById('photoPreviewTitle');
+  const metaEl = document.getElementById('photoPreviewMeta');
+  const dimEl = document.getElementById('photoPreviewDimensions');
+  const dlBtn = document.getElementById('photoDownloadBtn');
+
+  if (!modal || !img) return;
+
+  const authQuery = authState.token ? `?auth=${encodeURIComponent(authState.token)}` : '';
+  const inlineQuery = authState.token ? `?auth=${encodeURIComponent(authState.token)}&inline=true` : '?inline=true';
+  const photoUrl = `/download/${encodeURIComponent(path)}${inlineQuery}`;
+  const downloadUrl = `/download/${encodeURIComponent(path)}${authQuery}`;
+
+  if (titleEl) titleEl.textContent = title || path.split('/').pop() || 'Photo Preview';
+  if (metaEl) metaEl.textContent = `Location: /${path}`;
+  if (dimEl) dimEl.textContent = 'Loading image...';
+  if (dlBtn) dlBtn.href = downloadUrl;
+
+  img.src = '';
+  img.onload = () => {
+    if (dimEl) dimEl.textContent = `${img.naturalWidth} × ${img.naturalHeight} px`;
+  };
+  img.onerror = () => {
+    if (dimEl) dimEl.textContent = 'Failed to load image preview';
+    showToast('Failed to load image preview.', 'error');
+  };
+  img.src = photoUrl;
+
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closePhotoPreview() {
+  const modal = document.getElementById('photoPreviewModal');
+  const img = document.getElementById('photoPreviewImg');
+  if (modal) modal.style.display = 'none';
+  if (img) img.src = '';
+  document.body.style.overflow = '';
+}
+
+function handlePhotoModalOverlayClick(event) {
+  if (event.target.id === 'photoPreviewModal' || event.target.classList.contains('photo-modal-overlay')) {
+    closePhotoPreview();
+  }
+}
+
+// Global escape key listener for modals
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closePhotoPreview();
+    closeMediaPlayer();
+  }
+});
 
 async function handleSendAiChat(event) {
   event.preventDefault();

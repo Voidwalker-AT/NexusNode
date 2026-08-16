@@ -612,8 +612,14 @@ html, body {
 /* Grid Frameworks */
 .grid-12 {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--gap-gutter);
+  width: 100%;
+}
+
+.grid-12 > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 @media (min-width: 900px) {
@@ -898,12 +904,18 @@ html, body {
   margin-bottom: 16px;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 16px;
+  gap: 12px;
 }
 
-@media (min-width: 800px) {
+@media (min-width: 640px) {
   .ai-dual-model-banner {
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1100px) {
+  .ai-dual-model-banner {
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 
@@ -1470,4 +1482,158 @@ html, body {
   font-size: 11px;
   margin-bottom: 14px;
   display: none;
+}
+
+/* ==========================================================================
+   PHOTO PREVIEW LIGHTBOX MODAL
+   ========================================================================== */
+.photo-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(6px);
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.15s ease;
+}
+
+.photo-modal-card {
+  width: 100%;
+  max-width: 900px;
+  max-height: 92vh;
+  background-color: var(--surface-1);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8);
+}
+
+.photo-modal-header {
+  padding: 10px 14px;
+  background-color: var(--surface-2);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.photo-modal-body {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #050505;
+  overflow: auto;
+  max-height: 75vh;
+}
+
+.photo-modal-footer {
+  padding: 8px 14px;
+  background-color: var(--surface-1);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ==========================================================================
+   MOBILE RESPONSIVENESS REFINEMENTS (320px - 600px Viewports)
+   ========================================================================== */
+@media (max-width: 600px) {
+  .app-container {
+    overflow-x: hidden;
+    width: 100vw;
+    max-width: 100vw;
+  }
+  .main-workspace {
+    padding: 10px;
+    padding-bottom: calc(var(--nav-height) + 24px);
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+  }
+  .tab-pane {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  .tech-card {
+    padding: 12px;
+    max-width: 100%;
+  }
+  .vault-table-container, .tech-table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    max-width: 100%;
+  }
+  .tech-table th, .tech-table td {
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+  .photo-modal-card {
+    max-width: 96vw;
+    max-height: 90vh;
+  }
+  .photo-modal-body {
+    padding: 8px;
+    max-height: 65vh;
+  }
+  .photo-modal-header {
+    padding: 8px 10px;
+  }
+  .ai-model-box {
+    padding: 10px;
+  }
+  .btn, .icon-btn {
+    min-height: 36px;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header {
+    padding: 0 8px;
+    height: 48px;
+  }
+  .brand-logo svg {
+    width: 22px;
+    height: 22px;
+  }
+  .brand-info h1 {
+    font-size: 14px;
+    gap: 4px;
+  }
+  .node-badge {
+    display: none;
+  }
+  .header-actions {
+    gap: 6px;
+  }
+  .connection-status-pill {
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+  #headerStatusText {
+    display: none;
+  }
+  .user-pill {
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+  #headerUsername {
+    display: none;
+  }
+  .icon-btn {
+    width: 30px;
+    height: 30px;
+  }
+  .status-strip {
+    font-size: 10px;
+    padding: 2px 8px;
+  }
 }

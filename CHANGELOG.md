@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.7] - 2026-08-16
+
+### 🛠️ Vault Destinations, Photo Lightbox, Media Streaming & Mobile UX Repair Pass
+
+#### Added & Enhanced
+- **Dynamic Vault Upload Destination Selector (`/api/vault/destinations`)**:
+  - Dynamically discovers all writable Vault directories based on user role and permissions.
+  - Strictly enforces RBAC and protected path policies: system databases (`.db`, `.wal`), internal directories (`.git`, `backups`, `__pycache__`), and sensitive files remain hidden and inaccessible.
+  - Integrated destination selector into Vault upload UI with automatic directory synchronization.
+- **Vault Photo Categorization & Inline Lightbox Viewer**:
+  - Automatically categorizes image extensions (`.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.svg`, `.bmp`, `.ico`, `.tiff`) as `"photos"` in `/files`.
+  - Added `?inline=true` support to `/download/<path>` with MIME headers for direct in-browser rendering.
+  - Built an accessible Photo Preview Lightbox Modal (`#photoPreviewModal`) with natural dimension tracking, download controls, and keyboard `Escape`/backdrop dismissal.
+- **Universal Media Streaming (`/stream/<path>`)**:
+  - Updated `authenticate_request()` to accept `?auth=<token>` or `?token=<token>` query parameters for native browser `<audio>` and `<video>` elements.
+  - Implemented exact MIME type detection and HTTP 206 Partial Content byte range streaming (`Range: bytes=start-end`).
+- **AI Studio Engine Power Switch (`/api/ai/start`, `/api/ai/stop`)**:
+  - Added canonical AI daemon start/stop endpoints with RBAC checks (`can_control_services`).
+  - Added an AI Engine Power card with live status badge and start/stop toggle controls to the AI Studio banner.
+- **Comprehensive Subsystem Failure Logging**:
+  - Added `log_event("WARN" | "ERROR", category, message, meta)` instrumentation across authentication, storage, AI, and services.
+  - Added immediate `flush()` helper to `LogWriterDaemon` for reliable SQLite commit synchronicity.
+- **Mobile Viewport Ergonomics & Responsive Fixes (320px–412px)**:
+  - Eliminated horizontal overflow across small mobile viewports (320x568, 360x800, 375x812, 390x844, 412x915).
+  - Added bottom padding clearing the mobile bottom dock and touch-scroll containers for data tables.
+- **Test Suite Expansion (232 Total Tests Passing - 100% OK)**:
+  - Added 12 new end-to-end functionality tests in `tests/test_functionality_pass.py` verifying upload routing, RBAC destinations, photo preview, media streaming, AI controls, failure logging, and security invariance.
+
+---
+
 ## [2.3.6] - 2026-08-16
 
 ### 🎨 Universal CLI Terminal Color Engine & Resilient yt-dlp/FFmpeg Engine

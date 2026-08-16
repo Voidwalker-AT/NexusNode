@@ -394,12 +394,16 @@
       <main class="tab-pane" id="tab-storage">
         <div class="vault-layout">
           
-          <!-- Locations Sidebar -->
+            <!-- Locations Sidebar -->
           <aside class="vault-sidebar">
             <div class="font-label-caps" style="color: var(--on-surface-muted); margin-bottom: 6px;">LOCATIONS</div>
             <button class="vault-nav-item active" onclick="filterVaultLocation('all', this)">
               <span class="material-symbols-outlined">folder</span>
               <span>All Storage</span>
+            </button>
+            <button class="vault-nav-item" onclick="filterVaultLocation('photos', this)">
+              <span class="material-symbols-outlined">image</span>
+              <span>Photos</span>
             </button>
             <button class="vault-nav-item" onclick="filterVaultLocation('documents', this)">
               <span class="material-symbols-outlined">description</span>
@@ -422,7 +426,15 @@
               <span>RAG Vault</span>
             </button>
 
-            <div class="font-label-caps" style="color: var(--on-surface-muted); margin-top: 16px; margin-bottom: 6px;">ACTIONS</div>
+            <div class="font-label-caps" style="color: var(--on-surface-muted); margin-top: 14px; margin-bottom: 4px;">UPLOAD DESTINATION</div>
+            <select class="form-select" id="vaultUploadDestination" style="margin-bottom: 8px; font-size: 11px; padding: 4px 8px; min-height: 32px; background: var(--surface-2);">
+              <option value="">Vault Root (/)</option>
+              <option value="downloads">Downloads (/downloads)</option>
+              <option value="documents">Documents (/documents)</option>
+              <option value="media">Media (/media)</option>
+            </select>
+
+            <div class="font-label-caps" style="color: var(--on-surface-muted); margin-top: 6px; margin-bottom: 6px;">ACTIONS</div>
             <input type="file" id="vaultFileInput" style="display: none;" onchange="handleVaultUpload(event)">
             <button class="btn btn-primary" style="width: 100%; margin-bottom: 6px;" onclick="document.getElementById('vaultFileInput').click()">
               <span class="material-symbols-outlined">upload</span>
@@ -636,9 +648,22 @@
       <!-- ===================================================================== -->
       <main class="tab-pane" id="tab-ai-studio">
         
-        <!-- Dual Model Distinction Banner (Selected vs Loaded vs Telemetry) -->
+        <!-- Model & Power Control Banner (Power Switch, Selected Model, Active Residency, Inference Telemetry) -->
         <div class="ai-dual-model-banner">
           
+          <!-- AI Engine Power Card -->
+          <div class="ai-model-box" id="aiEnginePowerBox">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div class="font-label-caps" style="color: var(--primary);">AI ENGINE POWER</div>
+              <span class="status-indicator status-unknown" id="aiEngineStatusBadge" style="font-size: 10px;">UNKNOWN</span>
+            </div>
+            <div class="font-data-sm" id="aiEngineDetailText" style="color: var(--on-surface-variant); margin-top: 4px;">Service: Checking state...</div>
+            <button class="btn btn-primary" id="aiEngineToggleBtn" style="margin-top: 6px; width: 100%; padding: 4px 8px; min-height: 32px; display: flex; align-items: center; justify-content: center; gap: 6px;" onclick="handleToggleAiEngine()">
+              <span class="material-symbols-outlined" id="aiEngineToggleIcon" style="font-size: 16px;">power_settings_new</span>
+              <span id="aiEngineToggleLabel">TURN ON</span>
+            </button>
+          </div>
+
           <!-- Selected Model Card -->
           <div class="ai-model-box">
             <div class="font-label-caps" style="color: var(--secondary);">SELECTED FOR INFERENCE</div>
@@ -1124,6 +1149,36 @@
           <span>AUTHENTICATE</span>
         </button>
       </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- PHOTO PREVIEW LIGHTBOX MODAL                                             -->
+  <!-- ========================================================================= -->
+  <div class="photo-modal-overlay" id="photoPreviewModal" style="display: none;" onclick="handlePhotoModalOverlayClick(event)">
+    <div class="photo-modal-card">
+      <div class="photo-modal-header">
+        <div style="display: flex; align-items: center; gap: 8px; overflow: hidden; max-width: 70%;">
+          <span class="material-symbols-outlined" style="color: var(--primary);">image</span>
+          <span class="font-data-md" id="photoPreviewTitle" style="color: var(--on-surface); text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">Image Preview</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <a class="btn btn-secondary" id="photoDownloadBtn" href="#" download style="padding: 4px 8px; font-size: 11px; min-height: 28px; display: inline-flex; align-items: center; gap: 4px;">
+            <span class="material-symbols-outlined" style="font-size: 14px;">download</span>
+            <span>Download</span>
+          </a>
+          <button class="icon-btn" onclick="closePhotoPreview()" title="Close Preview">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+      </div>
+      <div class="photo-modal-body">
+        <img id="photoPreviewImg" src="" alt="Vault Photo Preview" style="max-width: 100%; max-height: 75vh; object-fit: contain; border-radius: var(--radius-xs); display: block; margin: 0 auto;">
+      </div>
+      <div class="photo-modal-footer" style="padding: 8px 12px; border-top: 1px solid var(--border-subtle); display: flex; justify-content: space-between;">
+        <span class="font-data-sm" id="photoPreviewMeta" style="color: var(--on-surface-variant);">Vault Storage Object</span>
+        <span class="font-data-sm" id="photoPreviewDimensions" style="color: var(--on-surface-muted);"></span>
+      </div>
     </div>
   </div>
 

@@ -18,6 +18,7 @@ import json
 import queue
 import signal
 import shutil
+import mimetypes
 import base64
 import hashlib
 import secrets
@@ -481,9 +482,19 @@ class LogWriterDaemon(threading.Thread):
                 LOG_METRICS["last_flush"] = time.time()
                 LOG_METRICS["events_processed"] += len(batch)
                 LOG_METRICS["queue_depth"] = LOG_QUEUE.qsize()
-
         except Exception:
             pass
+
+    def flush(self):
+        """Immediately flushes all queued log entries to the database."""
+        batch = []
+        while not LOG_QUEUE.empty():
+            try:
+                batch.append(LOG_QUEUE.get_nowait())
+            except queue.Empty:
+                break
+        if batch:
+            self._flush_batch(batch)
 
 
 log_daemon = LogWriterDaemon()
@@ -639,8 +650,12 @@ def authenticate_request():
     token = None
     if auth_header.startswith("Bearer "):
         token = auth_header.split(" ", 1)[1].strip()
+    elif request.headers.get("X-Session-Token"):
+        token = request.headers.get("X-Session-Token", "").strip()
     elif "auth" in request.args:
         token = request.args.get("auth", "").strip()
+    elif "token" in request.args:
+        token = request.args.get("token", "").strip()
 
     if not token:
         return
@@ -2295,6 +2310,7 @@ def api_login():
                 "retry_after": lockout_secs
             }), 429
         if not user_id or not password:
+            log_event("WARN", "AUTH", f"Rejected incomplete login submission from IP {client_ip}.")
             return jsonify({"error": "validation_error", "message": msg}), 400
         return jsonify({"error": "invalid_credentials", "message": msg}), 401
 
@@ -2595,6 +2611,7 @@ def legacy_models_alias():
     return jsonify([m["name"] for m in installed])
 
 
+@app.route('/api/ai/start', methods=['POST'])
 @app.route('/start', methods=['GET', 'POST'])
 def start_engine_endpoint():
     err = require_privilege_or_admin("can_control_services")
@@ -2603,6 +2620,7 @@ def start_engine_endpoint():
 
     res_check = governor.can_start_ollama()
     if not res_check["allowed"]:
+        log_event("WARN", "OLLAMA", f"AI Engine start blocked by Resource Governor: {res_check['reason']}")
         return jsonify({
             "allowed": False,
             "error": "resource_pressure",
@@ -2611,9 +2629,12 @@ def start_engine_endpoint():
         }), 429
 
     success, msg = ollama_registry.start_service()
-    return jsonify({"message": msg}), 200 if success else 500
+    if not success:
+        log_event("ERROR", "OLLAMA", f"Failed to start AI engine: {msg}")
+    return jsonify({"success": success, "message": msg}), 200 if success else 500
 
 
+@app.route('/api/ai/stop', methods=['POST'])
 @app.route('/stop', methods=['GET', 'POST'])
 def stop_engine_endpoint():
     err = require_privilege_or_admin("can_control_services")
@@ -2621,7 +2642,9 @@ def stop_engine_endpoint():
         return err
 
     success, msg = ollama_registry.stop_service()
-    return jsonify({"message": msg}), 200 if success else 500
+    if not success:
+        log_event("ERROR", "OLLAMA", f"Failed to stop AI engine: {msg}")
+    return jsonify({"success": success, "message": msg}), 200 if success else 500
 
 
 @app.route('/chat/stream', methods=['POST'])
@@ -2739,9 +2762,11 @@ def chat_stream():
                         conn.close()
 
         except requests.exceptions.ConnectionError:
+            log_event("ERROR", "AI", f"Inference failed for user '{g.user.get('user_id', 'user')}': AI engine daemon is offline.")
             yield f"data: {json.dumps({'error': 'AI Engine daemon is offline.'})}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'error': f'Inference error occurred.'})}\n\n"
+            log_event("ERROR", "AI", f"Inference error for user '{g.user.get('user_id', 'user')}': {str(e)}")
+            yield f"data: {json.dumps({'error': f'Inference error occurred: {str(e)}'})}\n\n"
 
     return Response(stream_with_context(generate_sse()), mimetype='text/event-stream')
 
@@ -2978,11 +3003,13 @@ def list_files():
             else:
                 ext = os.path.splitext(entry.name)[1].lower().lstrip('.')
                 cat = "documents"
-                if ext in ['mp3', 'm4a', 'flac', 'opus', 'wav']:
+                if ext in ['mp3', 'm4a', 'flac', 'opus', 'wav', 'aac', 'ogg']:
                     cat = "music"
-                elif ext in ['mp4', 'mkv', 'webm', 'mov']:
+                elif ext in ['mp4', 'mkv', 'webm', 'mov', 'avi', 'm4v']:
                     cat = "videos"
-                elif ext in ['zip', 'tar', 'gz']:
+                elif ext in ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp', 'ico', 'tiff']:
+                    cat = "photos"
+                elif ext in ['zip', 'tar', 'gz', '7z', 'bz2']:
                     cat = "backups"
                 items.append({
                     "name": entry.name,
@@ -2999,39 +3026,102 @@ def list_files():
     return jsonify({"files": items, "current_path": subpath})
 
 
+@app.route('/api/vault/destinations', methods=['GET'])
+def list_vault_destinations():
+    """Returns accessible, writable Vault directories based on user role and privileges."""
+    err = require_privilege_or_admin("can_upload_files")
+    if err:
+        return err
+
+    # Standard writable destinations for normal users
+    destinations = [
+        {"path": "", "label": "Vault Root (/)"},
+        {"path": "downloads", "label": "Downloads (/downloads)"},
+        {"path": "documents", "label": "Documents (/documents)"},
+        {"path": "media", "label": "Media (/media)"},
+    ]
+
+    # Privileged destinations only if user has explicit privilege or admin
+    if has_privilege("can_manage_backups"):
+        destinations.append({"path": "backups", "label": "Backups (/backups)"})
+    if has_privilege("can_use_rag"):
+        destinations.append({"path": "rag", "label": "RAG Vault (/rag)"})
+
+    # Dynamically scan for user-created directories in storage vault
+    try:
+        for root, dirs, _ in os.walk(config.STORAGE_DIR):
+            dirs[:] = [d for d in dirs if not d.startswith('.') and not is_protected_internal_path(os.path.join(root, d))]
+            for d in dirs:
+                full_d = os.path.join(root, d)
+                rel = os.path.relpath(full_d, config.STORAGE_DIR).replace('\\', '/')
+                if any(x["path"].lower() == rel.lower() for x in destinations) or is_protected_internal_path(rel):
+                    continue
+                if rel.lower().startswith('backups') and not has_privilege("can_manage_backups"):
+                    continue
+                if rel.lower().startswith('rag') and not has_privilege("can_use_rag"):
+                    continue
+                destinations.append({"path": rel, "label": f"{d} (/{rel})"})
+    except Exception:
+        pass
+
+    return jsonify({"destinations": destinations})
+
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     err = require_privilege_or_admin("can_upload_files")
     if err:
         return err
 
+    user_id = g.user.get("user_id", "unknown") if g.user else "guest"
+
     if 'file' not in request.files:
+        log_event("WARN", "STORAGE", f"Upload rejected: No file provided by user '{user_id}'.")
         return jsonify({"error": "No file uploaded."}), 400
     file = request.files['file']
     if not file.filename:
+        log_event("WARN", "STORAGE", f"Upload rejected: Empty filename from user '{user_id}'.")
         return jsonify({"error": "No file selected."}), 400
 
     dest_folder = request.form.get('path', '').strip().replace('\\', '/')
     filename = os.path.basename(file.filename)
     if is_protected_internal_path(dest_folder) or is_protected_internal_path(filename):
+        log_event("WARN", "STORAGE", f"Upload blocked: protected path violation by user '{user_id}' (dest='{dest_folder}', file='{filename}').")
         return jsonify({"error": "Invalid destination path or filename."}), 400
+
+    # RBAC check for privileged destination folders
+    if dest_folder.lower().startswith('backups') and not has_privilege('can_manage_backups'):
+        log_event("WARN", "STORAGE", f"Upload denied: user '{user_id}' lacks permission to upload to backups.")
+        return jsonify({"error": "permission_denied", "message": "Permission required to upload to backups."}), 403
+    if dest_folder.lower().startswith('rag') and not has_privilege('can_use_rag'):
+        log_event("WARN", "STORAGE", f"Upload denied: user '{user_id}' lacks permission to upload to RAG vault.")
+        return jsonify({"error": "permission_denied", "message": "Permission required to upload to RAG vault."}), 403
 
     try:
         target_dir = sanitize_storage_path(dest_folder) if dest_folder else config.STORAGE_DIR
     except ValueError as e:
+        log_event("WARN", "STORAGE", f"Upload path traversal attempt by '{user_id}': {e}")
         return jsonify({"error": str(e)}), 403
 
     os.makedirs(target_dir, exist_ok=True)
     dest_path = os.path.join(target_dir, filename)
     if is_protected_internal_path(dest_path):
+        log_event("WARN", "STORAGE", f"Upload blocked: forbidden target path for user '{user_id}'.")
         return jsonify({"error": "Forbidden target path."}), 403
 
     try:
         file.save(dest_path)
-        log_event("INFO", "STORAGE", f"User '{g.user.get('user_id')}' uploaded '{filename}'.")
-        return jsonify({"message": f"'{filename}' uploaded successfully."})
+        dest_display = dest_folder if dest_folder else "Vault Root"
+        log_event("INFO", "STORAGE", f"User '{user_id}' uploaded '{filename}' to '{dest_display}'.")
+        return jsonify({
+            "message": f"'{filename}' uploaded successfully to {dest_display}.",
+            "filename": filename,
+            "path": os.path.relpath(dest_path, config.STORAGE_DIR).replace('\\', '/'),
+            "destination": dest_folder
+        })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log_event("ERROR", "STORAGE", f"Upload failed for user '{user_id}': {str(e)}")
+        return jsonify({"error": f"Upload failed: {str(e)}"}), 500
 
 
 @app.route('/download/<path:filename>', methods=['GET'])
@@ -3069,7 +3159,11 @@ def download_file(filename):
                 download_name=f"{folder_name}.zip"
             )
 
-        return send_file(target_path, as_attachment=True)
+        inline = request.args.get('inline', 'false').lower() in ['1', 'true']
+        guessed_mime, _ = mimetypes.guess_type(target_path)
+        if inline:
+            return send_file(target_path, mimetype=guessed_mime or 'application/octet-stream', as_attachment=False)
+        return send_file(target_path, mimetype=guessed_mime or 'application/octet-stream', as_attachment=True)
     except ValueError:
         return jsonify({"error": "File not found."}), 404
     except Exception as e:
@@ -3091,10 +3185,33 @@ def stream_media_file(filename):
             return jsonify({"error": "Media file not found."}), 404
 
         file_size = os.path.getsize(target_path)
-        range_header = request.headers.get('Range', None)
+        guessed_type, _ = mimetypes.guess_type(target_path)
+        ext = os.path.splitext(target_path)[1].lower()
 
+        if guessed_type:
+            mime_type = guessed_type
+        elif ext == '.mp3':
+            mime_type = 'audio/mpeg'
+        elif ext == '.m4a':
+            mime_type = 'audio/mp4'
+        elif ext in ['.opus', '.ogg']:
+            mime_type = 'audio/ogg'
+        elif ext == '.wav':
+            mime_type = 'audio/wav'
+        elif ext == '.flac':
+            mime_type = 'audio/flac'
+        elif ext in ['.mp4', '.m4v']:
+            mime_type = 'video/mp4'
+        elif ext == '.webm':
+            mime_type = 'video/webm'
+        elif ext == '.mkv':
+            mime_type = 'video/x-matroska'
+        else:
+            mime_type = 'application/octet-stream'
+
+        range_header = request.headers.get('Range', None)
         if not range_header:
-            return send_file(target_path)
+            return send_file(target_path, mimetype=mime_type, as_attachment=False)
 
         byte1, byte2 = 0, None
         m = re.search(r'bytes=(\d+)-(\d*)', range_header)
@@ -3119,7 +3236,7 @@ def stream_media_file(filename):
                     remaining -= len(data)
                     yield data
 
-        rv = Response(generate_chunk(), 206, mimetype='video/mp4', direct_passthrough=True)
+        rv = Response(generate_chunk(), 206, mimetype=mime_type, direct_passthrough=True)
         rv.headers.add('Content-Range', f'bytes {byte1}-{byte1 + length - 1}/{file_size}')
         rv.headers.add('Accept-Ranges', 'bytes')
         rv.headers.add('Content-Length', str(length))
@@ -3129,13 +3246,28 @@ def stream_media_file(filename):
         return jsonify({"error": "Media file not found."}), 404
 
 
+@app.route('/delete', methods=['POST'])
+def legacy_delete_file_endpoint():
+    err = require_privilege_or_admin("can_manage_files")
+    if err:
+        return err
+    data = request.get_json(force=True, silent=True) or {}
+    filename = str(data.get("filename", "")).strip().replace('\\', '/')
+    if not filename:
+        return jsonify({"error": "Filename required."}), 400
+    return delete_file(filename)
+
+
 @app.route('/files/<path:filename>', methods=['DELETE'])
 def delete_file(filename):
     err = require_privilege_or_admin("can_manage_files")
     if err:
         return err
 
+    user_id = g.user.get("user_id", "unknown") if g.user else "guest"
+
     if is_protected_internal_path(filename):
+        log_event("WARN", "STORAGE", f"Delete blocked: protected file attempt by user '{user_id}'.")
         return jsonify({"error": "File not found."}), 404
 
     try:
@@ -3146,10 +3278,14 @@ def delete_file(filename):
             shutil.rmtree(target_path)
         else:
             os.remove(target_path)
-        log_event("INFO", "STORAGE", f"User '{g.user.get('user_id')}' deleted '{filename}'.")
+        log_event("INFO", "STORAGE", f"User '{user_id}' deleted '{filename}'.")
         return jsonify({"message": f"'{filename}' deleted successfully."})
     except ValueError:
+        log_event("WARN", "STORAGE", f"Delete path traversal attempt by user '{user_id}'.")
         return jsonify({"error": "File not found."}), 404
+    except Exception as e:
+        log_event("ERROR", "STORAGE", f"Delete failed for user '{user_id}': {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 # --- Media Center Routes & YT-DLP Lifecycle Worker ---

@@ -4,7 +4,7 @@
 [![Platforms: Android 13 Termux](https://img.shields.io/badge/Platform-Android%2013%20%7C%20Termux-green.svg)](https://termux.dev)
 [![Architecture: 4GB RAM Hardened](https://img.shields.io/badge/RAM-4GB%20Hardened-orange.svg)]()
 [![Supervision: Runit / termux--services](https://img.shields.io/badge/Supervision-runit%20%2F%20termux--services-blueviolet.svg)]()
-[![Tests: 155 Passed](https://img.shields.io/badge/Tests-155%20Passed%20(100%25)-brightgreen.svg)]()
+[![Tests: 232 Passed](https://img.shields.io/badge/Tests-232%20Passed%20(100%25)-brightgreen.svg)]()
 
 **NexusNode** turns a low-resource, unrooted Android smartphone (e.g. TECNO BG6, ~4 GB RAM) into a reliable, self-supervising **24/7 personal mobile server appliance**. It provides personal cloud storage, bounded background media processing, encrypted sharing, SQLite FTS5 document RAG, local AI model serving, automated root-cause system diagnostics, and a polished **Universal Remote CLI**.
 
@@ -12,13 +12,13 @@
 
 ## ⚡ Key Capabilities
 
-- 🎨 **Canonical Google Stitch UI Design System**: High-density pitch black OLED (`#000000`) and graphite surfaces (`#121212`), structural borders (`#2C2C2C`), primary cyan (`#00daf3`), and AI purple (`#dab9ff`). Dual typography (`Inter` + `JetBrains Mono`), 4px radii, mobile bottom dock (`[Dash]`, `[Vault]`, `[Media]`, `[Tasks]`, `[AI]`, `[More]`), slide-up utilities drawer, and touch targets $\ge 44\text{px}$.
+- 🎨 **Canonical Google Stitch UI Design System**: High-density pitch black OLED (`#000000`) and graphite surfaces (`#121212`), structural borders (`#2C2C2C`), primary cyan (`#00daf3`), and AI purple (`#dab9ff`). Responsive mobile viewport layouts (320px–412px), bottom dock (`[Dash]`, `[Vault]`, `[Media]`, `[Tasks]`, `[AI]`, `[More]`), slide-up utilities drawer, and touch targets $\ge 44\text{px}$.
 - 💻 **Universal Remote CLI & Application Terminal**: Connect securely to NexusNode from anywhere worldwide (`nexus connect https://<domain>`) with zero SSH or Termux accounts required. Features live latency probes, role-aware tab autocompletion, grouped subcommands, and real-time task queue visualization.
 - 🛡️ **Hardware & Thermal Resource Governor**: Unprivileged thermal and battery telemetry (`termux-battery-status` / sysfs fallback). Automatically blocks heavy tasks during Thermal `CRITICAL` ($\ge 55^\circ\text{C}$) or RAM `CRITICAL` (<600 MB free).
 - ⚙️ **Bounded Task Runner (Concurrency = 1)**: Queues heavy workloads sequentially (yt-dlp downloads, transcoding, model pulls, archive extraction, backups) to prevent Android Low Memory Killer (LMK) kills. Includes strict task ownership isolation and clean subprocess cancellation.
-- 📁 **Vault File Manager & Zip Streaming**: Full subdirectory navigation, automatic `.gitkeep` filtering, temporary download shares, and on-the-fly folder zip packaging.
-- 🎵 **Media Center & HTTP 206 Streaming**: Multi-format audio (MP3, M4A, OPUS, WAV) and video (MP4, MKV, WebM) downloader with quality presets, subtitle extraction, metadata embedding, and zero-memory chunked range streaming.
-- 🤖 **AI Studio & Authoritative Model Serving**: Strict separation of *Selected Model*, *Installed Models* (`/api/tags`), and *Loaded Model* (`/api/ps`). Real-time RAM/VRAM residency calculation, keep-alive control (`0`, `5m`, `15m`, `30m`), and streaming SSE chat.
+- 📁 **Vault Storage, Destinations & Photo Lightbox**: Dynamic writable directory selector with RBAC protection, automatic photo categorization (`photos`), inline image previews with modal lightbox, directory zip streaming, and temporary download shares.
+- 🎵 **Media Center & HTTP 206 Streaming**: Multi-format audio (MP3, M4A, OPUS, WAV) and video (MP4, MKV, WebM) downloader with quality presets, subtitle extraction, metadata embedding, exact MIME negotiation, and zero-memory chunked range streaming with query token authentication.
+- 🤖 **AI Studio & Authoritative Model Serving**: Strict separation of *Selected Model*, *Installed Models* (`/api/tags`), and *Loaded Model* (`/api/ps`). Dedicated engine power controls (`/api/ai/start`, `/api/ai/stop`), real-time RAM/VRAM residency calculation, keep-alive control (`0`, `5m`, `15m`, `30m`), and streaming SSE chat.
 - 🧠 **SQLite FTS5 Full-Text Search RAG**: Memory-bounded document search engine using SQLite FTS5 with BM25 ranking, source folder scoping (`docs`, `notes`, `code`), binary exclusion, and zero in-memory dictionary overhead.
 - 🔍 **Automated Root-Cause Diagnostics**: Automated diagnostic analyzer returning structured findings (Problem, Severity, Evidence, Likely Cause, Recommendation), live process memory tables (PID, RSS, PSS, Threads, FDs), and on-demand profile snapshots.
 - 🔒 **Hardened Security & RBAC**: Multi-tier RBAC matrix (Anonymous = 401, User = 403, Admin = 200), zero hardcoded passwords in code or initialization, brute-force IP rate limiting, and full session destruction on logout.
