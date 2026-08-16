@@ -7,25 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] - 2026-08-16
+
+### 🎨 Canonical Google Stitch UI & Hardened Diagnostics Runtime
+
+#### Added
+- **Canonical Google Stitch Design System**:
+  - Implemented exact design tokens from `stitch_nexusnode_control_interface/nexusnode/DESIGN.md`: OLED Pitch Black (`#000000`), Graphite (`#121212`, `#1c1b1b`, `#201f1f`), 1px structural borders (`#2C2C2C`), Primary Cyan (`#00daf3`), AI Purple (`#dab9ff`/`#602b9d`), and Inter + JetBrains Mono typography.
+  - Responsive desktop 12-column grid and mobile viewport reflow (375x667, 390x844, 412x915) with sticky device identity strip, thumb-friendly quick directives, slide-up utilities sheet (`.drawer-content`), and bottom navigation bar (`>=44px` touch targets).
+- **Authoritative Ollama Model Serving & Memory Architecture**:
+  - Strict separation of concepts: `selected_model` (user target), `installed_models` (`/api/tags`), and `loaded_model` (`/api/ps`).
+  - Real-time RAM/VRAM residency calculations from live `/api/ps` metrics.
+  - Single authoritative runit supervision (`sv up/down/restart ollama`), zero unmanaged subprocesses.
+  - Keep-alive management (`0`, `5m`, `15m`, `30m`).
+- **Automated Root-Cause Diagnostics**:
+  - Automated diagnostic analyzer (`GET /api/admin/diagnostics/full-report`) returning structured problem findings (Problem, Severity, Evidence, Likely Cause, Recommendation).
+  - Process memory table with measured PID, RSS, PSS, VMS, open file descriptors, and thread counts.
+  - On-demand performance profile snapshots (`POST /api/admin/diagnostics/profile-snapshot`).
+  - Data-driven telemetry labels (`MEASURED`, `ESTIMATED`, `UNAVAILABLE`).
+- **SQLite FTS5 Full-Text Search RAG Engine**:
+  - High-efficiency SQLite FTS5 inverted index with BM25 ranking and chunking.
+  - Source folder scoping (`docs`, `notes`, `code`), binary/media format exclusion, and index compaction.
+- **Vault File Manager Enhancements**:
+  - Folder navigation and subfolder browsing with parent links (`..`).
+  - Automatic `.gitkeep` placeholder filtration.
+  - On-the-fly zip compression and download for folders (`GET /download/<path>` or folder zip action).
+- **Security & RBAC Matrix Hardening**:
+  - Complete elimination of hardcoded default passwords in source code and initialization logic (`NEXUS_ADMIN_PASSWORD` env or cryptographically secure token generator).
+  - Object-level task ownership isolation.
+  - Multi-tier RBAC authorization (Anonymous = 401, User = 403, Admin = 200).
+- **Expanded Test Suite (53 Tests Passing)**:
+  - 53 unit, integration, and security tests verifying all subsystems.
+
+#### Fixed
+- Fixed task cancellation ownership bug to ensure database-backed background tasks can be aborted cleanly.
+- Fixed vault `.gitkeep` clutter and directory download handling.
+
+---
+
 ## [2.2.1] - 2026-08-15
 
 ### 🛡️ UX, Navigation & Session Isolation Security Pass
 
 #### Added
 - **Single Source of Truth Auth State**: Centralized reactive frontend `authState` store ensuring clean session management, token storage, and instantaneous privilege reactivity.
-- **Granular Least-Privilege RBAC Matrix**:
-  - Distinguishes Core Users from Administrators.
-  - Granular privileges: `can_upload_files`, `can_manage_files`, `can_create_shares`, `can_download_media`, `can_use_ai`, `can_use_rag`, `can_control_services`, `can_manage_models`, `can_view_system_logs`, `can_manage_users`, `can_manage_backups`, `can_manage_automation`, `can_manage_settings`.
-- **Streamlined Navigation & Collapsible More Menu**:
-  - Redesigned Desktop Header to 5 primary destinations (`[Dashboard]`, `[Vault]`, `[Media]`, `[Tasks]`, `[AI Studio]`) + `[☰ More]` dropdown.
-  - Mobile bottom dock (`[Dash]`, `[Vault]`, `[Media]`, `[Tasks]`, `[AI]`, `[More]`) with bottom action sheet drawer.
-  - Touch targets calibrated $\ge 44\text{px}$ across mobile breakpoints (375px, 390px, 412px).
+- **Granular Least-Privilege RBAC Matrix**: Distinguishes Core Users from Administrators with granular privileges.
+- **Streamlined Navigation & Collapsible More Menu**: Redesigned Desktop Header and Mobile bottom dock with touch targets $\ge 44\text{px}$.
 - **Toast Notification Engine**: Non-blocking user notifications for HTTP 403 access denials and action confirmations.
-- **Expanded Test Suite (41 Tests Passing)**: Added automated test coverage for session revocation on logout, admin-to-user isolation, forbidden endpoint access without session destruction, and expired token 401 handling.
 
 #### Fixed
-- **Admin Hub Leak Isolation**: Fixed issue where Admin Hub or admin DOM state could linger after an admin logged out. Logout now purges all client-side auth tokens, resets active views to `dashboard`, closes all background streams, and strictly disables privileged DOM nodes.
-- **Differentiated 401 vs 403 API Handling**: Forbidden actions (403) now notify the user without destroying valid active sessions, while invalid/expired tokens (401) trigger a clean session reset.
+- **Admin Hub Leak Isolation**: Fixed issue where Admin Hub or admin DOM state could linger after an admin logged out.
+- **Differentiated 401 vs 403 API Handling**: Forbidden actions (403) notify without session destruction; invalid tokens (401) clean up session.
 
 ---
 
@@ -34,40 +66,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🚀 Personal Mobile Server Appliance Evolution
 
 #### Added
-- **Thermal & Hardware Governance**: Telemetry probing via `termux-battery-status` and sysfs thermal zones. Implemented 4-tier thermal state machine (`NORMAL`, `WARM`, `THROTTLED`, `CRITICAL`) with automatic heavy task blocking at $\ge 55^\circ\text{C}$.
-- **Advanced Media Center**: Support for yt-dlp extraction across 7 formats (MP3, M4A, OPUS, WAV, MP4, MKV, WebM), quality selection (1080p, 720p, 480p, audio only), subtitle embedding, and sequential multiline batch URL processing.
-- **HTTP 206 Range Streaming**: Zero-memory binary chunked streaming for audio and video files, enabling seekable mobile playback without RAM buffering.
-- **Temporary Secure Share Links**: Scoped `secrets.token_urlsafe(24)` share URLs with custom expiration (`1h`, `24h`, `7d`, custom), max download limits, and instant revocation.
-- **Storage Intelligence & Safe Temp Cleaner**: Volume breakdown by media category and large-file detection (>50 MB). Safe temporary artifact sweep for `.part`, `.ytdl`, and `.tmp` files.
-- **Atomic System Backups**: Live SQLite backup using `sqlite3.backup()` API, RAG index, and configuration archived into SHA-256 verified zips.
-- **Unprivileged Network Center**: Latency and reachability diagnostics for Internet (1.1.1.1 DNS/HTTP), Localhost, NexusNode, LocalToNet tunnel, and Ollama engine.
-- **Scheduled Automation Daemon**: 60-second background timer feeding `BoundedTaskRunner` for recurring backups, temp cleanups, and tunnel health audits.
-- **All-in-One Appliance Launcher (`start_nexus.sh`)**: CLI manager providing `start`, `run`, `stop`, `restart`, `status`, and `logs` commands for SSHD, LocalToNet, and NexusNode.
-- **Comprehensive Documentation Suite**: Added `ARCHITECTURE.md`, `DEPLOYMENT.md`, `API.md`, and `CHANGELOG.md`.
-- **Automated Test Suite Expansion**: Upgraded to 34 comprehensive unit and integration tests (100% passing).
-
-#### Changed
-- Redesigned mobile web dashboard with pitch black OLED `#000000` design system, bottom navigation dock (`[Dash]`, `[Vault]`, `[Media]`, `[Tasks]`, `[AI]`, `[More]`), and action sheet drawer.
-- Upgraded `scripts/install_services.sh` to prevent competing SSHD supervisors by respecting Termux's official `termux-services/sshd`.
-- Hardened `services/localtonet/run` binary resolution with multi-path fallbacks and 5s backoff.
-
-#### Fixed
-- Fixed potential Android LMK crashes by strictly bounding all heavy work through `BoundedTaskRunner` ($N=1$).
-- Fixed memory leakage during media playback via chunked HTTP 206 Partial Content generator.
-- Fixed archive extraction security vulnerabilities with strict zip-slip canonical path validation.
+- **Thermal & Hardware Governance**: Telemetry probing via `termux-battery-status` and sysfs thermal zones. Implemented 4-tier thermal state machine (`NORMAL`, `WARM`, `THROTTLED`, `CRITICAL`).
+- **Advanced Media Center**: Support for yt-dlp extraction across 7 formats with HTTP 206 Range streaming.
+- **Temporary Secure Share Links**: Scoped share URLs with custom expiration and instant revocation.
+- **Storage Intelligence & Safe Temp Cleaner**: Volume breakdown by media category and large-file detection.
+- **Atomic System Backups**: Live SQLite backup using `sqlite3.backup()` API and SHA-256 verified zips.
+- **All-in-One Appliance Launcher (`start_nexus.sh`)**: CLI manager over runit.
 
 ---
 
 ## [2.0.0] - 2026-08-10
 
 ### 🛡️ 24/7 Mobile Hardening & Supervision
-
-#### Added
 - Centralized `config.py` configuration registry.
 - `resource_governor.py` for RAM and disk pressure monitoring.
 - `termux-services` (runit) process supervisor definitions.
 - `Termux:Boot` auto-startup integration with Android CPU WakeLock.
-- Serialized asynchronous local document RAG engine.
 - SQLite WAL mode and transaction locking (`DB_LOCK`).
 - SSE live audit log streaming.
 

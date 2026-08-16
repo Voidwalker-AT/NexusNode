@@ -16,31 +16,32 @@ NexusNode is engineered from the ground up to transform an unrooted Android mobi
 3. **Android Doze & CPU Sleep**: When the screen is turned off, Android suspends unprivileged CPU threads unless explicit wake locks are maintained.
 4. **Unprivileged User Namespace**: All operations execute within Termux user permissions without root access or kernel module manipulation.
 
-To solve these constraints, NexusNode implements **deterministic resource governance, bounded sequential concurrency ($N=1$), zero-memory chunked streaming, serialized asynchronous RAG, and external process supervision**.
+To solve these constraints, NexusNode implements **deterministic resource governance, bounded sequential concurrency ($N=1$), zero-memory chunked streaming, SQLite FTS5 RAG indexing, authoritative Ollama runtime tracking, and external process supervision**.
 
 ---
 
-## 2. Process Topology & Process Supervision
+## 2. Process Topology & Single Authoritative Supervision
 
-NexusNode separates lifecycle management into three distinct operational modes:
+NexusNode enforces a single authoritative supervision model via **`runit` / `termux-services`**:
 
 ```
-[ Mode A: termux-services (runit) ]     [ Mode B: All-in-One CLI Launcher ]     [ Mode C: Termux:Boot ]
-           |                                             |                                 |
-+---------------------+                       +---------------------+           +---------------------+
-| runsvdir supervisor |                       |   start_nexus.sh    |           | start-nexusnode.sh  |
-+---------------------+                       +---------------------+           +---------------------+
-     |        |      \                             |        |      \                       |
-     v        v       v                            v        v       v                      v
- [nexusnode] [sshd] [localtonet]              [nexusnode] [sshd] [localtonet]     [Acquires Wakelock &
-                                                                                  invokes supervisor]
+Termux:Boot (Autostart on Phone Power-On)
+    ↓
+termux-wake-lock (Acquires Android CPU Lock)
+    ↓
+runit / termux-services (sv / runsvdir)
+    ↓
+├── sshd          (OpenSSH Daemon on :8022)
+├── localtonet    (Encrypted Public Internet Tunnel)
+├── nexusnode     (Waitress WSGI Personal Cloud Server on :5000)
+└── ollama        (Optional Local AI Engine, supervised strictly via sv)
 ```
 
 ### Authoritative Process Roles:
-- **SSHD (Port 8022)**: OpenSSH server managed either via Termux's official `termux-services/sshd` or standalone `sshd -p 8022`.
+- **SSHD (Port 8022)**: OpenSSH server managed via Termux's official `termux-services/sshd`.
 - **LocalToNet Tunnel**: Exposes local port 5000 to an encrypted public URL with automatic keepalive.
 - **NexusNode WSGI (`app.py` on :5000)**: Multi-threaded Waitress WSGI application executing the personal cloud control center.
-- **Ollama Engine (:11434, Optional)**: AI inference engine, kept down by default to protect the 4 GB RAM budget.
+- **Ollama Engine (:11434, Optional)**: AI inference engine, kept down by default to protect the 4 GB RAM budget, and started/stopped strictly via `sv up ollama` / `sv down ollama`.
 
 ---
 
@@ -49,6 +50,7 @@ NexusNode separates lifecycle management into three distinct operational modes:
 ```
                                 +---------------------------+
                                 |      Client Browser       |
+                                |  (Canonical Google Stitch)|
                                 +---------------------------+
                                               |
                              HTTP / SSE (Waitress WSGI :5000)
@@ -61,15 +63,15 @@ NexusNode separates lifecycle management into three distinct operational modes:
                    |                          |                          |
         +---------------------+    +--------------------+     +---------------------+
         |  Resource Governor  |    | BoundedTaskRunner  |     | Unified SQLite WAL  |
-        | - RAM State Machine |    | - Concurrency = 1  |     | - DB_LOCK Protection|
-        | - Thermal Zones     |    | - Sequential Queue |     | - Index-Optimized   |
-        | - Battery Telemetry |    | - Auto Recovery    |     | - conn.backup() API |
+        | - RAM & PSS Monitor |    | - Concurrency = 1  |     | - DB_LOCK Protection|
+        | - Thermal Zones     |    | - Ownership Guard  |     | - Index-Optimized   |
+        | - Telemetry Cache   |    | - Subprocess Kill  |     | - conn.backup() API |
         +---------------------+    +--------------------+     +---------------------+
                    |                          |                          |
         +---------------------+    +--------------------+     +---------------------+
-        |  Media & Streaming  |    | Serialized RAG     |     | Scheduled Automator |
-        | - yt-dlp Multi-fmt  |    | - Non-blocking     |     | - 60s Queue Daemon  |
-        | - HTTP 206 Partial  |    | - Pending Rebuild  |     | - Zero Direct Exec  |
+        |  Media & Streaming  |    | SQLite FTS5 RAG    |     | Root Diagnostics    |
+        | - yt-dlp Multi-fmt  |    | - BM25 Full-Text   |     | - Problem Findings  |
+        | - HTTP 206 Partial  |    | - Zero-Heap Bounds |     | - Process Tables    |
         +---------------------+    +--------------------+     +---------------------+
 ```
 
@@ -85,24 +87,31 @@ NexusNode separates lifecycle management into three distinct operational modes:
 
 ### 3.2. Bounded Task Worker (`BoundedTaskRunner`)
 - **Strict Concurrency Limit = 1**: Heavy jobs are enqueued into an in-memory queue backed by SQLite `background_tasks`.
+- **Object-Level Task Ownership**: Normal users can only view and cancel their own tasks; administrators can inspect and abort any task.
 - **Automatic Crash Recovery**: On startup, any task marked `running` in SQLite is swept to `interrupted`, preventing zombie job deadlocks.
 - **Graceful Subprocess Termination**: `cancel_task()` issues `SIGTERM`, waits 300ms, falls back to `SIGKILL`, and purges partial `.part`, `.ytdl`, and `.tmp` artifacts.
 
-### 3.3. Zero-Memory HTTP 206 Range Streaming
+### 3.3. SQLite FTS5 Full-Text Search RAG Engine
+- **Zero Massive In-Memory Dictionaries**: Eliminates heap explosion on 4 GB RAM mobile hardware by persisting document chunks directly in `rag_vault.db` using SQLite FTS5.
+- **BM25 Search Ranking**: Evaluates search queries using SQLite's native BM25 relevance scoring algorithm.
+- **Strict Scope Boundaries**: Restricts indexing exclusively to text source folders (`docs`, `notes`, `code`), strictly ignoring media, binary files, and backups.
+
+### 3.4. Authoritative Ollama Model Serving Architecture
+- **Concept Separation**:
+  - `selected_model`: The model user has targeted for inference.
+  - `installed_models`: Authoritative list from `GET /api/tags`.
+  - `loaded_model`: Authoritative resident model from `GET /api/ps`.
+- **Live Memory Residency**: Live residency telemetry calculated from `/api/ps` metrics (`runtime_size_mb`, `runtime_vram_mb`, `processor`).
+- **Supervision Rule**: Server never executes raw `ollama serve` or `pkill -f ollama`. All lifecycle triggers execute via `sv up ollama` / `sv down ollama`.
+
+### 3.5. Automated Root-Cause Diagnostics Engine
+- **Automated Root-Cause Findings**: Diagnoses system state and produces structured cards with `Problem`, `Severity`, `Evidence`, `Likely Cause`, and `Recommendation`.
+- **Deep Process Table**: Details PID, RSS, PSS, VMS, open file descriptors, and thread counts from `/proc`.
+- **Snapshot Profiling**: Captures instant performance profiles via `POST /api/admin/diagnostics/profile-snapshot`.
+
+### 3.6. Zero-Memory HTTP 206 Range Streaming
 - **Memory Pressure Prevention**: Mobile browsers streaming 500 MB+ audio or video files could trigger Android LMK if buffered into memory.
 - **Range Implementation**: `stream_file_range()` parses `Range: bytes=start-end`, returns `HTTP 206 Partial Content`, and yields 64 KB binary chunks directly from disk with seekable scrubbing support.
-
-### 3.4. Unified SQLite WAL & Non-Blocking Backups
-- **Concurrency & Integrity**: SQLite operates in `journal_mode=WAL` with `synchronous=NORMAL`.
-- **Atomic Backups**: `create_system_backup_sync()` uses SQLite's official `conn.backup()` C-API to copy active databases safely without locking read operations, packaged into versioned zip archives with SHA-256 checksums.
-
-### 3.5. Serialized Asynchronous Local Document RAG
-- **Zero Startup Lag**: RAG index is loaded from `rag_index.json` on boot without blocking the main server thread.
-- **Pending Rebuild Coalescing**: When reindexing is requested while an existing rebuild is running, `_pending_rebuild = True` coalesces subsequent requests into a single follow-up execution.
-
-### 3.6. Cryptographic Temporary Share Links
-- **Scoped Tokens**: Generates `secrets.token_urlsafe(24)` URLs.
-- **Access Boundary**: Public `/share/<token>` endpoint verifies expiration timestamps, revocation flags, and maximum download quotas without exposing internal filesystem paths.
 
 ---
 
@@ -110,42 +119,18 @@ NexusNode separates lifecycle management into three distinct operational modes:
 
 | Vector | Defense Mechanism |
 | :--- | :--- |
+| **No Hardcoded Passwords** | Admin user is seeded from `NEXUS_ADMIN_PASSWORD` env var or randomly generated token; passwords hashed with SHA-256 + 16-byte random salt. |
 | **Path Traversal** | `sanitize_storage_path()` canonicalizes targets via `os.path.commonpath` against `STORAGE_DIR`. |
 | **Archive Slip** | Zip, Tar, and 7z extractors validate destination path before writing each member file. |
+| **RBAC Matrix** | Multi-tier validation: Anonymous = 401, Unauthorized User = 403, Admin = 200. |
 | **Brute Force** | IP lockout table locks client IP for 10 minutes after 5 consecutive failed login attempts. |
-| **Secret Leakage** | Database viewer and backup archives mask PBKDF2 password hashes and exclude session tokens. |
+| **Secret Isolation** | Database viewer and backup archives mask password hashes and exclude session tokens. |
 | **Command Injection** | Zero `shell=True` execution on user inputs. All subprocesses use explicit list argument arrays. |
 
 ---
 
-## 5. Directory Layout
+## 5. UI Architecture (Google Stitch Integration)
 
-```
-server/
-├── app.py                      # Core Waitress WSGI application & API routes
-├── config.py                   # Centralized configuration & RBAC definitions
-├── resource_governor.py        # RAM, Disk, Thermal, and Battery telemetry engine
-├── index.html                  # OLED Mobile Control Center frontend
-├── start_nexus.sh              # All-in-one CLI launcher & process manager
-├── requirements.txt            # Python dependencies (flask, waitress, requests)
-├── scripts/
-│   ├── install_services.sh     # runit service supervisor installer
-│   └── boot/
-│       └── termux_boot.sh      # Termux:Boot autostart script
-├── services/                   # runit service definitions
-│   ├── nexusnode/              # NexusNode WSGI service
-│   ├── sshd/                   # OpenSSH service
-│   ├── localtonet/             # LocalToNet tunnel service
-│   └── ollama/                 # Ollama engine service (down by default)
-├── static/
-│   ├── css/index.css           # Pure OLED black responsive mobile design system
-│   └── js/app.js               # Reactive client-side application controller
-├── storage_vault/              # Personal cloud storage partition
-│   ├── Music/                  # Audio downloads destination
-│   ├── Videos/                 # Video downloads destination
-│   ├── Podcasts/               # Podcast downloads destination
-│   ├── Downloads/              # General downloads destination
-│   └── backups/                # SHA-256 verified system backups
-└── tests/
-    └── test_server.py          # 34-test automated unit & integration test suite
-```
+- **Tokens & Surfaces**: Pitch Black (`#000000`), Graphite (`#121212`, `#1c1b1b`), 1px structural borders (`#2C2C2C`), Primary Cyan (`#00daf3`), Neural Purple (`#dab9ff`).
+- **Responsive Layout**: 12-column desktop grid with sticky top status strip; mobile viewport reflow (375x667, 390x844, 412x915) with fixed bottom dock (`[Dash]`, `[Vault]`, `[Media]`, `[Tasks]`, `[AI]`, `[More]`), slide-up utilities sheet, and $\ge 44\text{px}$ touch targets.
+- **Telemetry Precision**: Strict labeling for `MEASURED` (e.g. RSS/PSS, storage), `ESTIMATED` (model memory), and `UNAVAILABLE` (unrooted thermal sensors).
