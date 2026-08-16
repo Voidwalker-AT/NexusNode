@@ -1461,6 +1461,351 @@ class TestNexusNodeServer(unittest.TestCase):
         with server_app.FAILED_LOGINS_LOCK:
             server_app.FAILED_LOGINS.clear()
 
+    # 20. Real SSH Access & Restricted NexusNode Shell Tests
+    def test_ssh_user_authentication_architecture(self):
+        """Verify OpenSSH AuthorizedKeysCommand maps application users to forced nexus_shell.py commands."""
+        from scripts import nexus_ssh_auth
+        import io
+        from contextlib import redirect_stdout
+
+        # Setup test key
+        ssh_keys_dir = os.path.join(config.STORAGE_DIR, "ssh_keys")
+        os.makedirs(ssh_keys_dir, exist_ok=True)
+        key_file = os.path.join(ssh_keys_dir, "admin.pub")
+        with open(key_file, "w") as f:
+            f.write("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGeneratedTestKeyForNexusNodeAuth admin@device\n")
+
+        out = io.StringIO()
+        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'admin']):
+            with redirect_stdout(out):
+                nexus_ssh_auth.main()
+
+        output = out.getvalue()
+        self.assertIn("command=", output)
+        self.assertIn("nexus_shell.py --user admin", output)
+        self.assertIn("no-port-forwarding", output)
+        self.assertIn("ssh-ed25519", output)
+
+    def test_restricted_nexus_shell(self):
+        """Verify restricted shell launches and responds to allowlisted commands."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        user = server_app.db_get_user("admin")
+        shell = nexus_shell.NexusRestrictedShell(user)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd("status")
+
+        output = out.getvalue()
+        self.assertIn("Appliance Status", output)
+        self.assertIn("Governor State:", output)
+
+    def test_user_cannot_execute_bash(self):
+        """Verify executing 'bash' or shell escapes is rejected."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        user = server_app.db_get_user("admin")
+        shell = nexus_shell.NexusRestrictedShell(user)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd("bash")
+            shell.onecmd("sh -c 'id'")
+
+        output = out.getvalue()
+        self.assertIn("not allowed or unrecognized", output)
+
+    def test_user_cannot_execute_python(self):
+        """Verify executing 'python' or arbitrary scripts is rejected."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        user = server_app.db_get_user("admin")
+        shell = nexus_shell.NexusRestrictedShell(user)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd("python -c 'print(1)'")
+            shell.onecmd("python")
+
+        output = out.getvalue()
+        self.assertIn("not allowed or unrecognized", output)
+
+    def test_user_cannot_access_server_directory(self):
+        """Verify path traversal outside vault is strictly rejected in vault command."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        user = server_app.db_get_user("admin")
+        shell = nexus_shell.NexusRestrictedShell(user)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd("vault ls ../")
+            shell.onecmd("vault cat ../app.py")
+            shell.onecmd("vault cat ../config.py")
+
+        output = out.getvalue()
+        self.assertIn("Access denied. Path is outside Storage Vault", output)
+
+    def test_user_cannot_access_database(self):
+        """Verify normal users cannot inspect or access SQLite database schema/data."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        # Normal user
+        normal_user = {"user_id": "test_normal", "role": "user", "privileges": config.USER_DEFAULT_PRIVILEGES}
+        shell = nexus_shell.NexusRestrictedShell(normal_user)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd("database inspect")
+            shell.onecmd("vault cat nexus_vault.db")
+
+        output = out.getvalue()
+        self.assertIn("not allowed or unrecognized", output)
+
+    def test_user_can_list_vault(self):
+        """Verify normal user can list allowed files inside the vault."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        # Create a test file in storage_vault
+        test_f = os.path.join(config.STORAGE_DIR, "shell_test_doc.txt")
+        with open(test_f, "w") as f:
+            f.write("Test document content in vault.")
+
+        normal_user = {"user_id": "test_normal", "role": "user", "privileges": config.USER_DEFAULT_PRIVILEGES}
+        shell = nexus_shell.NexusRestrictedShell(normal_user)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd("vault ls")
+
+        output = out.getvalue()
+        self.assertIn("shell_test_doc.txt", output)
+
+    def test_user_can_use_media(self):
+        """Verify normal user with can_download_media can list and enqueue media."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        normal_user = {"user_id": "test_media_user", "role": "user", "privileges": {"can_download_media": True}}
+        shell = nexus_shell.NexusRestrictedShell(normal_user)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd("media list")
+            shell.onecmd("media queue")
+
+        output = out.getvalue()
+        self.assertIn("Category: Music", output)
+        self.assertIn("Active Media Tasks", output)
+
+    def test_user_can_view_own_tasks(self):
+        """Verify normal user can view their own tasks."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        task_id, _ = server_app.task_runner.enqueue_task(
+            "User Task 1", "test_type", lambda t: None, owner_user_id="user_alice"
+        )
+
+        user_alice = {"user_id": "user_alice", "role": "user", "privileges": {}}
+        shell = nexus_shell.NexusRestrictedShell(user_alice)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd("tasks list")
+            shell.onecmd(f"tasks status {task_id}")
+
+        output = out.getvalue()
+        self.assertIn("User Task 1", output)
+
+    def test_user_cannot_view_other_user_task(self):
+        """Verify normal user cannot view another user's task details."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        task_id, _ = server_app.task_runner.enqueue_task(
+            "Secret Task Bob", "test_type", lambda t: None, owner_user_id="user_bob"
+        )
+
+        user_alice = {"user_id": "user_alice", "role": "user", "privileges": {}}
+        shell = nexus_shell.NexusRestrictedShell(user_alice)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd(f"tasks status {task_id}")
+
+        output = out.getvalue()
+        self.assertIn("Access denied. You can only inspect your own tasks", output)
+
+    def test_user_can_use_ai(self):
+        """Verify user with can_use_ai can inspect models and AI state."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        user = {"user_id": "user_ai", "role": "user", "privileges": {"can_use_ai": True}}
+        shell = nexus_shell.NexusRestrictedShell(user)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd("ai models")
+            shell.onecmd("ai state")
+
+        output = out.getvalue()
+        self.assertIn("AI Engine Online:", output)
+        self.assertIn("Keep-Alive:", output)
+
+    def test_user_cannot_control_services(self):
+        """Verify normal user cannot access services command."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        user = {"user_id": "user_normal", "role": "user", "privileges": {}}
+        shell = nexus_shell.NexusRestrictedShell(user)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd("services status")
+            shell.onecmd("services stop ollama")
+
+        output = out.getvalue()
+        self.assertTrue("Administrator privileges required" in output or "not allowed or unrecognized" in output)
+
+    def test_admin_can_control_services(self):
+        """Verify admin can view and control services."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        admin_user = server_app.db_get_user("admin")
+        shell = nexus_shell.NexusRestrictedShell(admin_user)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            shell.onecmd("services status")
+
+        output = out.getvalue()
+        self.assertIn("SERVICE", output)
+        self.assertIn("STATUS", output)
+
+    def test_admin_cli_vs_user_cli_isolation(self):
+        """Verify admin commands (diagnostics, users, backups, logs) are blocked for normal users."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        normal_user = {"user_id": "user_norm", "role": "user", "privileges": {}}
+        shell = nexus_shell.NexusRestrictedShell(normal_user)
+
+        for cmd_name in ["diagnostics full", "users", "backups create", "logs"]:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                shell.onecmd(cmd_name)
+            output = out.getvalue()
+            self.assertTrue("Administrator privileges required" in output or "not allowed or unrecognized" in output)
+
+    def test_ssh_login_lockout(self):
+        """Verify nexus_shell blocks access when account is locked out."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stderr
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS["admin"] = {"count": 5, "locked_until": time.time() + 100.0}
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            with self.assertRaises(SystemExit) as cm:
+                with patch.object(sys, 'argv', ['nexus_shell.py', '--user', 'admin']):
+                    nexus_shell.main()
+
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("Account locked", err.getvalue())
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+    def test_forced_command_direct_ssh(self):
+        """Verify forced SSH command mode runs specific command and terminates with exit code 0."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        user = server_app.db_get_user("admin")
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = nexus_shell.launch_restricted_shell(user, direct_command="status")
+
+        self.assertEqual(code, 0)
+        self.assertIn("Appliance Status", out.getvalue())
+
+    def test_ssh_command_mode(self):
+        """Verify direct non-interactive SSH command mode with SSH_ORIGINAL_COMMAND environment variable."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        out = io.StringIO()
+        with patch.dict(os.environ, {"SSH_ORIGINAL_COMMAND": "vault ls"}):
+            with redirect_stdout(out):
+                with self.assertRaises(SystemExit) as cm:
+                    with patch.object(sys, 'argv', ['nexus_shell.py', '--user', 'admin']):
+                        nexus_shell.main()
+
+        self.assertEqual(cm.exception.code, 0)
+        self.assertIn("Vault Directory", out.getvalue())
+
+    def test_logout_terminates_shell(self):
+        """Verify 'logout' or 'exit' command returns True to terminate Cmd loop."""
+        import nexus_shell
+
+        user = server_app.db_get_user("admin")
+        shell = nexus_shell.NexusRestrictedShell(user)
+        self.assertTrue(shell.do_logout(""))
+        self.assertTrue(shell.do_exit(""))
+        self.assertTrue(shell.do_quit(""))
+
+    def test_cli_help_respects_privileges(self):
+        """Verify help output only exposes administrative commands to admin role."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stdout
+
+        # Normal User
+        norm_user = {"user_id": "norm_u", "role": "user", "privileges": {}}
+        shell_norm = nexus_shell.NexusRestrictedShell(norm_user)
+        out_norm = io.StringIO()
+        with redirect_stdout(out_norm):
+            shell_norm.do_help("")
+        self.assertNotIn("Administrative Commands", out_norm.getvalue())
+        self.assertNotIn("services", out_norm.getvalue())
+
+        # Admin User
+        admin_user = server_app.db_get_user("admin")
+        shell_adm = nexus_shell.NexusRestrictedShell(admin_user)
+        out_adm = io.StringIO()
+        with redirect_stdout(out_adm):
+            shell_adm.do_help("")
+        self.assertIn("Administrative Commands", out_adm.getvalue())
+        self.assertIn("services", out_adm.getvalue())
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
