@@ -3,9 +3,8 @@ NexusNode CLI — Atomic Backups & Restore Command (Admin Only)
 Communicates with /api/backups, /api/backups/create, /api/backups/restore, and download endpoints.
 """
 
-from pathlib import Path
-
 from .. import output
+from .. import normalize
 from ..client import NexusClient, NexusConnectionError
 
 
@@ -36,28 +35,35 @@ def cmd_backups_list(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied: your account lacks 'can_manage_backups' privilege.")
         return 1
-    if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to list backups (HTTP {status_code})")
+    if status_code != 200:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to list backups ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
         return 0
 
-    backups = resp.get("backups", [])
+    backups = normalize.normalize_list(resp, "backups")
     if not backups:
         print("\nNo system backups available.\n")
         return 0
 
-    headers = ["BACKUP ID", "FILENAME", "SIZE", "SHA256 (PREFIX)", "CREATED AT"]
+    headers = ["BACKUP ID", "FILENAME", "SIZE", "CHECKSUM / SHA256", "CREATED AT"]
     rows = []
     for b in backups:
+        if not isinstance(b, dict):
+            continue
+        sz = b.get("size_bytes", b.get("size", 0))
+        csum = b.get("checksum") or b.get("sha256") or "--"
+        csum_disp = csum[:12] + "..." if len(csum) > 12 else csum
+        ts = b.get("created_at") or b.get("created")
         rows.append([
-            b.get("id", "N/A"),
-            b.get("filename", "N/A"),
-            output.format_bytes(b.get("size_bytes", 0)),
-            b.get("sha256", "")[:12] + "...",
-            output.format_timestamp(b.get("created_at"))
+            str(b.get("id", "N/A")),
+            str(b.get("filename", "N/A")),
+            output.format_bytes(sz),
+            csum_disp,
+            output.format_timestamp(ts)
         ])
 
     print(f"\n--- ATOMIC SYSTEM BACKUPS ({len(backups)} archives) ---")
@@ -76,8 +82,8 @@ def cmd_backups_create(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied: your account lacks 'can_manage_backups' privilege.")
         return 1
-    if status_code != 200 or not isinstance(resp, dict):
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
+    if status_code not in [200, 201, 202]:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
         output.print_error(f"Backup creation failed: {err}")
         return 1
 
@@ -85,11 +91,16 @@ def cmd_backups_create(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_json(resp)
         return 0
 
-    output.print_success("System backup created successfully:")
-    print(f"  Backup ID:   {resp.get('id')}")
-    print(f"  Filename:    {resp.get('filename')}")
-    print(f"  Size:        {output.format_bytes(resp.get('size_bytes', 0))}")
-    print(f"  SHA-256:     {resp.get('sha256')}\n")
+    output.print_success("System backup task enqueued successfully:")
+    if isinstance(resp, dict):
+        if resp.get("task_id"):
+            print(f"  Task ID:     {resp.get('task_id')}")
+            print(f"  Status:      {resp.get('status', 'QUEUED').upper()}")
+        elif resp.get("id"):
+            print(f"  Backup ID:   {resp.get('id')}")
+            print(f"  Filename:    {resp.get('filename')}")
+            print(f"  Size:        {output.format_bytes(resp.get('size_bytes', 0))}")
+    print()
     return 0
 
 
@@ -119,8 +130,8 @@ def cmd_backups_restore(client: NexusClient, args, as_json: bool = False) -> int
     if status_code == 403:
         output.print_error("Permission denied: your account lacks backup restoration privileges.")
         return 1
-    if status_code != 200:
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
+    if status_code not in [200, 201, 202]:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
         output.print_error(f"Restore failed: {err}")
         return 1
 

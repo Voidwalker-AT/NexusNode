@@ -4,6 +4,7 @@ Communicates with /api/admin/diagnostics/* and /api/network/test endpoints.
 """
 
 from .. import output
+from .. import normalize
 from ..client import NexusClient, NexusConnectionError
 
 
@@ -35,34 +36,77 @@ def cmd_diag_system(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_error("Permission denied: your account lacks administrative diagnostics privileges.")
         return 1
     if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to fetch diagnostics (HTTP {status_code})")
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to fetch diagnostics ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
         return 0
 
-    hw = resp.get("hardware", {})
-    proc = resp.get("process", {})
+    dev = resp.get("device", {})
+    proc = resp.get("nexusnode_process", resp.get("process", {}))
+    mem = resp.get("memory", {})
+    disk = resp.get("disk", {})
+    dev_telem = resp.get("device_telemetry", resp.get("hardware", {}))
     health = resp.get("health", {})
 
     print("\n" + "=" * 65)
     print("NEXUSNODE TECHNICAL SYSTEM DIAGNOSTICS")
     print("=" * 65)
-    print(f"  Appliance Uptime:    {output.format_duration(resp.get('uptime_seconds', 0))}")
+    print(f"  Device / OS:         {dev.get('model', 'Android Appliance')} ({dev.get('android_version', 'Android 13')})")
     print(f"  Overall Health:      {health.get('status', 'HEALTHY').upper()}")
     print("-" * 65)
     print("HARDWARE & OS:")
-    print(f"  RAM Total / Free:    {output.format_bytes(hw.get('ram_total_bytes', 0))} / {output.format_bytes(hw.get('ram_available_bytes', 0))}")
-    print(f"  Swap Total / Free:   {output.format_bytes(hw.get('swap_total_bytes', 0))} / {output.format_bytes(hw.get('swap_free_bytes', 0))}")
-    print(f"  CPU Cores / Load:    {hw.get('cpu_cores', 8)} cores | 1m: {hw.get('load_avg_1m', '0.0')}, 5m: {hw.get('load_avg_5m', '0.0')}")
-    print(f"  Thermal State:       {hw.get('thermal_status', 'NORMAL')} | Battery: {hw.get('battery_pct', 100)}% ({hw.get('battery_temp_c', 0.0):.1f} C)")
+
+    ram_used = mem.get("used_mb")
+    ram_total = mem.get("total_mb")
+    if ram_used is not None and ram_total is not None:
+        print(f"  RAM Used / Total:    {ram_used} MB / {ram_total} MB ({mem.get('ram_percent', 0):.1f}%)")
+    elif mem.get("ram_total_bytes"):
+        print(f"  RAM Total / Free:    {output.format_bytes(mem.get('ram_total_bytes'))} / {output.format_bytes(mem.get('ram_available_bytes', 0))}")
+    else:
+        print(f"  RAM Used / Total:    UNAVAILABLE")
+
+    swap_used = mem.get("swap_used_mb")
+    swap_total = mem.get("swap_total_mb")
+    if swap_used is not None and swap_total is not None:
+        print(f"  Swap Used / Total:   {swap_used} MB / {swap_total} MB")
+    else:
+        print(f"  Swap Used / Total:   UNAVAILABLE")
+
+    cores = dev_telem.get("cpu_cores", 8)
+    l1 = dev_telem.get("load_avg_1m", "0.0")
+    l5 = dev_telem.get("load_avg_5m", "0.0")
+    print(f"  CPU Cores / Load:    {cores} cores | 1m: {l1}, 5m: {l5}")
+
+    cpu_temp = dev_telem.get("cpu_temperature_c")
+    bat_pct = dev_telem.get("battery_percent", dev_telem.get("battery_pct"))
+    bat_temp = dev_telem.get("battery_temp_c")
+    temp_str = f"{cpu_temp:.1f} °C" if cpu_temp is not None else "UNAVAILABLE"
+    bat_str = f"{bat_pct}%" if bat_pct is not None else "UNAVAILABLE"
+    if bat_temp is not None:
+        bat_str += f" ({bat_temp:.1f} °C)"
+    print(f"  Thermal State:       {temp_str} | Battery: {bat_str}")
+
     print("-" * 65)
     print("PROCESS & RUNTIME:")
     print(f"  Process PID:         {proc.get('pid', '-')}")
-    print(f"  Memory (RSS/VMS):    {output.format_bytes(proc.get('rss_bytes', 0))} / {output.format_bytes(proc.get('vms_bytes', 0))}")
-    print(f"  Active Threads:      {proc.get('threads_count', 0)}")
-    print(f"  Open File Handles:   {proc.get('open_files_count', 0)}")
+    rss_mb = proc.get("rss_mb")
+    vms_mb = proc.get("vms_mb")
+    if rss_mb is not None:
+        vms_str = f" / {vms_mb} MB VMS" if vms_mb is not None else ""
+        print(f"  Memory (RSS/VMS):    {rss_mb} MB RSS{vms_str}")
+    elif proc.get("rss_bytes"):
+        print(f"  Memory (RSS/VMS):    {output.format_bytes(proc.get('rss_bytes'))} / {output.format_bytes(proc.get('vms_bytes', 0))}")
+    else:
+        print(f"  Memory (RSS/VMS):    UNAVAILABLE")
+
+    threads = proc.get("threads", proc.get("threads_count"))
+    print(f"  Active Threads:      {threads if threads is not None else 'UNAVAILABLE'}")
+    open_files = proc.get("open_files", proc.get("open_files_count"))
+    if open_files is not None:
+        print(f"  Open File Handles:   {open_files}")
     print("=" * 65 + "\n")
     return 0
 
@@ -79,7 +123,8 @@ def cmd_diag_full(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_error("Permission denied: your account lacks administrative diagnostics privileges.")
         return 1
     if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to generate full diagnostic report (HTTP {status_code})")
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to generate full diagnostic report ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
@@ -99,60 +144,67 @@ def cmd_diag_full(client: NexusClient, args, as_json: bool = False) -> int:
     if not issues:
         print("\n[+] No critical issues or warnings detected across system components.\n")
     else:
-        print(f"\nDETECTED ISSUES ({len(issues)} findings):")
-        for idx, iss in enumerate(issues, 1):
-            sev = iss.get("severity", "INFO").upper()
-            print(f"\n  [{idx}] [{sev}] {iss.get('problem')}")
-            print(f"      Evidence:       {iss.get('evidence')}")
-            print(f"      Likely Cause:   {iss.get('likely_cause')}")
-            print(f"      Recommendation: {iss.get('recommendation')}")
+        print(f"\nDETECTED ISSUES ({len(issues)}):")
+        for i, iss in enumerate(issues, 1):
+            sev = iss.get("severity", "WARN").upper()
+            comp = iss.get("component", "SYSTEM")
+            desc = iss.get("description", "")
+            print(f"  [{sev}] ({comp}) {desc}")
 
     if recommendations:
-        print("\nRECOMMENDED ACTIONS:")
+        print("\nACTIONABLE RECOMMENDATIONS:")
         for r in recommendations:
-            print(f"  - {r}")
-    print("\n" + "=" * 70 + "\n")
+            print(f"  • {r}")
+    print("=" * 70 + "\n")
     return 0
 
 
 def cmd_diag_profile(client: NexusClient, args, as_json: bool = False) -> int:
+    print("Capturing runtime performance profile snapshot...")
     try:
         status_code, resp = client.post("/api/admin/diagnostics/profile-snapshot")
     except NexusConnectionError as e:
         output.print_error(str(e))
         return 1
 
-    if status_code == 200 and isinstance(resp, dict):
-        if as_json or getattr(args, "json", False):
-            output.print_json(resp)
-        else:
-            output.print_success("Diagnostics profile snapshot captured on server.")
-            print(f"  Snapshot ID: {resp.get('snapshot_id')}")
-            print(f"  RSS:         {output.format_bytes(resp.get('rss_bytes', 0))}")
-            print(f"  Threads:     {resp.get('threads', 0)}\n")
-        return 0
-    else:
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
-        output.print_error(f"Snapshot capture failed: {err}")
+    if status_code == 403:
+        output.print_error("Permission denied.")
         return 1
+    if status_code not in [200, 201]:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Snapshot capture failed ({err})")
+        return 1
+
+    if as_json or getattr(args, "json", False):
+        output.print_json(resp)
+        return 0
+
+    output.print_success("Performance profile snapshot captured successfully.")
+    print(f"  Snapshot ID: {resp.get('snapshot_id')}")
+    print(f"  Saved Path:  {resp.get('path', 'diagnostics/')}\n")
+    return 0
 
 
 def cmd_diag_network(client: NexusClient, args, as_json: bool = False) -> int:
-    target = getattr(args, "target", "internet") or "internet"
+    print("Executing network interface & connectivity probe...")
     try:
-        status_code, resp = client.post("/api/network/test", data={"target": target})
+        status_code, resp = client.get("/api/network/test")
     except NexusConnectionError as e:
         output.print_error(str(e))
         return 1
 
-    if status_code == 200 and isinstance(resp, dict):
-        if as_json or getattr(args, "json", False):
-            output.print_json(resp)
-        else:
-            lat = f"{resp.get('latency_ms', 0):.1f} ms" if resp.get("latency_ms") is not None else "N/A"
-            stat = resp.get("status", "UNKNOWN").upper()
-            output.print_success(f"Network probe to '{target}': Status={stat}, Latency={lat}")
-        return 0
-    else:
-        output.print_error(f"Network probe failed (HTTP {status_code})")
+    if status_code != 200 or not isinstance(resp, dict):
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Network probe failed ({err})")
         return 1
+
+    if as_json or getattr(args, "json", False):
+        output.print_json(resp)
+        return 0
+
+    print("\n--- NETWORK CONNECTIVITY PROBE ---")
+    print(f"  Gateway Reached:     {'YES' if resp.get('gateway_reachable', True) else 'NO'}")
+    print(f"  DNS Resolution:      {'YES' if resp.get('dns_working', True) else 'NO'}")
+    print(f"  Public IP / Mode:    {resp.get('public_ip', 'LAN / Tunnel')}")
+    print(f"  WAN Latency:         {resp.get('ping_ms', '--')} ms\n")
+    return 0

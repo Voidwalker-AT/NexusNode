@@ -4,6 +4,7 @@ Communicates with /api/services/status, /start, and /stop endpoints.
 """
 
 from .. import output
+from .. import normalize
 from ..client import NexusClient, NexusConnectionError
 
 
@@ -35,27 +36,40 @@ def cmd_services_status(client: NexusClient, args, as_json: bool = False) -> int
         output.print_error("Permission denied: your account lacks 'can_control_services' privilege.")
         return 1
     if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to fetch services status (HTTP {status_code})")
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to fetch services status ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
         return 0
 
-    services = resp.get("services", {})
+    services = normalize.normalize_services(resp)
     headers = ["SERVICE", "STATE", "STATUS", "PID", "SUPERVISED"]
     rows = []
-    for sname, sdata in services.items():
-        state_str = "RUNNING" if sdata.get("online") else "STOPPED"
+    online_count = 0
+    total_count = len(services)
+
+    for sname, sdata in sorted(services.items()):
+        is_running = bool(sdata.get("running") or sdata.get("online") or str(sdata.get("status", "")).lower() in ["online", "running"])
+        if is_running:
+            online_count += 1
+            state_str = "RUNNING"
+        else:
+            state_str = "STOPPED"
+
+        raw_stat = sdata.get("status") or sdata.get("state") or "N/A"
+        pid_val = sdata.get("pid") or "-"
+
         rows.append([
             sname,
             state_str,
-            sdata.get("status", "N/A"),
-            sdata.get("pid", "-") or "-",
-            "YES" if sdata.get("supervised") else "NO"
+            str(raw_stat),
+            str(pid_val),
+            "YES" if sdata.get("supervised", True) else "NO"
         ])
 
-    print(f"\n--- MANAGED SYSTEM SERVICES ({resp.get('online_count', 0)}/{resp.get('total_count', 0)} active) ---")
+    print(f"\n--- MANAGED SYSTEM SERVICES ({online_count}/{total_count} active) ---")
     output.print_table(headers, rows)
     return 0
 
@@ -75,8 +89,8 @@ def cmd_services_start(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied: your account lacks service control privileges.")
         return 1
-    if status_code != 200:
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
+    if status_code not in [200, 201, 202]:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
         output.print_error(f"Failed to start '{service}': {err}")
         return 1
 
@@ -102,8 +116,8 @@ def cmd_services_stop(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied: your account lacks service control privileges.")
         return 1
-    if status_code != 200:
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
+    if status_code not in [200, 201, 202]:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
         output.print_error(f"Failed to stop '{service}': {err}")
         return 1
 
@@ -120,7 +134,6 @@ def cmd_services_restart(client: NexusClient, args, as_json: bool = False) -> in
         output.print_error("Service name is required.")
         return 1
 
-    # Call stop then start
     print(f"Restarting service '{service}' via runit supervisor...")
     try:
         client.post("/stop", data={"service": service})
@@ -129,13 +142,13 @@ def cmd_services_restart(client: NexusClient, args, as_json: bool = False) -> in
         output.print_error(str(e))
         return 1
 
-    if status_code == 200:
+    if status_code in [200, 201, 202]:
         if as_json or getattr(args, "json", False):
             output.print_json(resp)
         else:
             output.print_success(f"Service '{service}' restarted successfully.")
         return 0
     else:
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
         output.print_error(f"Restart failed: {err}")
         return 1

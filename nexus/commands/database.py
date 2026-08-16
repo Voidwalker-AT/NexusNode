@@ -4,6 +4,7 @@ Communicates with /api/admin/db/diagnostics and /api/admin/db/query endpoints.
 """
 
 from .. import output
+from .. import normalize
 from ..client import NexusClient, NexusConnectionError
 
 
@@ -31,7 +32,8 @@ def cmd_db_diagnostics(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_error("Permission denied: your account lacks database inspection privileges.")
         return 1
     if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to fetch database diagnostics (HTTP {status_code})")
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to fetch database diagnostics ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
@@ -41,7 +43,7 @@ def cmd_db_diagnostics(client: NexusClient, args, as_json: bool = False) -> int:
     print("\n" + "=" * 55)
     print("NEXUSNODE SQLITE VAULT DATABASE DIAGNOSTICS")
     print("=" * 55)
-    print(f"  DB File:        {resp.get('db_file')}")
+    print(f"  DB File:        {resp.get('db_file', 'N/A')}")
     print(f"  DB Size:        {resp.get('db_size_kb', 0):.2f} KB")
     print(f"  WAL Size:       {resp.get('wal_size_kb', 0):.2f} KB")
     print(f"  SHM Size:       {resp.get('shm_size_kb', 0):.2f} KB")
@@ -67,21 +69,20 @@ def cmd_db_query(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_error("Permission denied: your account lacks database query privileges.")
         return 1
     if status_code != 200 or not isinstance(resp, dict):
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
-        output.print_error(f"Database query failed: {err}")
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Database query failed ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
         return 0
 
-    rows = resp.get("rows", [])
+    rows = normalize.normalize_list(resp, "rows")
     if not rows:
         print(f"\nTable '{table}' has no records.\n")
         return 0
 
-    # Pick up to 5 columns
-    headers = list(rows[0].keys())[:5]
+    headers = list(rows[0].keys())[:6]
     table_rows = []
     for r in rows:
         table_rows.append([str(r.get(h, ""))[:24] for h in headers])

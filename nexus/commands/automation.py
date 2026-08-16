@@ -4,6 +4,7 @@ Communicates with /api/automation/jobs, toggle, and run endpoints.
 """
 
 from .. import output
+from .. import normalize
 from ..client import NexusClient, NexusConnectionError
 
 
@@ -32,28 +33,37 @@ def cmd_auto_list(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied: your account lacks 'can_manage_automation' privilege.")
         return 1
-    if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to list automation jobs (HTTP {status_code})")
+    if status_code != 200:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to list automation jobs ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
         return 0
 
-    jobs = resp.get("jobs", [])
+    jobs = normalize.normalize_list(resp, "jobs")
     if not jobs:
         print("\nNo scheduled automation jobs configured.\n")
         return 0
 
-    headers = ["JOB ID", "DESCRIPTION", "CRON / INTERVAL", "ENABLED", "LAST RUN"]
+    headers = ["JOB ID", "DESCRIPTION / NAME", "SCHEDULE", "ENABLED", "LAST RUN"]
     rows = []
     for j in jobs:
+        if not isinstance(j, dict):
+            continue
+        jid = str(j.get("id", "N/A"))
+        jdesc = str(j.get("name") or j.get("description") or j.get("job_type", "N/A"))[:32]
+        sched = str(j.get("schedule") or j.get("interval_or_cron") or f"Every {j.get('interval_seconds', 60)}s")
+        is_enabled = bool(j.get("enabled"))
+        last_run = output.format_timestamp(j.get("last_run") or j.get("last_run_at"))
+
         rows.append([
-            j.get("id", "N/A"),
-            j.get("description", "N/A")[:32],
-            j.get("interval_or_cron", "periodic"),
-            "YES" if j.get("enabled") else "NO",
-            output.format_timestamp(j.get("last_run_at"))
+            jid,
+            jdesc,
+            sched,
+            "YES" if is_enabled else "NO",
+            last_run
         ])
 
     print(f"\n--- SCHEDULED AUTOMATION JOBS ({len(jobs)} jobs) ---")
@@ -76,8 +86,8 @@ def cmd_auto_run(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied.")
         return 1
-    if status_code != 200:
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
+    if status_code not in [200, 201, 202]:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
         output.print_error(f"Failed to run job: {err}")
         return 1
 
@@ -103,14 +113,13 @@ def cmd_auto_toggle(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied.")
         return 1
-    if status_code != 200:
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
+    if status_code not in [200, 201, 202]:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
         output.print_error(f"Failed to toggle job: {err}")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
     else:
-        new_state = "ENABLED" if resp.get("enabled") else "DISABLED"
-        output.print_success(f"Job '{job_id}' state updated -> {new_state}.")
+        output.print_success(f"Job '{job_id}' state updated successfully.")
     return 0

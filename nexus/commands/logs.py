@@ -7,6 +7,7 @@ import sys
 import json
 
 from .. import output
+from .. import normalize
 from ..client import NexusClient, NexusConnectionError
 
 
@@ -26,13 +27,13 @@ def cmd_logs(client: NexusClient, args, as_json: bool = False) -> int:
 def cmd_logs_recent(client: NexusClient, args, as_json: bool = False) -> int:
     limit = getattr(args, "limit", 50) or 50
     level = getattr(args, "level", None)
-    component = getattr(args, "component", None)
+    component = getattr(args, "component", None) or getattr(args, "category", None)
 
     params = {"limit": limit}
     if level:
         params["level"] = level
     if component:
-        params["component"] = component
+        params["category"] = component
 
     try:
         status_code, resp = client.get("/api/events", params=params)
@@ -43,27 +44,32 @@ def cmd_logs_recent(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied: your account lacks 'can_view_system_logs' privilege.")
         return 1
-    if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to fetch system logs (HTTP {status_code})")
+    if status_code != 200:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to fetch system logs ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
         return 0
 
-    logs = resp.get("events", [])
+    logs = normalize.normalize_list(resp, "events")
     if not logs:
         print("\nNo log events recorded matching query.\n")
         return 0
 
-    headers = ["TIMESTAMP", "LEVEL", "COMPONENT", "MESSAGE"]
+    headers = ["TIMESTAMP", "LEVEL", "CATEGORY", "MESSAGE"]
     rows = []
     for l in logs:
+        if not isinstance(l, dict):
+            continue
+        ts_val = l.get("timestamp") or l.get("created_at") or l.get("date")
+        cat_val = l.get("category") or l.get("component") or "SYS"
         rows.append([
-            output.format_timestamp(l.get("timestamp", 0)),
-            l.get("level", "INFO").upper(),
-            l.get("component", "SYS"),
-            l.get("message", "")[:60]
+            output.format_timestamp(ts_val),
+            str(l.get("level", "INFO")).upper(),
+            str(cat_val).upper(),
+            str(l.get("message", ""))[:60]
         ])
 
     print(f"\n--- RECENT SYSTEM LOGS ({len(logs)} events) ---")
@@ -84,7 +90,7 @@ def cmd_logs_stream(client: NexusClient, args, as_json: bool = False) -> int:
             parsed = json.loads(line)
             ts = output.format_timestamp(parsed.get("timestamp", 0))
             lvl = parsed.get("level", "INFO")
-            comp = parsed.get("component", "SYS")
+            comp = parsed.get("category") or parsed.get("component") or "SYS"
             msg = parsed.get("message", "")
             print(f"[{ts}] [{lvl}] [{comp}] {msg}")
         except Exception:

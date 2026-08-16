@@ -44,9 +44,10 @@ class NexusClient:
     Zero external dependencies; uses urllib.request with standard TLS verification.
     """
 
-    def __init__(self, server_url: str = None, token: str = None):
+    def __init__(self, server_url: str = None, token: str = None, debug: bool = False):
         self.server_url = (server_url or config.resolve_server_url() or "").rstrip("/")
         self.token = token
+        self.debug = debug
         if not self.token:
             session = config.load_session()
             if session:
@@ -155,11 +156,19 @@ class NexusClient:
                 raw_data = resp.read()
                 content_type = resp.headers.get("Content-Type", "").lower()
 
+                # Handle empty body (e.g. 204 No Content)
+                if not raw_data:
+                    if self.debug or os.environ.get("NEXUS_DEBUG"):
+                        sys.stderr.write(f"[DEBUG] {method.upper()} {path}\n[DEBUG] HTTP {status_code}\n[DEBUG] (Empty response body)\n")
+                    return status_code, {}
+
                 # Detect HTML response body
                 is_html = "text/html" in content_type or raw_data.lstrip().startswith(b"<!DOCTYPE") or raw_data.lstrip().startswith(b"<html")
                 if is_html:
                     raw_text = raw_data.decode("utf-8", errors="replace")
                     is_waf = "localtonet" in raw_text.lower() or "waf" in raw_text.lower()
+                    if self.debug or os.environ.get("NEXUS_DEBUG"):
+                        sys.stderr.write(f"[DEBUG] {method.upper()} {path}\n[DEBUG] HTTP {status_code}\n[DEBUG] Content-Type: {content_type} (HTML/WAF)\n")
                     return status_code, {
                         "_is_html": True,
                         "_is_waf": is_waf,
@@ -170,9 +179,18 @@ class NexusClient:
 
                 try:
                     parsed = json.loads(raw_data.decode("utf-8"))
+                    if self.debug or os.environ.get("NEXUS_DEBUG"):
+                        sys.stderr.write(f"[DEBUG] {method.upper()} {path}\n[DEBUG] HTTP {status_code}\n[DEBUG] Content-Type: {content_type}\n")
+                        if isinstance(parsed, dict):
+                            safe_keys = [k for k in parsed.keys() if "token" not in k.lower() and "pass" not in k.lower() and "secret" not in k.lower()]
+                            sys.stderr.write(f"[DEBUG] Response keys: {', '.join(safe_keys)}\n")
+                        elif isinstance(parsed, list):
+                            sys.stderr.write(f"[DEBUG] Response: list with {len(parsed)} items\n")
                     return status_code, parsed
                 except Exception:
                     raw_text = raw_data.decode("utf-8", errors="replace")
+                    if self.debug or os.environ.get("NEXUS_DEBUG"):
+                        sys.stderr.write(f"[DEBUG] {method.upper()} {path}\n[DEBUG] HTTP {status_code}\n[DEBUG] (Non-JSON payload: {len(raw_text)} chars)\n")
                     return status_code, {
                         "_is_html": "<html" in raw_text.lower(),
                         "error": "non_json_response",

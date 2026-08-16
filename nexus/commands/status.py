@@ -4,6 +4,7 @@ Queries /api/system/status to display health, resource governor metrics, and ser
 """
 
 from .. import output
+from .. import normalize
 from ..client import NexusClient, NexusConnectionError
 
 
@@ -15,41 +16,109 @@ def cmd_status(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_error(str(e))
         return 1
 
-    if status_code != 200:
-        output.print_error(f"Failed to fetch system status (HTTP {status_code})")
+    if status_code != 200 or not isinstance(resp, dict):
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to fetch system status ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
         return 0
 
-    appliance = resp.get("appliance", {})
-    ram = resp.get("ram", {})
-    thermal = resp.get("thermal", {})
-    storage = resp.get("storage", {})
-    services = resp.get("services", {})
-    process = resp.get("process", {})
+    norm = normalize.normalize_system_status(resp)
+    appliance = norm.get("appliance", {})
+    memory = norm.get("memory", {})
+    disk = norm.get("disk", {})
+    battery = norm.get("battery", {})
+    thermal = norm.get("thermal", {})
+    services = norm.get("services", {})
+    tasks = norm.get("tasks", {})
+    process = norm.get("process", {})
+    cpu = norm.get("cpu", {})
 
     print("\n" + "=" * 60)
     print("NEXUSNODE APPLIANCE STATUS")
     print("=" * 60)
-    print(f"  Appliance State:     {appliance.get('state', 'UNKNOWN')}")
-    print(f"  CPU Load (1m/5m/15m):{thermal.get('cpu_load_1m', '0.0')} / {thermal.get('cpu_load_5m', '0.0')} / {thermal.get('cpu_load_15m', '0.0')}")
-    print(f"  Thermal State:       {thermal.get('thermal_status', 'NORMAL')} (Headroom: {thermal.get('thermal_headroom', 'NORMAL')})")
-    print(f"  Battery:             {thermal.get('battery_level', 0)}% ({'Charging' if thermal.get('battery_charging') else 'Discharging'}) | Temp: {thermal.get('battery_temp_c', 0.0):.1f} C")
+    print(f"  Appliance State:     {appliance.get('state', 'NORMAL')}")
+
+    # CPU
+    cpu_pct = cpu.get("percent")
+    if cpu_pct is not None:
+        print(f"  CPU Usage:           {cpu_pct:.1f}%")
+    else:
+        print(f"  CPU Usage:           UNAVAILABLE")
+
+    # Thermal & Battery
+    temp_c = thermal.get("temp_c")
+    therm_stat = thermal.get("status", appliance.get("state", "NORMAL"))
+    if temp_c is not None:
+        print(f"  Thermal State:       {therm_stat} ({temp_c:.1f} °C)")
+    else:
+        print(f"  Thermal State:       {therm_stat} (UNAVAILABLE)")
+
+    bat_lvl = battery.get("level")
+    bat_stat = battery.get("status", "STANDBY")
+    if bat_lvl is not None:
+        print(f"  Battery:             {bat_lvl}% ({bat_stat})")
+    else:
+        print(f"  Battery:             UNAVAILABLE ({bat_stat})")
+
     print("-" * 60)
-    ram_used = ram.get("used_mb", 0)
-    ram_total = ram.get("total_mb", 1)
-    ram_pct = (ram_used / ram_total * 100) if ram_total else 0
-    print(f"  RAM Usage:           {ram_used} MB / {ram_total} MB ({ram_pct:.1f}%) [Tier: {ram.get('ram_tier', 'NORMAL')}]")
-    print(f"  Process Memory:      {process.get('rss_mb', 0)} MB RSS | Threads: {process.get('threads', 0)}")
+
+    # Memory / RAM
+    ram_used = memory.get("used_mb")
+    ram_total = memory.get("total_mb")
+    ram_pct = memory.get("ram_percent", memory.get("percent"))
+    if ram_used is not None and ram_total is not None:
+        pct_val = ram_pct if ram_pct is not None else ((ram_used / ram_total * 100) if ram_total else 0.0)
+        tier_val = appliance.get("tier") or memory.get("ram_tier", "NORMAL")
+        print(f"  RAM Usage:           {ram_used} MB / {ram_total} MB ({pct_val:.1f}%) [Tier: {tier_val}]")
+    else:
+        print(f"  RAM Usage:           UNAVAILABLE")
+
+    # Process Memory
+    rss_mb = process.get("rss_mb")
+    threads = process.get("threads")
+    if rss_mb is not None and threads is not None:
+        print(f"  Process Memory:      {rss_mb} MB RSS | Threads: {threads}")
+    elif rss_mb is not None:
+        print(f"  Process Memory:      {rss_mb} MB RSS")
+    else:
+        print(f"  Process Memory:      UNAVAILABLE")
+
     print("-" * 60)
-    vault_free = output.format_bytes(storage.get("free_bytes", 0))
-    vault_total = output.format_bytes(storage.get("total_bytes", 0))
-    print(f"  Vault Storage:       {vault_free} free of {vault_total} ({storage.get('percent_used', 0):.1f}% used)")
-    print(f"  Vault Total Files:   {storage.get('vault_files_count', 0)}")
-    print("-" * 60)
-    print(f"  Services Online:     {services.get('online_count', 0)} / {services.get('total_count', 0)} services active")
-    print(f"  Active Tasks:        {resp.get('tasks', {}).get('running_tasks_count', 0)} running, {resp.get('tasks', {}).get('queued_tasks_count', 0)} queued")
+
+    # Vault Storage / Disk
+    free_gb = disk.get("free_gb")
+    total_gb = disk.get("total_gb")
+    disk_pct = disk.get("percent")
+    if free_gb is not None and total_gb is not None:
+        pct_str = f" ({disk_pct:.1f}% used)" if disk_pct is not None else ""
+        print(f"  Vault Storage:       {free_gb:.1f} GB free of {total_gb:.1f} GB{pct_str}")
+    elif disk.get("free_bytes") is not None and disk.get("total_bytes") is not None:
+        f_b = output.format_bytes(disk.get("free_bytes"))
+        t_b = output.format_bytes(disk.get("total_bytes"))
+        print(f"  Vault Storage:       {f_b} free of {t_b}")
+    else:
+        print(f"  Vault Storage:       UNAVAILABLE")
+
+    # Services
+    svcs_dict = normalize.normalize_services(services)
+    if svcs_dict:
+        online_count = sum(1 for s in svcs_dict.values() if s.get("running") or s.get("online") or s.get("status") in ["online", "running"])
+        total_count = len(svcs_dict)
+        print(f"  Services Online:     {online_count} / {total_count} services active")
+    else:
+        print(f"  Services Online:     UNAVAILABLE")
+
+    # Active Tasks
+    active_cnt = tasks.get("active_count")
+    if active_cnt is None and "active_tasks" in tasks and isinstance(tasks["active_tasks"], list):
+        active_cnt = len(tasks["active_tasks"])
+    if active_cnt is not None:
+        print(f"  Active Tasks:        {active_cnt} active")
+    else:
+        print(f"  Active Tasks:        UNAVAILABLE")
+
     print("=" * 60 + "\n")
     return 0

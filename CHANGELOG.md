@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.4] - 2026-08-16
+
+### 🔧 Universal Remote CLI Live API Contract Repair
+
+#### Fixed & Standardized
+- **Centralized Normalization Layer (`nexus/normalize.py`)**:
+  - Implemented authoritative response normalizers (`normalize_list`, `normalize_dict`, `normalize_models`, `normalize_task`, `normalize_tasks`, `normalize_system_status`, `normalize_services`, `normalize_rag`) to cleanly decouple remote REST payloads from UI formatting.
+  - Transparently accepts both top-level JSON arrays (`[...]`) and wrapped dictionary responses (`{"models": [...]}`) across all CLI command modules.
+  - Eliminated synthetic default zeros: missing or unavailable backend fields now render cleanly as `UNAVAILABLE` or `N/A` instead of fabricating false `0 MB / 1 MB` or `0 B free of 0 B` telemetry.
+- **AI Models & State Endpoint Contract Repair (`nexus ai models`, `nexus models list`)**:
+  - Resolved `[ERROR] Failed to fetch AI models (HTTP 200)` caused by rigid dictionary assumptions on the Ollama registry endpoint (`/api/ai/models`).
+  - Correctly renders model names, parameters, family, and quantization levels from top-level list payloads.
+- **System Telemetry & Resource Rendering (`nexus status`)**:
+  - Synchronized schema parsing with `/api/system/status` (`memory.used_mb`, `disk.free_gb`, `battery.level`, `thermal.temp_c`, `services.*`).
+  - Preserved real zero values while flagging unavailable metrics.
+- **Task State & Lifecycle Separation (`nexus tasks list`, `nexus tasks status`)**:
+  - Separated authoritative task `STATUS` and processing `STAGE` into distinct table columns.
+  - Added visible warnings on contradictory task states (e.g., `STATUS=COMPLETED` with `STAGE=QUEUED`) rather than silently masking them.
+  - Exposed live transfer speed (`MB/s`) and estimated completion (`ETA`) across background tasks.
+- **Media Queue & Task ID Integration (`nexus media queue`, `nexus media download`)**:
+  - Derived the media queue strictly from canonical task records (`type=media_download`), showing active speed, ETA, progress, and stage.
+  - Made `media download` return and display server-assigned `task_id` (`task-...`) on submission.
+- **Vault Directory & Metadata Normalization (`nexus vault list`)**:
+  - Summed file sizes across non-directory items and displayed `FOLDER` for directory categories rather than `0 B`.
+- **Administrative Endpoints & HTTP 201/204 Support**:
+  - Standardized `logs recent`, `backups list/create`, `automation list`, `shares list`, `users list`, `services status`, and `diagnostics` to accept valid 200, 201, 202, and 204 HTTP status codes with robust list/dict normalization.
+- **Comprehensive Regression Test Suite (157 Tests Passing)**:
+  - 36 dedicated CLI tests in `tests/test_nexus_client.py` validating real schema parsing, array handling, HTTP 200/201/204 responses, task contradiction warnings, and folder metadata.
+
+---
+
 ## [2.3.3] - 2026-08-16
 
 ### 💻 Universal Remote CLI Redesign & Polished Terminal Experience

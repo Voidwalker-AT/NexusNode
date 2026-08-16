@@ -7,6 +7,7 @@ import sys
 import json
 
 from .. import output
+from .. import normalize
 from ..client import NexusClient, NexusConnectionError
 
 
@@ -39,15 +40,17 @@ def cmd_ai_models(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied: your account lacks 'can_use_ai' privilege.")
         return 1
-    if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to fetch AI models (HTTP {status_code})")
+    if status_code not in [200, 201, 202, 204]:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to fetch AI models ({err})")
         return 1
 
+    models = normalize.normalize_models(resp)
+
     if as_json or getattr(args, "json", False):
-        output.print_json(resp)
+        output.print_json(resp if isinstance(resp, (list, dict)) else models)
         return 0
 
-    models = resp.get("models", [])
     if not models:
         print("\nNo AI models currently installed on the server.\n")
         return 0
@@ -57,7 +60,7 @@ def cmd_ai_models(client: NexusClient, args, as_json: bool = False) -> int:
     for m in models:
         rows.append([
             m.get("name", "N/A"),
-            output.format_bytes(m.get("size_bytes", 0)),
+            output.format_bytes(m.get("size_bytes", 0)) if m.get("size_bytes") is not None else "N/A",
             m.get("family", "N/A"),
             m.get("parameter_size", "N/A"),
             m.get("quantization_level", "N/A")
@@ -79,14 +82,17 @@ def cmd_ai_state(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_error("Permission denied: your account lacks 'can_use_ai' privilege.")
         return 1
     if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to fetch AI runtime state (HTTP {status_code})")
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to fetch AI runtime state ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
         return 0
 
-    is_online = (resp.get("engine") == "running" or resp.get("service_online", False))
+    is_online = (resp.get("engine") == "running" or resp.get("service_online", False) or resp.get("online", False))
+    vram_bytes = resp.get("size_vram_bytes") or resp.get("vram_bytes") or 0
+
     print("\n" + "=" * 55)
     print("NEXUSNODE AI RUNTIME STATE")
     print("=" * 55)
@@ -95,7 +101,7 @@ def cmd_ai_state(client: NexusClient, args, as_json: bool = False) -> int:
     print(f"  Loaded Model:       {resp.get('loaded_model') or 'None (Idle in RAM)'}")
     print(f"  Keep-Alive TTL:     {resp.get('keep_alive', '5m')}")
     print(f"  Context Limit:      {resp.get('context_size', 2048)} tokens")
-    print(f"  VRAM / RAM Usage:   {output.format_bytes(resp.get('size_vram_bytes', 0))}")
+    print(f"  VRAM / RAM Usage:   {output.format_bytes(vram_bytes)}")
     print("=" * 55 + "\n")
     return 0
 
@@ -117,7 +123,7 @@ def cmd_ai_select(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_error("Permission denied: your account lacks model management privileges.")
         return 1
     if status_code != 200:
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
+        err = resp.get("error", resp.get("message", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
         output.print_error(f"Failed to select model: {err}")
         return 1
 
@@ -155,7 +161,6 @@ def cmd_ai_chat(client: NexusClient, args, as_json: bool = False) -> int:
     accumulated = []
 
     def handle_chunk(chunk_line: str):
-        # Line can be SSE 'data: {...}' or raw JSON or text
         line = chunk_line.strip()
         if not line:
             return
@@ -165,14 +170,12 @@ def cmd_ai_chat(client: NexusClient, args, as_json: bool = False) -> int:
             return
         try:
             parsed = json.loads(line)
-            # Ollama format
             token = parsed.get("message", {}).get("content") or parsed.get("response") or ""
             if token:
                 sys.stdout.write(token)
                 sys.stdout.flush()
                 accumulated.append(token)
         except Exception:
-            # Raw string chunk
             sys.stdout.write(line)
             sys.stdout.flush()
             accumulated.append(line)
@@ -193,16 +196,29 @@ def cmd_ai_metrics(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_error(str(e))
         return 1
 
-    if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to fetch AI metrics (HTTP {status_code})")
+    if status_code != 200:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to fetch AI metrics ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
         return 0
 
+    metrics_list = normalize.normalize_list(resp)
+    total_inferences = len(metrics_list)
+    avg_tokens_sec = 0.0
+    avg_first_token_ms = 0.0
+    if metrics_list:
+        rates = [m.get("gen_tokens_per_sec", 0.0) for m in metrics_list if m.get("gen_tokens_per_sec")]
+        ttfts = [m.get("prompt_eval_ms", 0.0) for m in metrics_list if m.get("prompt_eval_ms")]
+        if rates:
+            avg_tokens_sec = sum(rates) / len(rates)
+        if ttfts:
+            avg_first_token_ms = sum(ttfts) / len(ttfts)
+
     print("\n--- AI INFERENCE METRICS ---")
-    print(f"  Total Inferences:    {resp.get('total_inferences', 0)}")
-    print(f"  Avg Eval Rate:       {resp.get('avg_tokens_per_sec', 0.0):.1f} tokens/sec")
-    print(f"  Avg Time-To-First:   {resp.get('avg_prompt_eval_duration_ms', 0.0):.1f} ms\n")
+    print(f"  Total Inferences:    {total_inferences}")
+    print(f"  Avg Eval Rate:       {avg_tokens_sec:.1f} tokens/sec")
+    print(f"  Avg Time-To-First:   {avg_first_token_ms:.1f} ms\n")
     return 0

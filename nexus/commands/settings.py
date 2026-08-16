@@ -6,6 +6,7 @@ Communicates with /api/settings endpoint.
 import json
 
 from .. import output
+from .. import normalize
 from ..client import NexusClient, NexusConnectionError
 
 
@@ -33,7 +34,8 @@ def cmd_settings_get(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_error("Permission denied: your account lacks 'can_manage_settings' privilege.")
         return 1
     if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to fetch settings (HTTP {status_code})")
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to fetch settings ({err})")
         return 1
 
     key = getattr(args, "key", None)
@@ -81,8 +83,8 @@ def cmd_settings_set(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied: your account lacks 'can_manage_settings' privilege.")
         return 1
-    if status_code != 200:
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
+    if status_code not in [200, 201]:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
         output.print_error(f"Failed to update setting: {err}")
         return 1
 

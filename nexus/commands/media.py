@@ -4,6 +4,7 @@ Communicates with /api/media/download, /api/media/library, and /api/tasks endpoi
 """
 
 from .. import output
+from .. import normalize
 from ..client import NexusClient, NexusConnectionError
 
 
@@ -56,8 +57,8 @@ def cmd_media_download(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied: your account lacks 'can_download_media' privilege.")
         return 1
-    if status_code != 200 or not isinstance(resp, dict):
-        err = resp.get("error", f"HTTP {status_code}") if isinstance(resp, dict) else str(resp)
+    if status_code not in [200, 201, 202] or not isinstance(resp, dict):
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
         output.print_error(f"Failed to enqueue download: {err}")
         return 1
 
@@ -65,11 +66,15 @@ def cmd_media_download(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_json(resp)
         return 0
 
+    task_id = resp.get("task_id")
+    if not task_id and isinstance(resp.get("task_ids"), list) and resp["task_ids"]:
+        task_id = resp["task_ids"][0]
+
     output.print_success("Download task submitted to server queue.")
-    print(f"  Task ID:     {resp.get('task_id')}")
+    print(f"  Task ID:     {task_id or 'unknown'}")
     print(f"  Format:      {fmt.upper()} ({quality})")
     print(f"  Destination: Vault -> {dest}/")
-    print(f"  Status:      {resp.get('status', 'QUEUED').upper()}")
+    print(f"  Status:      {str(resp.get('status', 'QUEUED')).upper()}")
     print("Use 'nexus media queue' or 'nexus tasks' to track progress.\n")
     return 0
 
@@ -84,16 +89,17 @@ def cmd_media_library(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied: your account lacks media access privileges.")
         return 1
-    if status_code != 200 or not isinstance(resp, dict):
-        output.print_error(f"Failed to load media library (HTTP {status_code})")
+    if status_code != 200:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to load media library ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
         return 0
 
-    items = resp.get("items", [])
-    total_size = output.format_bytes(sum(item.get("size", item.get("size_bytes", 0)) for item in items))
+    items = normalize.normalize_list(resp, "items")
+    total_size = output.format_bytes(sum(item.get("size", item.get("size_bytes", 0)) for item in items if isinstance(item, dict)))
 
     if not items:
         print("\nMedia library is empty.\n")
@@ -102,6 +108,8 @@ def cmd_media_library(client: NexusClient, args, as_json: bool = False) -> int:
     headers = ["FILENAME", "CATEGORY", "FORMAT", "SIZE"]
     rows = []
     for item in items:
+        if not isinstance(item, dict):
+            continue
         fname = item.get("name", item.get("filename", "N/A"))
         cat = (item.get("category") or "other").upper()
         fmt = (item.get("format") or "").upper()
@@ -123,24 +131,25 @@ def cmd_media_queue(client: NexusClient, args, as_json: bool = False) -> int:
     if status_code == 403:
         output.print_error("Permission denied.")
         return 1
-    if status_code != 200 or not isinstance(resp, (list, dict)):
-        output.print_error(f"Failed to fetch media task queue (HTTP {status_code})")
+    if status_code != 200:
+        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
+        output.print_error(f"Failed to fetch media task queue ({err})")
         return 1
 
-    tasks = resp if isinstance(resp, list) else resp.get("tasks", [])
-    media_tasks = [t for t in tasks if "media" in str(t.get("type", t.get("task_type", ""))).lower() or "download" in str(t.get("type", t.get("task_type", ""))).lower()]
+    all_tasks = normalize.normalize_tasks(resp)
+    media_tasks = [t for t in all_tasks if "media" in t["task_type"].lower() or "download" in t["task_type"].lower()]
 
     if as_json or getattr(args, "json", False):
-        output.print_json(media_tasks)
+        output.print_json([t.get("raw", t) for t in media_tasks])
         return 0
 
     if not media_tasks:
         print("\nNo active or queued media operations.\n")
         return 0
 
-    active_tasks = [t for t in media_tasks if (t.get("status") or t.get("state", "")).upper() in ["RUNNING", "STARTING", "POST_PROCESSING", "VERIFYING"]]
-    queued_tasks = [t for t in media_tasks if (t.get("status") or t.get("state", "")).upper() == "QUEUED"]
-    other_tasks = [t for t in media_tasks if t not in active_tasks and t not in queued_tasks]
+    active_tasks = [t for t in media_tasks if t["status"] in ["STARTING", "RUNNING", "POST_PROCESSING", "VERIFYING", "CANCELLING"]]
+    queued_tasks = [t for t in media_tasks if t["status"] == "QUEUED"]
+    terminal_tasks = [t for t in media_tasks if t not in active_tasks and t not in queued_tasks]
 
     print()
     if active_tasks:
@@ -150,16 +159,19 @@ def cmd_media_queue(client: NexusClient, args, as_json: bool = False) -> int:
         except UnicodeEncodeError:
             print("-" * 40)
         for t in active_tasks:
-            title = t.get("title") or t.get("description") or "Media Download"
-            st = (t.get("stage") or t.get("status") or "RUNNING").upper()
-            prog = t.get("progress", 0)
+            title = t.get("title") or "Media Download"
+            stage_str = f" / {t['stage']}" if t.get("stage") and t["stage"] != t["status"] else ""
             print(f"Download: {title}")
-            print(f"{st:<16} {prog:.0f}%")
+            print(f"{t['status']}{stage_str}")
+            if t.get("progress") is not None:
+                print(f"Progress:        {t['progress']:.0f}%")
             if t.get("speed_bps"):
                 spd_mb = round(t["speed_bps"] / (1024 * 1024), 2)
-                print(f"Speed            {spd_mb} MB/s")
-            if t.get("eta_seconds"):
-                print(f"ETA              {output.format_duration(t['eta_seconds'])}")
+                print(f"Speed:           {spd_mb} MB/s")
+            if t.get("eta_seconds") is not None:
+                print(f"ETA:             {t['eta_seconds']}s")
+            if t.get("output_path"):
+                print(f"Output:          {t['output_path']}")
             print()
 
     if queued_tasks:
@@ -169,20 +181,23 @@ def cmd_media_queue(client: NexusClient, args, as_json: bool = False) -> int:
         except UnicodeEncodeError:
             print("-" * 40)
         for t in queued_tasks:
-            title = t.get("title") or t.get("description") or "Media Download"
+            title = t.get("title") or "Media Download"
             print(f"Download: {title}")
             print("QUEUED\n")
 
-    if not active_tasks and not queued_tasks and other_tasks:
-        headers = ["TASK ID", "STATUS", "TITLE", "CREATED"]
+    if not active_tasks and not queued_tasks and terminal_tasks:
+        headers = ["TASK ID", "STATUS", "STAGE", "TITLE", "ERROR", "CREATED"]
         rows = []
-        for t in other_tasks[:10]:
+        for t in terminal_tasks[:10]:
             rows.append([
-                (t.get("id") or t.get("task_id", ""))[:14],
-                (t.get("status") or "COMPLETED").upper(),
-                (t.get("title") or "Media Download")[:35],
+                t["task_id"][:14],
+                t["status"],
+                t["stage"] or "--",
+                t.get("title", "Media Download")[:30],
+                str(t.get("error"))[:24] if t.get("error") else "--",
                 output.format_timestamp(t.get("created_at"))
             ])
+        print("RECENT MEDIA TASKS")
         output.print_table(headers, rows)
 
     return 0

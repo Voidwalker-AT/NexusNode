@@ -184,11 +184,11 @@ def main(argv=None) -> int:
     if args.command == "connect" and getattr(args, "url", None):
         target_server = args.url
 
+    debug = getattr(args, "debug", False)
     server_url = config.resolve_server_url(cli_server=target_server, prompt_if_missing=(args.command is None or args.command == "connect" or args.command == "login"))
-    client = NexusClient(server_url=server_url)
+    client = NexusClient(server_url=server_url, debug=debug)
 
     as_json = getattr(args, "json", False)
-    debug = getattr(args, "debug", False)
 
     try:
         # 2. If no command specified, default to interactive session/connect
