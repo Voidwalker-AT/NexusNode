@@ -243,7 +243,8 @@ def init_unified_db():
             cur.execute("SELECT COUNT(*) FROM users WHERE user_id = 'admin';")
             if cur.fetchone()[0] == 0:
                 salt = secrets.token_hex(16)
-                pwd_hash = hashlib.sha256(("admin" + salt).encode('utf-8')).hexdigest()
+                init_pass = os.environ.get("NEXUS_ADMIN_PASSWORD") or secrets.token_urlsafe(16)
+                pwd_hash = hashlib.sha256((init_pass + salt).encode('utf-8')).hexdigest()
                 cur.execute("""
                     INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
                     VALUES (?, ?, ?, ?, ?, ?)
@@ -1235,6 +1236,29 @@ class BoundedTaskRunner:
         with self.lock:
             task = self.tasks.get(task_id)
             if not task:
+                try:
+                    with DB_LOCK:
+                        conn = get_db_connection()
+                        cur = conn.cursor()
+                        cur.execute("SELECT id, title, type, status, progress, logs, owner_user_id, created_at, updated_at FROM background_tasks WHERE id = ?", (task_id,))
+                        row = cur.fetchone()
+                        conn.close()
+                        if row:
+                            task = {
+                                "id": row["id"],
+                                "title": row["title"],
+                                "type": row["type"],
+                                "status": row["status"],
+                                "progress": row["progress"],
+                                "logs": json.loads(row["logs"]) if row["logs"] else [],
+                                "owner_user_id": row["owner_user_id"],
+                                "created_at": row["created_at"],
+                                "updated_at": row["updated_at"]
+                            }
+                except Exception:
+                    pass
+
+            if not task:
                 return False, "Task not found."
 
             if not is_admin and requesting_user_id and task["owner_user_id"] != requesting_user_id:
@@ -2170,19 +2194,57 @@ def list_files():
     if err:
         return err
 
-    file_list = []
+    subpath = request.args.get('path', '').strip().replace('\\', '/')
     try:
-        for root, dirs, files in os.walk(config.STORAGE_DIR):
-            for d in dirs:
-                if d not in ['__pycache__', '.tmp', 'backups']:
-                    rel = os.path.relpath(os.path.join(root, d), config.STORAGE_DIR).replace('\\', '/')
-                    file_list.append({"name": rel, "is_dir": True})
-            for f in files:
-                rel = os.path.relpath(os.path.join(root, f), config.STORAGE_DIR).replace('\\', '/')
-                file_list.append({"name": rel, "is_dir": False})
-    except Exception:
-        pass
-    return jsonify(file_list)
+        current_dir = sanitize_storage_path(subpath) if subpath else config.STORAGE_DIR
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 403
+
+    if not os.path.exists(current_dir) or not os.path.isdir(current_dir):
+        return jsonify({"error": "Directory not found."}), 404
+
+    items = []
+    try:
+        for entry in os.scandir(current_dir):
+            if entry.name in ['__pycache__', '.tmp', '.git', 'backups']:
+                continue
+            if entry.name == '.gitkeep':
+                continue
+
+            rel = os.path.relpath(entry.path, config.STORAGE_DIR).replace('\\', '/')
+            stat = entry.stat()
+            modified = datetime.fromtimestamp(stat.st_mtime).isoformat()
+            if entry.is_dir():
+                items.append({
+                    "name": entry.name,
+                    "path": rel,
+                    "is_dir": True,
+                    "size": 0,
+                    "modified": modified,
+                    "category": "folder"
+                })
+            else:
+                ext = os.path.splitext(entry.name)[1].lower().lstrip('.')
+                cat = "documents"
+                if ext in ['mp3', 'm4a', 'flac', 'opus', 'wav']:
+                    cat = "music"
+                elif ext in ['mp4', 'mkv', 'webm', 'mov']:
+                    cat = "videos"
+                elif ext in ['zip', 'tar', 'gz']:
+                    cat = "backups"
+                items.append({
+                    "name": entry.name,
+                    "path": rel,
+                    "is_dir": False,
+                    "size": stat.st_size,
+                    "modified": modified,
+                    "category": cat
+                })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    items.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+    return jsonify({"files": items, "current_path": subpath})
 
 
 @app.route('/upload', methods=['POST'])
@@ -2197,8 +2259,15 @@ def upload_file():
     if not file.filename:
         return jsonify({"error": "No file selected."}), 400
 
+    dest_folder = request.form.get('path', '').strip().replace('\\', '/')
     filename = os.path.basename(file.filename)
-    dest_path = os.path.join(config.STORAGE_DIR, filename)
+    try:
+        target_dir = sanitize_storage_path(dest_folder) if dest_folder else config.STORAGE_DIR
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 403
+
+    os.makedirs(target_dir, exist_ok=True)
+    dest_path = os.path.join(target_dir, filename)
 
     try:
         file.save(dest_path)
@@ -2216,8 +2285,30 @@ def download_file(filename):
 
     try:
         target_path = sanitize_storage_path(filename)
-        if not os.path.exists(target_path) or os.path.isdir(target_path):
+        if not os.path.exists(target_path):
             return jsonify({"error": "File not found."}), 404
+
+        if os.path.isdir(target_path):
+            import io
+            import zipfile
+            memory_file = io.BytesIO()
+            folder_name = os.path.basename(os.path.normpath(target_path)) or "vault_folder"
+            with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for root, _, files in os.walk(target_path):
+                    for f in files:
+                        if f == '.gitkeep':
+                            continue
+                        f_full = os.path.join(root, f)
+                        f_rel = os.path.relpath(f_full, target_path)
+                        zf.write(f_full, arcname=f_rel)
+            memory_file.seek(0)
+            return send_file(
+                memory_file,
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name=f"{folder_name}.zip"
+            )
+
         return send_file(target_path, as_attachment=True)
     except ValueError as e:
         return jsonify({"error": str(e)}), 403
@@ -2323,7 +2414,7 @@ def enqueue_media_download():
         if task_id:
             enqueued.append(task_id)
 
-    return jsonify({"enqueued_count": len(enqueued), "task_ids": enqueued})
+    return jsonify({"success": True, "enqueued_count": len(enqueued), "task_ids": enqueued, "task_id": enqueued[0] if enqueued else None})
 
 
 def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, destination: str, custom_name: str):

@@ -613,9 +613,11 @@ function clearEventFeed() {
 // 5. VAULT FILE MANAGER
 // ==============================================================================
 
-async function loadVaultFiles() {
+async function loadVaultFiles(folderPath = '') {
   try {
-    const res = await apiFetch('/files');
+    appState.currentVaultPath = folderPath || '';
+    const url = folderPath ? `/files?path=${encodeURIComponent(folderPath)}` : '/files';
+    const res = await apiFetch(url);
     if (res.ok) {
       const data = await res.json();
       appState.cachedFiles = data.files || [];
@@ -642,40 +644,71 @@ function renderVaultTable(files) {
 
   if (countLabel) countLabel.textContent = `${filtered.length} OBJECTS`;
 
-  if (filtered.length === 0) {
+  let rowsHtml = '';
+
+  // If in a subfolder, add a back row
+  if (appState.currentVaultPath) {
+    const parentPath = appState.currentVaultPath.includes('/') ? appState.currentVaultPath.substring(0, appState.currentVaultPath.lastIndexOf('/')) : '';
+    rowsHtml += `
+      <tr style="cursor: pointer; background: rgba(0, 218, 243, 0.04);" onclick="loadVaultFiles('${encodeURIComponent(parentPath)}')">
+        <td colspan="5" style="color: var(--primary); font-weight: 600;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="material-symbols-outlined">arrow_back</span>
+            <span>.. (Up to ${parentPath || 'Root Vault'})</span>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  if (filtered.length === 0 && !appState.currentVaultPath) {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--on-surface-muted); padding: 24px;">No objects found in this location.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = filtered.map(file => {
-    const ext = (file.name.split('.').pop() || 'FILE').toUpperCase();
-    const size = formatBytes(file.size || 0);
+  rowsHtml += filtered.map(file => {
+    const isDir = Boolean(file.is_dir);
+    const ext = isDir ? 'FOLDER' : (file.name.split('.').pop() || 'FILE').toUpperCase();
+    const size = isDir ? '--' : formatBytes(file.size || 0);
     const date = file.modified ? file.modified.substring(0, 16).replace('T', ' ') : '--';
-    const isMedia = ['MP3', 'MP4', 'MKV', 'WEBM', 'M4A', 'FLAC', 'WAV'].includes(ext);
+    const isMedia = !isDir && ['MP3', 'MP4', 'MKV', 'WEBM', 'M4A', 'FLAC', 'WAV'].includes(ext);
 
     return `
       <tr>
-        <td style="font-weight: 500; color: var(--on-surface-bright);">${escapeHtml(file.name)}</td>
-        <td><span class="node-badge">${ext}</span></td>
+        <td style="font-weight: 500; color: var(--on-surface-bright);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="material-symbols-outlined" style="color: ${isDir ? 'var(--primary)' : 'var(--on-surface-muted)'};">${isDir ? 'folder' : 'draft'}</span>
+            ${isDir ? `<a href="#" onclick="loadVaultFiles('${encodeURIComponent(file.path || file.name)}'); return false;" style="color: var(--primary); text-decoration: underline;">${escapeHtml(file.name)}</a>` : `<span>${escapeHtml(file.name)}</span>`}
+          </div>
+        </td>
+        <td><span class="node-badge" style="${isDir ? 'color: var(--primary); border-color: rgba(0, 218, 243, 0.4);' : ''}">${ext}</span></td>
         <td class="font-data-sm">${size}</td>
         <td class="font-data-sm" style="color: var(--on-surface-variant);">${date}</td>
         <td style="text-align: right;">
           <div style="display: inline-flex; gap: 4px;">
             ${isMedia ? `<button class="icon-btn" title="Stream" onclick="playMediaFile('${encodeURIComponent(file.path || file.name)}', '${ext.toLowerCase()}', '${escapeHtml(file.name)}')"><span class="material-symbols-outlined" style="font-size: 16px;">play_arrow</span></button>` : ''}
-            <a class="icon-btn" title="Download" href="/download/${encodeURIComponent(file.path || file.name)}" download><span class="material-symbols-outlined" style="font-size: 16px;">download</span></a>
+            <a class="icon-btn" title="${isDir ? 'Download Zip' : 'Download'}" href="/download/${encodeURIComponent(file.path || file.name)}" download><span class="material-symbols-outlined" style="font-size: 16px;">${isDir ? 'folder_zip' : 'download'}</span></a>
             <button class="icon-btn" title="Delete" onclick="handleVaultDelete('${encodeURIComponent(file.path || file.name)}')"><span class="material-symbols-outlined" style="font-size: 16px;">delete</span></button>
           </div>
         </td>
       </tr>
     `;
   }).join('');
+
+  tbody.innerHTML = rowsHtml;
 }
 
 function filterVaultLocation(location, elem) {
   appState.activeVaultFilter = location;
   document.querySelectorAll('.vault-nav-item').forEach(el => el.classList.remove('active'));
   if (elem) elem.classList.add('active');
-  renderVaultTable(appState.cachedFiles);
+  if (location === 'all') {
+    loadVaultFiles('');
+  } else if (['documents', 'media', 'downloads', 'backups', 'rag'].includes(location)) {
+    loadVaultFiles(location);
+  } else {
+    renderVaultTable(appState.cachedFiles);
+  }
 }
 
 function handleVaultSearch(query) {
@@ -1390,7 +1423,7 @@ async function loadEventsArchive() {
 async function loadAdminUsers() {
   if (authState.role !== 'admin') return;
   try {
-    const res = await apiFetch('/api/users');
+    const res = await apiFetch('/api/admin/users');
     if (res.ok) {
       const data = await res.json();
       const tbody = document.getElementById('adminUserTableBody');
