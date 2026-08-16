@@ -33,7 +33,29 @@ from .commands import (
 )
 
 
-def create_parser() -> argparse.ArgumentParser:
+class NexusArgumentParser(argparse.ArgumentParser):
+    """
+    Authoritative argument parser for NexusNode Universal Remote CLI.
+    Guarantees standard connection and format options (server, user, json, no_color, debug)
+    are always initialized on the parsed Namespace with deterministic defaults across all invocations.
+    """
+    def parse_args(self, args=None, namespace=None):
+        if namespace is None:
+            namespace = argparse.Namespace(
+                server=None,
+                user=None,
+                json=False,
+                no_color=False,
+                debug=False
+            )
+        else:
+            for k, v in [("server", None), ("user", None), ("json", False), ("no_color", False), ("debug", False)]:
+                if not hasattr(namespace, k):
+                    setattr(namespace, k, v)
+        return super().parse_args(args=args, namespace=namespace)
+
+
+def create_parser() -> NexusArgumentParser:
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument("--server", help="NexusNode remote server URL (e.g. https://...)", default=argparse.SUPPRESS)
     common_parser.add_argument("--user", help="NexusNode username / user ID", default=argparse.SUPPRESS)
@@ -41,7 +63,7 @@ def create_parser() -> argparse.ArgumentParser:
     common_parser.add_argument("--no-color", action="store_true", help="Disable ANSI color output", default=argparse.SUPPRESS)
     common_parser.add_argument("--debug", action="store_true", help="Enable verbose debug exception logs", default=argparse.SUPPRESS)
 
-    parser = argparse.ArgumentParser(
+    parser = NexusArgumentParser(
         prog="nexus",
         description="NexusNode Universal Remote CLI Client - Authoritative HTTPS Frontend",
         epilog="For interactive connection, run 'nexus connect <url>' or simply 'nexus'.",
@@ -180,14 +202,15 @@ def main(argv=None) -> int:
     parser = create_parser()
     args = parser.parse_args(argv)
 
-    # 1. Resolve target server URL
+    # 1. Resolve target server URL with explicit precedence rule:
+    # Explicit positional 'url' on connect wins over global '--server'.
     target_server = args.server
     if args.command == "connect" and getattr(args, "url", None):
         target_server = args.url
 
-    debug = getattr(args, "debug", False)
-    as_json = getattr(args, "json", False)
-    no_color = getattr(args, "no_color", False)
+    debug = args.debug
+    as_json = args.json
+    no_color = args.no_color
 
     if as_json or no_color:
         output.set_color_enabled(False)

@@ -1162,6 +1162,116 @@ class TestNexusUniversalCLI(unittest.TestCase):
             sys.stdout = stdout_backup
             n_output.set_color_enabled(False)
 
+    # --------------------------------------------------------------------------
+    # 10. Argparse & Namespace Contract Regression Tests
+    # --------------------------------------------------------------------------
+    def test_connect_positional_url_and_user(self):
+        parser = n_main.create_parser()
+        args = parser.parse_args(["connect", "http://127.0.0.1:5000", "--user", "admin"])
+        self.assertEqual(args.command, "connect")
+        self.assertEqual(args.url, "http://127.0.0.1:5000")
+        self.assertEqual(args.user, "admin")
+        self.assertIsNone(args.server)
+
+    def test_connect_global_server_and_user(self):
+        parser = n_main.create_parser()
+        args = parser.parse_args(["--server", "http://127.0.0.1:5000", "--user", "admin", "connect"])
+        self.assertEqual(args.command, "connect")
+        self.assertEqual(args.server, "http://127.0.0.1:5000")
+        self.assertEqual(args.user, "admin")
+        self.assertIsNone(args.url)
+
+    def test_connect_both_server_sources(self):
+        parser = n_main.create_parser()
+        args = parser.parse_args(["--server", "http://global:5000", "--user", "admin", "connect", "http://positional:5000"])
+        self.assertEqual(args.command, "connect")
+        self.assertEqual(args.server, "http://global:5000")
+        self.assertEqual(args.url, "http://positional:5000")
+        self.assertEqual(args.user, "admin")
+        # Precedence: positional url wins
+        resolved = args.url if args.url else args.server
+        self.assertEqual(resolved, "http://positional:5000")
+
+    def test_connect_user_prompt_suppressed(self):
+        client = n_client.NexusClient(server_url=self.server_url)
+        # Mock getpass to supply password without prompting stdin for username
+        with patch("getpass.getpass", return_value="Admin@1234"):
+            success = n_auth.login(client, username="admin", as_json=False)
+            self.assertTrue(success)
+            self.assertEqual(client.token, "valid-admin-token")
+
+    def test_connect_namespace_has_server(self):
+        parser = n_main.create_parser()
+        for cmd_line in [
+            ["connect", "http://127.0.0.1:5000"],
+            ["status"],
+            ["vault", "list"],
+            ["media", "queue"],
+            ["tasks", "list"],
+            ["ai", "state"],
+            []
+        ]:
+            args = parser.parse_args(cmd_line)
+            self.assertTrue(hasattr(args, "server"), f"Missing 'server' on {cmd_line}")
+
+    def test_connect_namespace_has_user(self):
+        parser = n_main.create_parser()
+        for cmd_line in [
+            ["connect", "http://127.0.0.1:5000"],
+            ["status"],
+            ["vault", "list"],
+            ["media", "queue"],
+            ["tasks", "list"],
+            ["ai", "state"],
+            []
+        ]:
+            args = parser.parse_args(cmd_line)
+            self.assertTrue(hasattr(args, "user"), f"Missing 'user' on {cmd_line}")
+
+    def test_connect_namespace_has_json(self):
+        parser = n_main.create_parser()
+        for cmd_line in [
+            ["connect", "http://127.0.0.1:5000"],
+            ["status"],
+            ["status", "--json"],
+            ["--json", "status"],
+            []
+        ]:
+            args = parser.parse_args(cmd_line)
+            self.assertTrue(hasattr(args, "json"), f"Missing 'json' on {cmd_line}")
+            self.assertIsInstance(args.json, bool)
+
+    def test_connect_namespace_has_debug(self):
+        parser = n_main.create_parser()
+        for cmd_line in [
+            ["connect", "http://127.0.0.1:5000"],
+            ["status"],
+            ["status", "--debug"],
+            ["--debug", "status"],
+            []
+        ]:
+            args = parser.parse_args(cmd_line)
+            self.assertTrue(hasattr(args, "debug"), f"Missing 'debug' on {cmd_line}")
+            self.assertIsInstance(args.debug, bool)
+
+    def test_global_and_subcommand_argument_consistency(self):
+        parser = n_main.create_parser()
+        # 1. Global flags
+        args_global = parser.parse_args(["--server", "http://127.0.0.1:5000", "--user", "admin", "--json", "--no-color", "--debug", "status"])
+        self.assertEqual(args_global.server, "http://127.0.0.1:5000")
+        self.assertEqual(args_global.user, "admin")
+        self.assertTrue(args_global.json)
+        self.assertTrue(args_global.no_color)
+        self.assertTrue(args_global.debug)
+
+        # 2. Subcommand flags
+        args_sub = parser.parse_args(["status", "--server", "http://127.0.0.1:5000", "--user", "admin", "--json", "--no-color", "--debug"])
+        self.assertEqual(args_sub.server, "http://127.0.0.1:5000")
+        self.assertEqual(args_sub.user, "admin")
+        self.assertTrue(args_sub.json)
+        self.assertTrue(args_sub.no_color)
+        self.assertTrue(args_sub.debug)
+
 
 if __name__ == "__main__":
     unittest.main()
