@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 """
-NexusNode — OpenSSH AuthorizedKeysCommand Dispatcher
-Invoked by OpenSSH sshd to map incoming SSH public keys to NexusNode restricted shells.
-
-OpenSSH sshd_config directive:
-    AuthorizedKeysCommand /data/data/com.termux/files/usr/bin/python /data/data/com.termux/files/home/server/scripts/nexus_ssh_auth.py %u %k %t
-    AuthorizedKeysCommandUser u0_a208
+NexusNode — OpenSSH Key-Based Identity Mapping Dispatcher
+Invoked dynamically by OpenSSH sshd (AuthorizedKeysCommand) on every incoming SSH connection.
 
 ARCHITECTURE:
-- If user is the Termux operator account (e.g. u0_a208 / admin), returns normal authorized_keys for unrestricted OS shell.
-- If user is a NexusNode application account (e.g. anmol), returns the key prefixed with:
-  command="python /path/to/nexus_shell.py --user <username>",no-port-forwarding,no-X11-forwarding,no-agent-forwarding <key>
+- The SSH transport account is ALWAYS the host Termux user (e.g. u0_a208).
+- Client connects as: `ssh -i ~/.ssh/nexus_anmol -p 8022 u0_a208@PHONE_IP`
+- AuthorizedKeysCommand resolves the public key against registered NexusNode identities:
+    1. Operator Key (e.g. ~/.ssh/authorized_keys): outputs unconstrained key -> Unrestricted Termux Shell (~ $)
+    2. NexusNode User Key (SQLite ssh_keys): outputs forced command key -> Restricted NexusNode Shell (nexus> )
+    3. Revoked or Unknown Keys: not output -> Authentication rejected immediately.
 """
 
 import os
 import sys
-import sqlite3
 
 SERVER_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if SERVER_ROOT not in sys.path:
@@ -26,40 +24,50 @@ import app as nexus_app
 
 
 def main():
-    if len(sys.argv) < 2:
-        sys.exit(0)
+    connecting_user = sys.argv[1].strip() if len(sys.argv) > 1 else os.environ.get("USER", "u0_a208")
 
-    target_user = sys.argv[1].strip().lower()
-    ssh_keys_dir = os.path.join(config.STORAGE_DIR, "ssh_keys")
-    os.makedirs(ssh_keys_dir, exist_ok=True)
+    # 1. Output Operator Keys for unrestricted Termux administrative shell (~ $)
+    operator_keys_file = os.path.expanduser("~/.ssh/authorized_keys")
+    if os.path.exists(operator_keys_file):
+        try:
+            with open(operator_keys_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "nexus_shell" not in line:
+                        print(line)
+        except Exception:
+            pass
 
-    # 1. System OS / Termux Operator Account: return standard authorized_keys
-    termux_user = os.environ.get("USER", "u0_a208")
-    if target_user in [termux_user, "admin_os", "root"]:
-        user_auth_keys = os.path.expanduser("~/.ssh/authorized_keys")
-        if os.path.exists(user_auth_keys):
-            with open(user_auth_keys, "r", encoding="utf-8") as f:
-                print(f.read().strip())
-        return
-
-    # 2. NexusNode Application User: check if user exists in database
-    user = nexus_app.db_get_user(target_user)
-    if not user:
-        # User not recognized in NexusNode DB
-        sys.exit(0)
-
-    # Look for user's public key file in storage_vault/ssh_keys/<user>.pub
-    user_key_file = os.path.join(ssh_keys_dir, f"{target_user}.pub")
+    # 2. Output Registered NexusNode Application User Keys with forced restricted command
     python_bin = sys.executable or "/data/data/com.termux/files/usr/bin/python"
     shell_script = os.path.join(SERVER_ROOT, "nexus_shell.py")
 
-    if os.path.exists(user_key_file):
-        with open(user_key_file, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    forced_cmd = f'command="{python_bin} {shell_script} --user {target_user}",no-port-forwarding,no-X11-forwarding,no-agent-forwarding {line}'
-                    print(forced_cmd)
+    # Query active, non-revoked SSH keys from SQLite database
+    try:
+        keys = nexus_app.db_list_ssh_keys(include_revoked=False)
+        for k in keys:
+            user_id = k.get("user_id", "").strip().lower()
+            if not user_id:
+                continue
+
+            # Verify that the associated application user exists in SQLite users table
+            user = nexus_app.db_get_user(user_id)
+            if not user:
+                continue
+
+            ktype = k.get("key_type", "ssh-ed25519")
+            kpub = k.get("public_key", "")
+            label = k.get("label") or user_id
+
+            if kpub:
+                forced_cmd = (
+                    f'command="{python_bin} {shell_script} --user {user_id}",'
+                    f'no-port-forwarding,no-X11-forwarding,no-agent-forwarding '
+                    f'{ktype} {kpub} {label}'
+                )
+                print(forced_cmd)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

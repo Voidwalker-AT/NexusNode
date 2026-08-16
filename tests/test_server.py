@@ -25,10 +25,11 @@ import sys
 import json
 import time
 import shutil
+import base64
 import secrets
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, mock_open
 
 # Add parent directory to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -1468,15 +1469,12 @@ class TestNexusNodeServer(unittest.TestCase):
         import io
         from contextlib import redirect_stdout
 
-        # Setup test key
-        ssh_keys_dir = os.path.join(config.STORAGE_DIR, "ssh_keys")
-        os.makedirs(ssh_keys_dir, exist_ok=True)
-        key_file = os.path.join(ssh_keys_dir, "admin.pub")
-        with open(key_file, "w") as f:
-            f.write("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGeneratedTestKeyForNexusNodeAuth admin@device\n")
+        # Register key in SQLite
+        test_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGeneratedTestKeyForNexusNodeAuth admin@device"
+        server_app.db_add_ssh_key("admin", test_key, label="admin_laptop")
 
         out = io.StringIO()
-        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'admin']):
+        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208']):
             with redirect_stdout(out):
                 nexus_ssh_auth.main()
 
@@ -1485,6 +1483,140 @@ class TestNexusNodeServer(unittest.TestCase):
         self.assertIn("nexus_shell.py --user admin", output)
         self.assertIn("no-port-forwarding", output)
         self.assertIn("ssh-ed25519", output)
+
+    def test_operator_key_gets_unrestricted_shell(self):
+        """Verify operator key in ~/.ssh/authorized_keys is output WITHOUT forced command."""
+        from scripts import nexus_ssh_auth
+        import io
+        from contextlib import redirect_stdout
+
+        op_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOperatorAdministrativeAccessKey operator@host"
+        with patch("os.path.exists", return_value=True):
+            with patch("builtins.open", mock_open(read_data=op_key)):
+                out = io.StringIO()
+                with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208']):
+                    with redirect_stdout(out):
+                        nexus_ssh_auth.main()
+
+                output = out.getvalue()
+                self.assertIn(op_key, output)
+
+    def test_ssh_key_registration_and_fingerprint(self):
+        """Verify SSH key registration correctly parses formats and calculates SHA-256 fingerprint."""
+        rand_k = base64.b64encode(secrets.token_bytes(32)).decode('ascii')
+        test_pub = f"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI{rand_k} anmol@laptop"
+        fp, ktype, kb64, comment = server_app.calculate_ssh_key_fingerprint(test_pub)
+        self.assertTrue(fp.startswith("SHA256:"))
+        self.assertEqual(ktype, "ssh-ed25519")
+        self.assertEqual(comment, "anmol@laptop")
+
+        # Reject private keys
+        with self.assertRaises(ValueError):
+            server_app.calculate_ssh_key_fingerprint("-----BEGIN OPENSSH PRIVATE KEY-----")
+
+        # Register in DB
+        success, msg, rec = server_app.db_add_ssh_key("admin", test_pub, label="anmol_laptop")
+        self.assertTrue(success)
+        self.assertEqual(rec["fingerprint"], fp)
+        self.assertEqual(rec["user_id"], "admin")
+
+    def test_ssh_key_revocation(self):
+        """Verify revoking an SSH key disables it immediately from active keys."""
+        rand_k = base64.b64encode(secrets.token_bytes(32)).decode('ascii')
+        test_pub = f"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI{rand_k} revoke@device"
+        success, _, rec = server_app.db_add_ssh_key("admin", test_pub, label="to_revoke")
+        self.assertTrue(success)
+        fp = rec["fingerprint"]
+
+        # Verify active
+        active_keys = [k["fingerprint"] for k in server_app.db_list_ssh_keys("admin", include_revoked=False)]
+        self.assertIn(fp, active_keys)
+
+        # Revoke
+        rev_success, rev_msg = server_app.db_revoke_ssh_key(fp)
+        self.assertTrue(rev_success)
+
+        # Verify no longer active
+        active_after = [k["fingerprint"] for k in server_app.db_list_ssh_keys("admin", include_revoked=False)]
+        self.assertNotIn(fp, active_after)
+
+    def test_revoked_key_rejected_by_auth_dispatcher(self):
+        """Verify revoked keys are NOT emitted by nexus_ssh_auth.py."""
+        from scripts import nexus_ssh_auth
+        import io
+        from contextlib import redirect_stdout
+
+        rand_k = base64.b64encode(secrets.token_bytes(32)).decode('ascii')
+        test_pub = f"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI{rand_k} user@device"
+        _, _, rec = server_app.db_add_ssh_key("admin", test_pub)
+        server_app.db_revoke_ssh_key(rec["fingerprint"])
+
+        out = io.StringIO()
+        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208']):
+            with redirect_stdout(out):
+                nexus_ssh_auth.main()
+
+        output = out.getvalue()
+        self.assertNotIn(rec["fingerprint"], output)
+        self.assertNotIn(rand_k, output)
+
+    def test_disabled_user_key_rejected(self):
+        """Verify keys belonging to non-existent users are ignored by auth dispatcher."""
+        from scripts import nexus_ssh_auth
+        import io
+        from contextlib import redirect_stdout
+
+        ghost_fp = f"SHA256:phantom_{int(time.time() * 1000)}_{secrets.token_hex(4)}"
+        with server_app.DB_LOCK:
+            conn = server_app.get_db_connection()
+            try:
+                conn.execute("PRAGMA foreign_keys = OFF;")
+                conn.execute("""
+                    INSERT INTO ssh_keys (fingerprint, user_id, key_type, public_key, label, created_at, revoked)
+                    VALUES (?, 'ghost_user', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIGhost', 'ghost', 1000, 0)
+                """, (ghost_fp,))
+                conn.commit()
+            finally:
+                conn.close()
+
+        out = io.StringIO()
+        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208']):
+            with redirect_stdout(out):
+                nexus_ssh_auth.main()
+
+        output = out.getvalue()
+        self.assertNotIn("ghost_user", output)
+
+    def test_cli_ssh_key_management(self):
+        """Verify 'nexus_admin ssh-key' commands (add, list, revoke)."""
+        import nexus_admin
+        from argparse import Namespace
+        import io
+        from contextlib import redirect_stdout
+
+        rand_k = base64.b64encode(secrets.token_bytes(32)).decode('ascii')
+        test_key = f"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI{rand_k} cli@test"
+        # 1. Add
+        out_add = io.StringIO()
+        with redirect_stdout(out_add):
+            res = nexus_admin.cmd_ssh_key_add(Namespace(user="admin", key=test_key, label="cli_test"))
+        self.assertEqual(res, 0)
+        self.assertIn("registered successfully", out_add.getvalue())
+
+        # 2. List
+        out_list = io.StringIO()
+        with redirect_stdout(out_list):
+            res = nexus_admin.cmd_ssh_key_list(Namespace(user="admin", all=True))
+        self.assertEqual(res, 0)
+        self.assertIn("cli_test", out_list.getvalue())
+
+        # 3. Revoke
+        fp, _, _, _ = server_app.calculate_ssh_key_fingerprint(test_key)
+        out_rev = io.StringIO()
+        with redirect_stdout(out_rev):
+            res = nexus_admin.cmd_ssh_key_revoke(Namespace(fingerprint=fp, user="admin"))
+        self.assertEqual(res, 0)
+        self.assertIn("revoked successfully", out_rev.getvalue())
 
     def test_restricted_nexus_shell(self):
         """Verify restricted shell launches and responds to allowlisted commands."""

@@ -1,9 +1,13 @@
 #!/data/data/com.termux/files/usr/bin/sh
 # ==============================================================================
-# NexusNode — OpenSSH Dual-Layer Access Setup Script for Termux
-# Configures OpenSSH to support both:
-#   1. Administrator / Operator full Termux shell (e.g. u0_a208)
-#   2. NexusNode Application Users (e.g. anmol) restricted to NexusNode CLI
+# NexusNode — OpenSSH Key-Based Dual Access Configuration Script for Termux
+#
+# SAFETY NOTICE:
+# - This script backs up sshd_config before making changes.
+# - It validates syntax with 'sshd -t'.
+# - It does NOT restart the SSH daemon automatically.
+# - The operator account (u0_a208) retains full unrestricted shell access.
+# - Application users with registered SSH keys receive the restricted NexusNode shell.
 # ==============================================================================
 
 set -e
@@ -14,55 +18,78 @@ SSHD_CONFIG="$PREFIX/etc/ssh/sshd_config"
 SERVER_DIR="$HOME_DIR/server"
 SSH_AUTH_SCRIPT="$SERVER_DIR/scripts/nexus_ssh_auth.py"
 NEXUS_SHELL="$SERVER_DIR/nexus_shell.py"
-CURRENT_USER=$(whoami)
+CURRENT_USER=$(whoami 2>/dev/null || echo "u0_a208")
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_CONFIG="$SSHD_CONFIG.bak.$TIMESTAMP"
 
 echo "============================================================"
-echo "NexusNode — OpenSSH Dual-Access Configuration"
-echo "Current Termux User: $CURRENT_USER"
+echo "NexusNode — OpenSSH Key-Based Dual Access Setup"
+echo "Host Termux User: $CURRENT_USER"
+echo "SSHD Config:      $SSHD_CONFIG"
 echo "============================================================"
 
-# Ensure permissions
-chmod +x "$NEXUS_SHELL" || true
-chmod +x "$SSH_AUTH_SCRIPT" || true
-mkdir -p "$SERVER_DIR/storage_vault/ssh_keys"
+# 1. Ensure scripts have execution permissions
+chmod +x "$NEXUS_SHELL" 2>/dev/null || true
+chmod +x "$SSH_AUTH_SCRIPT" 2>/dev/null || true
+mkdir -p "$SERVER_DIR/storage_vault"
 
-# Symlink nexus-shell to bin directory for convenience
-if [ -d "$PREFIX/bin" ]; then
-    ln -sf "$NEXUS_SHELL" "$PREFIX/bin/nexus-shell"
-    echo "[+] Created symlink: $PREFIX/bin/nexus-shell"
-fi
-
-# Ensure sshd_config exists
+# 2. Check if sshd_config exists
 if [ ! -f "$SSHD_CONFIG" ]; then
-    echo "Creating default sshd_config..."
+    echo "[!] Warning: $SSHD_CONFIG not found. Creating minimal default..."
     mkdir -p "$PREFIX/etc/ssh"
     cat <<EOF > "$SSHD_CONFIG"
 Port 8022
-PermitRootLogin yes
-PasswordAuthentication yes
 PubkeyAuthentication yes
 AuthorizedKeysFile .ssh/authorized_keys
 EOF
 fi
 
-# Backup existing config
-cp "$SSHD_CONFIG" "$SSHD_CONFIG.bak.$(date +%s)"
+# 3. Create timestamped backup of sshd_config
+echo "[1/4] Creating backup of sshd_config -> $BACKUP_CONFIG..."
+cp "$SSHD_CONFIG" "$BACKUP_CONFIG"
 
-# Configure AuthorizedKeysCommand if not already present
-if ! grep -q "nexus_ssh_auth.py" "$SSHD_CONFIG"; then
-    echo "[+] Configuring AuthorizedKeysCommand in $SSHD_CONFIG..."
+# 4. Check if AuthorizedKeysCommand is already present
+if grep -q "nexus_ssh_auth.py" "$SSHD_CONFIG"; then
+    echo "[*] AuthorizedKeysCommand is already configured in $SSHD_CONFIG."
+else
+    echo "[2/4] Appending AuthorizedKeysCommand hook to $SSHD_CONFIG..."
     cat <<EOF >> "$SSHD_CONFIG"
 
-# NexusNode Dual-Access Authorization Hook
+# --- NexusNode Key-Based Identity Mapping Hook ---
 AuthorizedKeysCommand $PREFIX/bin/python $SSH_AUTH_SCRIPT %u %k %t
 AuthorizedKeysCommandUser $CURRENT_USER
 EOF
-    echo "[+] AuthorizedKeysCommand configured successfully."
-else
-    echo "[*] AuthorizedKeysCommand already configured in $SSHD_CONFIG."
 fi
 
+# 5. Validate configuration with sshd -t
+echo "[3/4] Validating sshd configuration syntax (sshd -t)..."
+if sshd -t; then
+    echo "[+] SSH configuration validation PASSED."
+else
+    echo "[-] ERROR: sshd configuration validation FAILED!"
+    echo "[!] Restoring previous configuration from $BACKUP_CONFIG..."
+    cp "$BACKUP_CONFIG" "$SSHD_CONFIG"
+    echo "[!] Rollback complete. sshd_config restored to original state."
+    exit 1
+fi
+
+echo "[4/4] Configuration applied safely."
+echo ""
 echo "============================================================"
-echo "Configuration Complete!"
-echo "Restart sshd service via runit: sv restart sshd"
+echo "CONFIGURATION SUMMARY & NEXT STEPS"
+echo "============================================================"
+echo "1. The SSH daemon was NOT restarted automatically to protect remote access."
+echo ""
+echo "2. Manual verification command:"
+echo "   sshd -t"
+echo ""
+echo "3. To activate changes, restart the runit SSH service:"
+echo "   sv restart sshd"
+echo ""
+echo "4. Rollback command (if needed):"
+echo "   cp $BACKUP_CONFIG $SSHD_CONFIG && sv restart sshd"
+echo ""
+echo "5. Access Verification:"
+echo "   • Operator key -> Unrestricted Termux shell (~ $)"
+echo "   • User key     -> Restricted NexusNode CLI (nexus> )"
 echo "============================================================"

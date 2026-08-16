@@ -552,13 +552,119 @@ def build_parser():
     # sessions
     subparsers.add_parser("sessions", help="List active server sessions")
 
-    # logout
-    subparsers.add_parser("logout", help="Revoke active local session")
+    # ssh-key
+    p_ssh = subparsers.add_parser("ssh-key", help="Manage registered SSH public keys for NexusNode users")
+    p_ssh_sub = p_ssh.add_subparsers(dest="ssh_action", help="SSH key action")
+
+    # ssh-key add
+    p_ssh_add = p_ssh_sub.add_parser("add", help="Register an SSH public key for a user")
+    p_ssh_add.add_argument("--user", "-u", required=True, help="Target username")
+    p_ssh_add.add_argument("--key", "-k", default=None, help="Public key string or path to .pub file")
+    p_ssh_add.add_argument("--label", "-l", default=None, help="Human-readable label for the key")
+
+    # ssh-key list
+    p_ssh_list = p_ssh_sub.add_parser("list", help="List registered SSH keys")
+    p_ssh_list.add_argument("--user", "-u", default=None, help="Filter by username")
+    p_ssh_list.add_argument("--all", "-a", action="store_true", help="Include revoked keys")
+
+    # ssh-key revoke
+    p_ssh_rev = p_ssh_sub.add_parser("revoke", help="Revoke an SSH key by fingerprint")
+    p_ssh_rev.add_argument("--fingerprint", "-f", required=True, help="Key fingerprint (SHA256:...)")
+    p_ssh_rev.add_argument("--user", "-u", default=None, help="Target username (optional security check)")
 
     # help
     subparsers.add_parser("help", help="Display detailed help and architecture guide")
 
     return parser
+
+
+def cmd_ssh_key(args):
+    """Dispatcher for ssh-key management subcommands."""
+    subaction = getattr(args, "ssh_action", "list") or "list"
+    if subaction == "add":
+        return cmd_ssh_key_add(args)
+    elif subaction == "list":
+        return cmd_ssh_key_list(args)
+    elif subaction == "revoke":
+        return cmd_ssh_key_revoke(args)
+    else:
+        print("Usage: python -m nexus_admin ssh-key [add|list|revoke] ...")
+        return 1
+
+
+def cmd_ssh_key_add(args):
+    user_id = (args.user or "").strip().lower()
+    if not user_id:
+        print("Error: --user is required.", file=sys.stderr)
+        return 1
+
+    key_input = args.key
+    if not key_input:
+        print("Enter OpenSSH Public Key (or path to .pub file):")
+        try:
+            key_input = input("Public Key: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nOperation cancelled.")
+            return 1
+
+    key_str = key_input.strip()
+    if os.path.isfile(key_str):
+        with open(key_str, "r", encoding="utf-8") as f:
+            key_str = f.read().strip()
+
+    if not key_str:
+        print("Error: Public key cannot be empty.", file=sys.stderr)
+        return 1
+
+    success, msg, rec = nexus_app.db_add_ssh_key(user_id, key_str, label=args.label)
+    if not success:
+        print(f"Error: {msg}", file=sys.stderr)
+        return 1
+
+    print(f"\n[+] SSH Public Key registered successfully for user '{user_id}':")
+    print(f"  User:        {rec['user_id']}")
+    print(f"  Fingerprint: {rec['fingerprint']}")
+    print(f"  Type:        {rec['key_type']}")
+    print(f"  Label:       {rec['label']}")
+    print(f"  Status:      ACTIVE\n")
+    return 0
+
+
+def cmd_ssh_key_list(args):
+    user_id = getattr(args, "user", None)
+    inc_rev = getattr(args, "all", False)
+    keys = nexus_app.db_list_ssh_keys(user_id=user_id, include_revoked=inc_rev)
+
+    if not keys:
+        target_str = f" for user '{user_id}'" if user_id else ""
+        print(f"No registered SSH keys found{target_str}.")
+        return 0
+
+    print(f"\n{'USER':<12} {'FINGERPRINT':<36} {'KEY TYPE':<16} {'LABEL':<20} {'STATUS':<10}")
+    print("-" * 96)
+    for k in keys:
+        stat = "REVOKED" if k.get("revoked") == 1 else "ACTIVE"
+        fp = k["fingerprint"]
+        label = (k.get("label") or "")[:18]
+        print(f"{k['user_id']:<12} {fp:<36} {k['key_type']:<16} {label:<20} {stat:<10}")
+    print()
+    return 0
+
+
+def cmd_ssh_key_revoke(args):
+    fp = getattr(args, "fingerprint", None)
+    if not fp:
+        print("Error: --fingerprint is required.", file=sys.stderr)
+        return 1
+
+    user_id = getattr(args, "user", None)
+    success, msg = nexus_app.db_revoke_ssh_key(fp, user_id=user_id)
+    if not success:
+        print(f"Error: {msg}", file=sys.stderr)
+        return 1
+
+    print(f"[+] {msg}")
+    return 0
 
 
 def main():
@@ -580,6 +686,7 @@ def main():
         "whoami": cmd_whoami,
         "sessions": cmd_sessions,
         "logout": cmd_logout,
+        "ssh-key": cmd_ssh_key,
         "help": cmd_help
     }
 

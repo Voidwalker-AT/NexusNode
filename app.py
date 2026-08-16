@@ -17,6 +17,7 @@ import time
 import json
 import queue
 import shutil
+import base64
 import hashlib
 import secrets
 import sqlite3
@@ -236,7 +237,22 @@ def init_unified_db():
                     user_id TEXT NOT NULL DEFAULT 'system'
                 );
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_metrics_created ON ai_inference_metrics(created_at);")
+            # 10. Registered SSH Public Keys table for key-based identity mapping
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS ssh_keys (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    fingerprint TEXT UNIQUE NOT NULL,
+                    user_id TEXT NOT NULL,
+                    key_type TEXT NOT NULL,
+                    public_key TEXT NOT NULL,
+                    label TEXT,
+                    created_at REAL NOT NULL,
+                    revoked INTEGER DEFAULT 0,
+                    FOREIGN KEY(user_id) REFERENCES users(user_id)
+                );
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ssh_keys_fp ON ssh_keys(fingerprint);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ssh_keys_user ON ssh_keys(user_id);")
 
             # Seed Default Admin Account if missing
             cur = conn.cursor()
@@ -3457,6 +3473,187 @@ def test_network_endpoint():
             status = "unavailable"
 
     return jsonify({"target": target, "status": status, "latency_ms": latency_ms})
+
+
+# ==============================================================================
+# SSH PUBLIC KEY REGISTRY & FINGERPRINT RESOLUTION
+# ==============================================================================
+
+def calculate_ssh_key_fingerprint(public_key_str: str) -> tuple[str, str, str, str]:
+    """
+    Parses OpenSSH public key string and computes standard SHA-256 base64 fingerprint.
+    Returns (fingerprint, key_type, key_b64, comment).
+    Rejects private keys and malformed formats.
+    """
+    raw = str(public_key_str or "").strip()
+    if not raw:
+        raise ValueError("Public key string cannot be empty.")
+    if "PRIVATE KEY" in raw:
+        raise ValueError("Private keys must NEVER be registered or stored. Provide public key only.")
+
+    parts = raw.split(None, 2)
+    if len(parts) < 2:
+        raise ValueError("Invalid OpenSSH public key format. Expected: '<type> <base64-key> [comment]'")
+
+    key_type = parts[0].strip()
+    key_b64 = parts[1].strip()
+    comment = parts[2].strip() if len(parts) > 2 else ""
+
+    padded_b64 = key_b64 + "=" * ((4 - len(key_b64) % 4) % 4)
+    try:
+        key_bytes = base64.b64decode(padded_b64)
+    except Exception as e:
+        raise ValueError(f"Invalid base64 encoding in public key: {e}")
+
+    digest = hashlib.sha256(key_bytes).digest()
+    fp_b64 = base64.b64encode(digest).decode('ascii').rstrip('=')
+    fingerprint = f"SHA256:{fp_b64}"
+
+    return fingerprint, key_type, key_b64, comment
+
+
+def db_add_ssh_key(user_id: str, public_key_str: str, label: str = None) -> tuple[bool, str, dict | None]:
+    """Registers an SSH public key in the database for an existing user."""
+    user_id = str(user_id or "").strip().lower()
+    user = db_get_user(user_id)
+    if not user:
+        return False, f"User '{user_id}' does not exist.", None
+
+    try:
+        fp, ktype, kb64, comment = calculate_ssh_key_fingerprint(public_key_str)
+    except Exception as e:
+        return False, str(e), None
+
+    key_label = (label or comment or user_id).strip()[:64]
+    created_at = time.time()
+
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id, user_id, revoked FROM ssh_keys WHERE fingerprint = ?", (fp,))
+            existing = cur.fetchone()
+            if existing:
+                if existing["revoked"] == 0:
+                    return False, f"SSH key with fingerprint '{fp}' is already registered for user '{existing['user_id']}'.", None
+                else:
+                    cur.execute("UPDATE ssh_keys SET user_id = ?, key_type = ?, public_key = ?, label = ?, created_at = ?, revoked = 0 WHERE id = ?",
+                                (user_id, ktype, kb64, key_label, created_at, existing["id"]))
+                    conn.commit()
+            else:
+                cur.execute("""
+                    INSERT INTO ssh_keys (fingerprint, user_id, key_type, public_key, label, created_at, revoked)
+                    VALUES (?, ?, ?, ?, ?, ?, 0)
+                """, (fp, user_id, ktype, kb64, key_label, created_at))
+                conn.commit()
+        finally:
+            conn.close()
+
+    record = {
+        "fingerprint": fp,
+        "user_id": user_id,
+        "key_type": ktype,
+        "public_key": kb64,
+        "label": key_label,
+        "created_at": created_at,
+        "revoked": 0
+    }
+    log_event("INFO", "SSH", f"Registered SSH key '{fp}' for user '{user_id}' ({key_label}).")
+    return True, f"SSH key registered successfully for user '{user_id}'.", record
+
+
+def db_list_ssh_keys(user_id: str = None, include_revoked: bool = False) -> list[dict]:
+    """Lists registered SSH keys, optionally filtered by user_id and revocation state."""
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            query = "SELECT id, fingerprint, user_id, key_type, public_key, label, created_at, revoked FROM ssh_keys WHERE 1=1"
+            params = []
+            if user_id:
+                query += " AND user_id = ?"
+                params.append(str(user_id).strip().lower())
+            if not include_revoked:
+                query += " AND revoked = 0"
+            query += " ORDER BY created_at DESC"
+            cur.execute(query, params)
+            return [dict(r) for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+
+def db_revoke_ssh_key(fingerprint: str, user_id: str = None) -> tuple[bool, str]:
+    """Revokes a registered SSH key by fingerprint."""
+    fp = str(fingerprint or "").strip()
+    if not fp:
+        return False, "Fingerprint cannot be empty."
+
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id, user_id, revoked FROM ssh_keys WHERE fingerprint = ? OR fingerprint LIKE ?", (fp, f"%{fp}%"))
+            row = cur.fetchone()
+            if not row:
+                return False, f"SSH key matching fingerprint '{fp}' not found."
+
+            if user_id and row["user_id"] != str(user_id).strip().lower():
+                return False, f"Permission denied: Key does not belong to user '{user_id}'."
+
+            if row["revoked"] == 1:
+                return True, f"SSH key with fingerprint '{fp}' is already revoked."
+
+            cur.execute("UPDATE ssh_keys SET revoked = 1 WHERE id = ?", (row["id"],))
+            conn.commit()
+            log_event("INFO", "SSH", f"Revoked SSH key with fingerprint '{fp}' for user '{row['user_id']}'.")
+            return True, f"SSH key with fingerprint '{fp}' revoked successfully."
+        finally:
+            conn.close()
+
+
+def db_get_ssh_key_by_fingerprint(fingerprint: str) -> dict | None:
+    """Fetches an active SSH key record by exact or partial fingerprint."""
+    fp = str(fingerprint or "").strip()
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id, fingerprint, user_id, key_type, public_key, label, created_at, revoked FROM ssh_keys WHERE fingerprint = ? OR fingerprint LIKE ?", (fp, f"%{fp}%"))
+            row = cur.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+@app.route('/api/admin/ssh-keys', methods=['GET', 'POST', 'DELETE'])
+def admin_ssh_keys():
+    err = require_admin()
+    if err:
+        return err
+
+    if request.method == 'POST':
+        data = request.get_json(force=True, silent=True) or {}
+        user_id = data.get('user_id')
+        pub_key = data.get('public_key')
+        label = data.get('label')
+        success, msg, rec = db_add_ssh_key(user_id, pub_key, label)
+        if not success:
+            return jsonify({"error": msg}), 400
+        return jsonify({"message": msg, "key": rec}), 201
+
+    if request.method == 'DELETE':
+        data = request.get_json(force=True, silent=True) or {}
+        fp = data.get('fingerprint')
+        success, msg = db_revoke_ssh_key(fp)
+        if not success:
+            return jsonify({"error": msg}), 400
+        return jsonify({"message": msg})
+
+    # GET List
+    user_id = request.args.get('user_id')
+    inc_rev = request.args.get('include_revoked', 'false').lower() == 'true'
+    keys = db_list_ssh_keys(user_id=user_id, include_revoked=inc_rev)
+    return jsonify(keys)
 
 
 # ==============================================================================
