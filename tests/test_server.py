@@ -1463,6 +1463,7 @@ class TestNexusNodeServer(unittest.TestCase):
             server_app.FAILED_LOGINS.clear()
 
     # 20. Real SSH Access & Restricted NexusNode Shell Tests
+    # 20. Real SSH Access & Restricted NexusNode Shell Tests
     def test_ssh_user_authentication_architecture(self):
         """Verify OpenSSH AuthorizedKeysCommand maps application users to forced nexus_shell.py commands."""
         from scripts import nexus_ssh_auth
@@ -1470,11 +1471,12 @@ class TestNexusNodeServer(unittest.TestCase):
         from contextlib import redirect_stdout
 
         # Register key in SQLite
-        test_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGeneratedTestKeyForNexusNodeAuth admin@device"
+        rand_k = base64.b64encode(secrets.token_bytes(32)).decode('ascii')
+        test_key = f"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI{rand_k} admin@device"
         server_app.db_add_ssh_key("admin", test_key, label="admin_laptop")
 
         out = io.StringIO()
-        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208']):
+        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208', test_key, 'ssh-ed25519']):
             with redirect_stdout(out):
                 nexus_ssh_auth.main()
 
@@ -1485,21 +1487,117 @@ class TestNexusNodeServer(unittest.TestCase):
         self.assertIn("ssh-ed25519", output)
 
     def test_operator_key_gets_unrestricted_shell(self):
-        """Verify operator key in ~/.ssh/authorized_keys is output WITHOUT forced command."""
+        """Verify operator key is handled by AuthorizedKeysFile and nexus_ssh_auth does not emit it."""
         from scripts import nexus_ssh_auth
         import io
         from contextlib import redirect_stdout
 
         op_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOperatorAdministrativeAccessKey operator@host"
-        with patch("os.path.exists", return_value=True):
-            with patch("builtins.open", mock_open(read_data=op_key)):
-                out = io.StringIO()
-                with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208']):
-                    with redirect_stdout(out):
-                        nexus_ssh_auth.main()
+        # Operator key is not in sqlite, so nexus_ssh_auth emits nothing
+        out = io.StringIO()
+        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208', op_key, 'ssh-ed25519']):
+            with redirect_stdout(out):
+                nexus_ssh_auth.main()
 
-                output = out.getvalue()
-                self.assertIn(op_key, output)
+        output = out.getvalue()
+        self.assertEqual(output.strip(), "")
+
+    def test_exact_key_matching_only_emits_matching_user(self):
+        """Verify dispatcher emits ONLY the specific user whose key matches %k, never other users."""
+        from scripts import nexus_ssh_auth
+        import io
+        from contextlib import redirect_stdout
+
+        # Create two users
+        u1 = f"alice_{int(time.time() * 1000)}"
+        u2 = f"bob_{int(time.time() * 1000)}"
+        server_app.db_create_user(u1, "Pass1234!", role="user")
+        server_app.db_create_user(u2, "Pass1234!", role="user")
+
+        k1_b64 = base64.b64encode(secrets.token_bytes(32)).decode('ascii')
+        k2_b64 = base64.b64encode(secrets.token_bytes(32)).decode('ascii')
+        key1 = f"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI{k1_b64} alice@pc"
+        key2 = f"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI{k2_b64} bob@pc"
+
+        server_app.db_add_ssh_key(u1, key1, label="alice_key")
+        server_app.db_add_ssh_key(u2, key2, label="bob_key")
+
+        # Present Alice's key
+        out1 = io.StringIO()
+        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208', key1, 'ssh-ed25519']):
+            with redirect_stdout(out1):
+                nexus_ssh_auth.main()
+
+        res1 = out1.getvalue()
+        self.assertIn(f"--user {u1}", res1)
+        self.assertNotIn(u2, res1)
+
+        # Present Bob's key
+        out2 = io.StringIO()
+        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208', key2, 'ssh-ed25519']):
+            with redirect_stdout(out2):
+                nexus_ssh_auth.main()
+
+        res2 = out2.getvalue()
+        self.assertIn(f"--user {u2}", res2)
+        self.assertNotIn(u1, res2)
+
+    def test_invalid_transport_user_rejected(self):
+        """Verify connecting with an application username directly over SSH is rejected by dispatcher."""
+        from scripts import nexus_ssh_auth
+        import io
+        from contextlib import redirect_stdout
+
+        rand_k = base64.b64encode(secrets.token_bytes(32)).decode('ascii')
+        test_key = f"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI{rand_k} user@device"
+        server_app.db_add_ssh_key("admin", test_key)
+
+        # User attempts 'ssh anmol@PHONE_IP' instead of 'ssh u0_a208@PHONE_IP'
+        out = io.StringIO()
+        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'anmol', test_key, 'ssh-ed25519']):
+            with redirect_stdout(out):
+                nexus_ssh_auth.main()
+
+        self.assertEqual(out.getvalue().strip(), "")
+
+    def test_duplicate_key_in_operator_authorized_keys_rejected(self):
+        """Verify registering an SSH key that exists in ~/.ssh/authorized_keys is strictly rejected."""
+        op_b64 = base64.b64encode(secrets.token_bytes(32)).decode('ascii')
+        op_pub = f"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI{op_b64} operator@device"
+
+        with patch("os.path.exists", return_value=True):
+            with patch("builtins.open", mock_open(read_data=op_pub)):
+                success, msg, _ = server_app.db_add_ssh_key("admin", op_pub, label="duplicate_op")
+                self.assertFalse(success)
+                self.assertIn("already registered as a Termux host operator key", msg)
+
+    def test_sftp_and_subsystem_blocked_in_restricted_shell(self):
+        """Verify SFTP and SSH subsystem commands are strictly rejected by the restricted shell."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stderr
+
+        user = server_app.db_get_user("admin")
+        for bad_cmd in ["sftp-server", "/usr/lib/ssh/sftp-server", "internal-sftp", "scp -t /data"]:
+            err = io.StringIO()
+            with redirect_stderr(err):
+                code = nexus_shell.launch_restricted_shell(user, direct_command=bad_cmd)
+            self.assertEqual(code, 1)
+            self.assertIn("Subsystem execution (including SFTP/SCP) is disabled", err.getvalue())
+
+    def test_shell_operators_and_command_chaining_blocked(self):
+        """Verify shell chaining, operators, and subshells are strictly rejected in direct command mode."""
+        import nexus_shell
+        import io
+        from contextlib import redirect_stderr
+
+        user = server_app.db_get_user("admin")
+        for evil_cmd in ["status; id", "vault ls | cat", "status && echo pwned", "vault `whoami`", "status $(id)"]:
+            err = io.StringIO()
+            with redirect_stderr(err):
+                code = nexus_shell.launch_restricted_shell(user, direct_command=evil_cmd)
+            self.assertEqual(code, 1)
+            self.assertIn("Shell operators, pipes, and compound commands are not allowed", err.getvalue())
 
     def test_ssh_key_registration_and_fingerprint(self):
         """Verify SSH key registration correctly parses formats and calculates SHA-256 fingerprint."""
@@ -1552,7 +1650,7 @@ class TestNexusNodeServer(unittest.TestCase):
         server_app.db_revoke_ssh_key(rec["fingerprint"])
 
         out = io.StringIO()
-        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208']):
+        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208', test_pub, 'ssh-ed25519']):
             with redirect_stdout(out):
                 nexus_ssh_auth.main()
 
@@ -1567,20 +1665,22 @@ class TestNexusNodeServer(unittest.TestCase):
         from contextlib import redirect_stdout
 
         ghost_fp = f"SHA256:phantom_{int(time.time() * 1000)}_{secrets.token_hex(4)}"
+        rand_k = base64.b64encode(secrets.token_bytes(32)).decode('ascii')
+        ghost_key = f"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI{rand_k} ghost@host"
         with server_app.DB_LOCK:
             conn = server_app.get_db_connection()
             try:
                 conn.execute("PRAGMA foreign_keys = OFF;")
                 conn.execute("""
                     INSERT INTO ssh_keys (fingerprint, user_id, key_type, public_key, label, created_at, revoked)
-                    VALUES (?, 'ghost_user', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIGhost', 'ghost', 1000, 0)
-                """, (ghost_fp,))
+                    VALUES (?, 'ghost_user', 'ssh-ed25519', ?, 'ghost', 1000, 0)
+                """, (ghost_fp, ghost_key))
                 conn.commit()
             finally:
                 conn.close()
 
         out = io.StringIO()
-        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208']):
+        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208', ghost_key, 'ssh-ed25519']):
             with redirect_stdout(out):
                 nexus_ssh_auth.main()
 

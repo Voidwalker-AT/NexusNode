@@ -3524,6 +3524,23 @@ def db_add_ssh_key(user_id: str, public_key_str: str, label: str = None) -> tupl
     except Exception as e:
         return False, str(e), None
 
+    # Check if key is already an operator key in ~/.ssh/authorized_keys
+    operator_keys_file = os.path.expanduser("~/.ssh/authorized_keys")
+    if os.path.exists(operator_keys_file):
+        try:
+            with open(operator_keys_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        try:
+                            op_fp, _, _, _ = calculate_ssh_key_fingerprint(line)
+                            if op_fp == fp:
+                                return False, f"Cannot register SSH key: this public key is already registered as a Termux host operator key in ~/.ssh/authorized_keys.", None
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
     key_label = (label or comment or user_id).strip()[:64]
     created_at = time.time()
 

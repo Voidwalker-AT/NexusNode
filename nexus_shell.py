@@ -951,9 +951,29 @@ def launch_restricted_shell(user_dict: dict, direct_command: str = None) -> int:
         cmd_line = direct_command.strip()
         if not cmd_line:
             return 0
+
+        # Check for subsystem and file transfer protocols (SFTP / SCP)
+        lowered = cmd_line.lower()
+        if "sftp" in lowered or "subsystem" in lowered or lowered.startswith("scp "):
+            print("Error: Subsystem execution (including SFTP/SCP) is disabled on this restricted NexusNode shell.", file=sys.stderr)
+            return 1
+
+        # Check for shell metacharacters, subshells, and command chaining
+        if any(c in cmd_line for c in [";", "|", "&", "`", "$", "(", ")", "<", ">", "\n", "\r"]):
+            print("Error: Shell operators, pipes, and compound commands are not allowed.", file=sys.stderr)
+            return 1
+
         try:
-            # Check if command is forbidden or unknown
-            first_token = shlex.split(cmd_line)[0].lower()
+            tokens = shlex.split(cmd_line)
+            if not tokens:
+                return 0
+            first_token = tokens[0].lower()
+
+            # Reject common OS binaries explicitly
+            if first_token in ["bash", "sh", "zsh", "dash", "csh", "ksh", "python", "python3", "cat", "rm", "ls", "id", "whoami_os", "pwd", "chmod", "curl", "wget", "scp"]:
+                print(f"Error: Executing OS binary '{first_token}' is strictly forbidden.", file=sys.stderr)
+                return 1
+
             method = getattr(shell, f"do_{first_token}", None)
             if not method:
                 print(f"Error: Command '{first_token}' is not allowed in NexusNode restricted shell.", file=sys.stderr)
