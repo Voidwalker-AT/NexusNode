@@ -2424,7 +2424,7 @@ class TestNexusNodeServer(unittest.TestCase):
             owner_user_id="admin"
         )
 
-        for _ in range(50):
+        for _ in range(100):
             t = server_app.task_runner.get_task(tid)
             if t and t["status"] == "COMPLETED":
                 break

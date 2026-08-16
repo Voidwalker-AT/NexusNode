@@ -31,6 +31,34 @@ class TestPackageMetadata(unittest.TestCase):
         import nexus
         self.assertTrue(len(nexus.__version__) > 0)
 
+    def test_expected_release_version(self):
+        """Verify package version matches intended release version 1.0.1."""
+        import nexus
+        self.assertEqual(nexus.__version__, "1.0.1", "Package version must be 1.0.1")
+
+    def test_dist_artifacts_match_package_version(self):
+        """If dist/ directory exists, ensure all built packages match nexus.__version__."""
+        import glob
+        import nexus
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        dist_dir = os.path.join(repo_root, "dist")
+        if os.path.exists(dist_dir):
+            wheels = glob.glob(os.path.join(dist_dir, "*.whl"))
+            sdists = glob.glob(os.path.join(dist_dir, "*.tar.gz"))
+            expected_prefix = f"nexusnode_cli-{nexus.__version__}"
+            for w in wheels:
+                fname = os.path.basename(w)
+                self.assertTrue(
+                    fname.startswith(expected_prefix),
+                    f"Wheel filename '{fname}' does not match expected version '{expected_prefix}'"
+                )
+            for s in sdists:
+                fname = os.path.basename(s)
+                self.assertTrue(
+                    fname.startswith(expected_prefix),
+                    f"sdist filename '{fname}' does not match expected version '{expected_prefix}'"
+                )
+
 
 class TestEntryPoint(unittest.TestCase):
     """Verify the nexus console entry point."""
@@ -58,12 +86,13 @@ class TestEntryPoint(unittest.TestCase):
         self.assertEqual(args.command, 'status')
 
     def test_version_flag_exits_zero(self):
+        import nexus
         result = subprocess.run(
             [sys.executable, '-m', 'nexus', '--version'],
             capture_output=True, text=True, timeout=10
         )
         self.assertEqual(result.returncode, 0)
-        self.assertIn('NexusNode CLI', result.stdout)
+        self.assertIn(f'NexusNode CLI v{nexus.__version__}', result.stdout)
 
     def test_help_flag_exits_zero(self):
         result = subprocess.run(
