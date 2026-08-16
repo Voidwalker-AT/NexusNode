@@ -118,10 +118,37 @@ Access NexusNode from any phone, laptop, or tablet connected to the same Wi-Fi:
 - Open browser: `http://<PHONE_IP>:5000`
 - Example: `http://192.168.1.45:5000`
 
-### 5.2. SSH Terminal Access
-Connect to your phone's terminal remotely:
+### 5.2. Dual-Layer SSH Access Architecture
+
+NexusNode supports two distinct, isolated access layers over OpenSSH (Port 8022):
+
+#### Layer 1 — System Administrator (Operator OS Shell)
+For device maintenance and host management:
 ```bash
-ssh user@<PHONE_IP> -p 8022
+ssh -p 8022 u0_a208@<PHONE_IP>
+```
+- **Environment**: Unrestricted Termux shell (`~ $`)
+- **Use cases**: Package updates (`pkg upgrade`), runit service management (`sv restart sshd`), emergency credential recovery (`python -m nexus_admin reset-password --user admin`).
+
+#### Layer 2 — NexusNode Application Users (Restricted CLI Shell)
+For normal team members, family, and users:
+```bash
+ssh -p 8022 anmol@<PHONE_IP>
+```
+- **Environment**: Sandboxed NexusNode restricted shell (`nexus> `)
+- **Security Isolation**: Zero access to Termux bash, `~/server`, `~/.ssh`, SQLite databases, or arbitrary OS commands (`rm`, `cat /etc/passwd`, `python`, `sh`).
+- **RBAC Governed**: Exposes only authorized application features (Vault, Media, Tasks, AI streaming chat, RAG search, Shares).
+- **Direct Command Execution**:
+  ```bash
+  ssh -p 8022 anmol@<PHONE_IP> "vault ls"
+  ssh -p 8022 anmol@<PHONE_IP> "status"
+  ```
+
+#### Setup Dual-Access Hook on Termux
+Run the automatic configuration script once on the phone:
+```bash
+bash scripts/setup_ssh_nexusnode.sh
+sv restart sshd
 ```
 
 ### 5.3. Public Internet Access (LocalToNet)
