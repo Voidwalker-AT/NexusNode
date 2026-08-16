@@ -137,15 +137,11 @@ Set-Content -Path (Join-Path $BinDir "nexus.cmd") -Value $cmdContent -Force -Enc
 # nexus.bat
 Set-Content -Path (Join-Path $BinDir "nexus.bat") -Value $cmdContent -Force -Encoding ASCII
 
-# nexus.ps1 (For native PowerShell)
+# nexus.ps1 (For native PowerShell - transparent forwarding without CmdletBinding parameter restrictions)
 $ps1Content = @'
-[CmdletBinding()]
-param()
-if (Get-Command py -ErrorAction SilentlyContinue) {
-    & py -m nexus @args
-    exit $LASTEXITCODE
-} elseif (Get-Command python -ErrorAction SilentlyContinue) {
-    & python -m nexus @args
+$py = if (Get-Command py -ErrorAction SilentlyContinue) { "py" } elseif (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { $null }
+if ($py) {
+    & $py -m nexus @args
     exit $LASTEXITCODE
 } else {
     Write-Error "[ERROR] Python was not found. Please install Python 3.8+ from https://python.org"

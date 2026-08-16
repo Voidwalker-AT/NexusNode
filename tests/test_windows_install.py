@@ -5,7 +5,7 @@ Verifies that:
 2. Executable location is correctly identified across standard Python directories.
 3. The automatic Windows User PATH remediation mechanism safely registers Python Scripts.
 4. 'nexus --version', 'nexus --help', and 'nexus connect --help' are fully discoverable and functional.
-5. Package installation success, executable creation, and PATH discovery are distinctly verified.
+5. PowerShell and CMD shims transparently forward all positional arguments and flags.
 """
 from __future__ import annotations
 
@@ -125,6 +125,96 @@ class TestWindowsInstallationUX(unittest.TestCase):
         # Run setup_path_cli directly
         rc = setup_path_cli()
         self.assertEqual(rc, 0)
+
+
+class TestWindowsShimArgumentForwarding(unittest.TestCase):
+    """Verify that generated Windows shims forward all arguments transparently."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.bin_dir = os.path.expandvars(r"%LOCALAPPDATA%\NexusNode\bin")
+        cls.ps1_shim = os.path.join(cls.bin_dir, "nexus.ps1")
+        cls.cmd_shim = os.path.join(cls.bin_dir, "nexus.cmd")
+
+    def setUp(self):
+        if sys.platform != "win32":
+            self.skipTest("Windows-specific shim tests")
+        if not os.path.exists(self.ps1_shim):
+            # Run installer to create shims if not yet created
+            installer = os.path.join(os.path.dirname(os.path.dirname(__file__)), "install.ps1")
+            if os.path.exists(installer):
+                subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", installer], capture_output=True)
+
+    def test_powershell_shim_version(self):
+        """Verify 'nexus.ps1 --version' outputs CLI version."""
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", self.ps1_shim, "--version"],
+            capture_output=True, text=True, timeout=10
+        )
+        self.assertEqual(res.returncode, 0, f"nexus.ps1 --version failed: {res.stderr}")
+        self.assertIn("NexusNode CLI", res.stdout)
+
+    def test_powershell_shim_help(self):
+        """Verify 'nexus.ps1 --help' outputs top-level usage help."""
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", self.ps1_shim, "--help"],
+            capture_output=True, text=True, timeout=10
+        )
+        self.assertEqual(res.returncode, 0, f"nexus.ps1 --help failed: {res.stderr}")
+        self.assertIn("connect", res.stdout)
+        self.assertIn("status", res.stdout)
+        self.assertIn("vault", res.stdout)
+
+    def test_powershell_shim_connect_help(self):
+        """Verify 'nexus.ps1 connect --help' outputs connect subcommand help."""
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", self.ps1_shim, "connect", "--help"],
+            capture_output=True, text=True, timeout=10
+        )
+        self.assertEqual(res.returncode, 0, f"nexus.ps1 connect --help failed: {res.stderr}")
+        self.assertIn("url", res.stdout)
+        self.assertIn("--server", res.stdout)
+        self.assertIn("--user", res.stdout)
+
+    def test_powershell_shim_forwards_positional_args(self):
+        """Verify positional subcommands pass through to parser."""
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", self.ps1_shim, "status", "--json"],
+            capture_output=True, text=True, timeout=10
+        )
+        # Should attempt status and exit 1 (auth required) or 0 (success)
+        # It must NOT fail with 'A positional parameter cannot be found'
+        self.assertNotIn("A positional parameter cannot be found", res.stderr)
+        self.assertIn("Authentication required", res.stderr + res.stdout)
+
+    def test_powershell_shim_forwards_flags(self):
+        """Verify complex flag combinations pass through correctly."""
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", self.ps1_shim,
+             "--no-color", "--json", "tasks", "list"],
+            capture_output=True, text=True, timeout=10
+        )
+        self.assertNotIn("A positional parameter cannot be found", res.stderr)
+        self.assertIn("Authentication required", res.stderr + res.stdout)
+
+    def test_cmd_shim_version(self):
+        """Verify 'nexus.cmd --version' works via cmd.exe."""
+        res = subprocess.run(
+            ["cmd.exe", "/c", self.cmd_shim, "--version"],
+            capture_output=True, text=True, timeout=10
+        )
+        self.assertEqual(res.returncode, 0, f"nexus.cmd --version failed: {res.stderr}")
+        self.assertIn("NexusNode CLI", res.stdout)
+
+    def test_cmd_shim_connect_help(self):
+        """Verify 'nexus.cmd connect --help' works via cmd.exe."""
+        res = subprocess.run(
+            ["cmd.exe", "/c", self.cmd_shim, "connect", "--help"],
+            capture_output=True, text=True, timeout=10
+        )
+        self.assertEqual(res.returncode, 0, f"nexus.cmd connect --help failed: {res.stderr}")
+        self.assertIn("url", res.stdout)
+        self.assertIn("--server", res.stdout)
 
 
 if __name__ == "__main__":
