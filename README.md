@@ -4,7 +4,7 @@
 [![Platforms: Android 13 Termux](https://img.shields.io/badge/Platform-Android%2013%20%7C%20Termux-green.svg)](https://termux.dev)
 [![Architecture: 4GB RAM Hardened](https://img.shields.io/badge/RAM-4GB%20Hardened-orange.svg)]()
 [![Supervision: Runit / termux--services](https://img.shields.io/badge/Supervision-runit%20%2F%20termux--services-blueviolet.svg)]()
-[![Tests: 232 Passed](https://img.shields.io/badge/Tests-232%20Passed%20(100%25)-brightgreen.svg)]()
+[![Tests: 254 Passed](https://img.shields.io/badge/Tests-254%20Passed%20(100%25)-brightgreen.svg)]()
 
 **NexusNode** turns a low-resource, unrooted Android smartphone (e.g. TECNO BG6, ~4 GB RAM) into a reliable, self-supervising **24/7 personal mobile server appliance**. It provides personal cloud storage, bounded background media processing, encrypted sharing, SQLite FTS5 document RAG, local AI model serving, automated root-cause system diagnostics, and a polished **Universal Remote CLI**.
 
@@ -21,7 +21,7 @@
 - 🤖 **AI Studio & Authoritative Model Serving**: Strict separation of *Selected Model*, *Installed Models* (`/api/tags`), and *Loaded Model* (`/api/ps`). Dedicated engine power controls (`/api/ai/start`, `/api/ai/stop`), real-time RAM/VRAM residency calculation, keep-alive control (`0`, `5m`, `15m`, `30m`), and streaming SSE chat.
 - 🧠 **SQLite FTS5 Full-Text Search RAG**: Memory-bounded document search engine using SQLite FTS5 with BM25 ranking, source folder scoping (`docs`, `notes`, `code`), binary exclusion, and zero in-memory dictionary overhead.
 - 🔍 **Automated Root-Cause Diagnostics**: Automated diagnostic analyzer returning structured findings (Problem, Severity, Evidence, Likely Cause, Recommendation), live process memory tables (PID, RSS, PSS, Threads, FDs), and on-demand profile snapshots.
-- 🔒 **Hardened Security & RBAC**: Multi-tier RBAC matrix (Anonymous = 401, User = 403, Admin = 200), zero hardcoded passwords in code or initialization, brute-force IP rate limiting, and full session destruction on logout.
+- 🔒 **Hardened Security & RBAC**: PBKDF2-HMAC-SHA256 password hashing (`100,000` iterations) with transparent legacy migration, short-lived cryptographic playback tokens for media streaming, multi-tier RBAC matrix (Anonymous = 401, User = 403, Admin = 200), authoritative user governance APIs, brute-force IP rate limiting, and full session destruction on logout.
 - 🔄 **Production Runit Supervision**: Single authoritative supervisor model via `termux-services` (runit) with `Termux:Boot` autostart, crash backoff, and Android CPU WakeLock integration.
 
 ---
@@ -169,7 +169,7 @@ nexus logout
 
 ## 🧪 Testing & Verification
 
-Run the full automated test suite (155 unit, integration, CLI, and security tests):
+Run the full automated test suite (254 unit, integration, CLI, and security tests):
 ```bash
 python -m unittest discover -s tests -p "test_*.py"
 ```
@@ -179,10 +179,11 @@ python -m unittest discover -s tests -p "test_*.py"
 ## 🔒 Security Architecture
 
 - **No Root Required**: All diagnostics and operations run strictly in unprivileged user space.
-- **No Hardcoded Passwords**: Initial administrator accounts derive from environment (`NEXUS_ADMIN_PASSWORD`) or random tokens. Passwords stored with SHA-256 + 16-byte random salt.
-- **Path Traversal Protection**: All file accesses use `sanitize_storage_path()` to prevent `../` attacks.
+- **PBKDF2-HMAC-SHA256 Password Hashing**: Passwords stored using `hashlib.pbkdf2_hmac` with 100,000 iterations and 16-byte random salt. Legacy SHA-256 hashes are transparently upgraded on login.
+- **Short-Lived Playback Tokens**: Media streaming uses ephemeral 60–120s cryptographic tokens bound to user and path, never exposing session tokens in URLs.
+- **Path Traversal Protection**: All file accesses use `validate_safe_destination()` and `sanitize_storage_path()` to prevent `../` attacks and block access to protected system paths.
 - **Object-Level Ownership**: Task supervision and cancellation enforce user ownership (users cancel own tasks; admin cancels all).
-- **Secret Isolation**: Backups and public logs never bundle session tokens, plaintext passwords, or LocalToNet credentials.
+- **Secret Isolation**: Backups and public logs never bundle session tokens, plaintext passwords, or LocalToNet credentials. Log masking redacts sensitive fields.
 - **Brute Force Protection**: IP rate-limiting with 10-minute lockout after 5 consecutive failed logins.
 
 ---
