@@ -86,10 +86,10 @@ def login(client: NexusClient, username: str = None, password: str = None, as_js
         return True
 
     elif status_code == 429:
-        lockout_secs = resp.get("lockout_seconds") if isinstance(resp, dict) else None
+        lockout_secs = (resp.get("lockout_seconds") or resp.get("remaining_seconds") or resp.get("retry_after")) if isinstance(resp, dict) else None
         retry_msg = f"Account locked. Try again in {lockout_secs} seconds." if lockout_secs else "Account locked due to too many failed attempts."
         if as_json:
-            output.print_json({"error": retry_msg, "status": 429, "lockout_seconds": lockout_secs})
+            output.print_json({"error": retry_msg, "status": 429, "lockout_seconds": lockout_secs, "remaining_seconds": lockout_secs})
         else:
             output.print_error(retry_msg)
         return False

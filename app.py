@@ -73,7 +73,7 @@ def init_unified_db():
     with DB_LOCK:
         conn = get_db_connection()
         try:
-            # 1. Users table
+            # 1. Users table with persisted lockout tracking
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     user_id TEXT PRIMARY KEY,
@@ -81,7 +81,27 @@ def init_unified_db():
                     salt TEXT NOT NULL,
                     role TEXT NOT NULL DEFAULT 'user',
                     privileges TEXT NOT NULL DEFAULT '{}',
-                    created_at REAL NOT NULL
+                    created_at REAL NOT NULL,
+                    failed_attempts INTEGER NOT NULL DEFAULT 0,
+                    locked_until REAL NOT NULL DEFAULT 0.0
+                );
+            """)
+
+            # Migration: Ensure users lockout columns exist
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(users);")
+            user_cols = [c[1] for c in cur.fetchall()]
+            if "failed_attempts" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0;")
+            if "locked_until" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN locked_until REAL NOT NULL DEFAULT 0.0;")
+
+            # 1b. IP Lockouts table (persists IP-based locks across restarts)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS ip_lockouts (
+                    ip TEXT PRIMARY KEY,
+                    failed_attempts INTEGER NOT NULL DEFAULT 0,
+                    locked_until REAL NOT NULL DEFAULT 0.0
                 );
             """)
 
@@ -514,7 +534,11 @@ def db_get_user(user_id: str) -> dict | None:
         conn = get_db_connection()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT user_id, password_hash, salt, role, privileges, created_at FROM users WHERE user_id = ?", (user_id,))
+            cur.execute("""
+                SELECT user_id, password_hash, salt, role, privileges, created_at,
+                       failed_attempts, locked_until
+                FROM users WHERE user_id = ?
+            """, (user_id,))
             row = cur.fetchone()
             if not row:
                 return None
@@ -524,7 +548,9 @@ def db_get_user(user_id: str) -> dict | None:
                 "salt": row["salt"],
                 "role": row["role"],
                 "privileges": json.loads(row["privileges"] or "{}"),
-                "created_at": row["created_at"]
+                "created_at": row["created_at"],
+                "failed_attempts": row["failed_attempts"] if "failed_attempts" in row.keys() else 0,
+                "locked_until": row["locked_until"] if "locked_until" in row.keys() else 0.0
             }
         finally:
             conn.close()
@@ -535,7 +561,11 @@ def db_get_all_users() -> dict:
         conn = get_db_connection()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT user_id, password_hash, salt, role, privileges, created_at FROM users")
+            cur.execute("""
+                SELECT user_id, password_hash, salt, role, privileges, created_at,
+                       failed_attempts, locked_until
+                FROM users
+            """)
             rows = cur.fetchall()
             return {
                 r["user_id"]: {
@@ -544,7 +574,9 @@ def db_get_all_users() -> dict:
                     "salt": r["salt"],
                     "role": r["role"],
                     "privileges": json.loads(r["privileges"] or "{}"),
-                    "created_at": r["created_at"]
+                    "created_at": r["created_at"],
+                    "failed_attempts": r["failed_attempts"] if "failed_attempts" in r.keys() else 0,
+                    "locked_until": r["locked_until"] if "locked_until" in r.keys() else 0.0
                 }
                 for r in rows
             }
@@ -1776,6 +1808,48 @@ def get_active_sessions() -> list[dict]:
     return active
 
 
+def get_account_lockout_status(user_id: str = None, client_ip: str = "127.0.0.1") -> tuple[bool, int]:
+    """
+    Authoritative state check for active account or IP lockout.
+    Returns (is_locked: bool, remaining_seconds: int).
+    """
+    now = time.time()
+    user_id = str(user_id or "").strip().lower() if user_id else None
+
+    # 1. Check in-memory FAILED_LOGINS (for direct overrides/compatibility)
+    with FAILED_LOGINS_LOCK:
+        if client_ip and client_ip in FAILED_LOGINS:
+            rec = FAILED_LOGINS[client_ip]
+            if rec.get("locked_until", 0.0) > now:
+                return True, max(1, int(rec["locked_until"] - now))
+
+    # 2. Check SQLite DB persistence
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            # Check user-level lockout in SQLite users table
+            if user_id:
+                cur = conn.cursor()
+                cur.execute("SELECT locked_until FROM users WHERE user_id = ?", (user_id,))
+                row = cur.fetchone()
+                if row and row["locked_until"] and row["locked_until"] > now:
+                    remaining = max(1, int(row["locked_until"] - now))
+                    return True, remaining
+
+            # Check IP-level lockout in SQLite ip_lockouts table
+            if client_ip:
+                cur = conn.cursor()
+                cur.execute("SELECT locked_until FROM ip_lockouts WHERE ip = ?", (client_ip,))
+                row = cur.fetchone()
+                if row and row["locked_until"] and row["locked_until"] > now:
+                    remaining = max(1, int(row["locked_until"] - now))
+                    return True, remaining
+        finally:
+            conn.close()
+
+    return False, 0
+
+
 def authenticate_user_credentials(user_id: str, password: str, client_ip: str = "127.0.0.1") -> tuple[bool, str, dict | None, int | None]:
     """
     Authoritative single source of truth for user authentication and lockout enforcement.
@@ -1788,26 +1862,77 @@ def authenticate_user_credentials(user_id: str, password: str, client_ip: str = 
     if not user_id or not password:
         return False, "User ID and password are required.", None, None
 
-    with FAILED_LOGINS_LOCK:
-        fail_record = FAILED_LOGINS.get(client_ip, {"count": 0, "locked_until": 0.0})
-        if time.time() < fail_record["locked_until"]:
-            remaining = max(1, int(fail_record["locked_until"] - time.time()))
-            return False, f"Account locked. Try again in {remaining} seconds.", None, remaining
+    # 1. Check if account or IP is already locked
+    is_locked, remaining = get_account_lockout_status(user_id, client_ip)
+    if is_locked:
+        return False, f"Account locked. Try again in {remaining} seconds.", None, remaining
 
+    # 2. Check user credentials against DB
     user = db_get_user(user_id)
     if not user or not verify_password(password, user["password_hash"], user["salt"]):
-        with FAILED_LOGINS_LOCK:
-            fail_record["count"] += 1
-            if fail_record["count"] >= config.LOCKOUT_THRESHOLD:
-                fail_record["locked_until"] = time.time() + config.LOCKOUT_DURATION_SECONDS
-                log_event("WARN", "AUTH", f"IP/Identity '{client_ip}' locked out due to repeated failed logins.")
-                FAILED_LOGINS[client_ip] = fail_record
-                remaining = int(config.LOCKOUT_DURATION_SECONDS)
-                return False, f"Account locked. Try again in {remaining} seconds.", None, remaining
-            FAILED_LOGINS[client_ip] = fail_record
+        # Increment failed attempts in SQLite and memory
+        now = time.time()
+        with DB_LOCK:
+            conn = get_db_connection()
+            try:
+                # Update user record if user exists
+                if user:
+                    new_attempts = int(user.get("failed_attempts", 0)) + 1
+                    if new_attempts >= config.LOCKOUT_THRESHOLD:
+                        locked_until = now + config.LOCKOUT_DURATION_SECONDS
+                        conn.execute("""
+                            UPDATE users SET failed_attempts = ?, locked_until = ? WHERE user_id = ?
+                        """, (new_attempts, locked_until, user_id))
+                        conn.commit()
+                        with FAILED_LOGINS_LOCK:
+                            FAILED_LOGINS[client_ip] = {"count": new_attempts, "locked_until": locked_until}
+                        log_event("WARN", "AUTH", f"User account '{user_id}' locked out for {config.LOCKOUT_DURATION_SECONDS}s due to repeated failed logins.")
+                        return False, f"Account locked. Try again in {config.LOCKOUT_DURATION_SECONDS} seconds.", None, config.LOCKOUT_DURATION_SECONDS
+                    else:
+                        conn.execute("UPDATE users SET failed_attempts = ? WHERE user_id = ?", (new_attempts, user_id))
+                        conn.commit()
+
+                # Update IP record
+                cur = conn.cursor()
+                cur.execute("SELECT failed_attempts FROM ip_lockouts WHERE ip = ?", (client_ip,))
+                ip_row = cur.fetchone()
+                ip_attempts = (ip_row["failed_attempts"] + 1) if ip_row else 1
+                if ip_attempts >= config.LOCKOUT_THRESHOLD:
+                    locked_until = now + config.LOCKOUT_DURATION_SECONDS
+                    conn.execute("""
+                        INSERT INTO ip_lockouts (ip, failed_attempts, locked_until)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(ip) DO UPDATE SET failed_attempts = excluded.failed_attempts, locked_until = excluded.locked_until
+                    """, (client_ip, ip_attempts, locked_until))
+                    conn.commit()
+                    with FAILED_LOGINS_LOCK:
+                        FAILED_LOGINS[client_ip] = {"count": ip_attempts, "locked_until": locked_until}
+                    log_event("WARN", "AUTH", f"Client IP '{client_ip}' locked out for {config.LOCKOUT_DURATION_SECONDS}s due to repeated failed logins.")
+                    return False, f"Account locked. Try again in {config.LOCKOUT_DURATION_SECONDS} seconds.", None, config.LOCKOUT_DURATION_SECONDS
+                else:
+                    conn.execute("""
+                        INSERT INTO ip_lockouts (ip, failed_attempts, locked_until)
+                        VALUES (?, ?, 0.0)
+                        ON CONFLICT(ip) DO UPDATE SET failed_attempts = excluded.failed_attempts
+                    """, (client_ip, ip_attempts))
+                    conn.commit()
+                    with FAILED_LOGINS_LOCK:
+                        FAILED_LOGINS[client_ip] = {"count": ip_attempts, "locked_until": 0.0}
+            finally:
+                conn.close()
 
         log_event("WARN", "AUTH", f"Failed login attempt for user '{user_id}' from {client_ip}")
         return False, "Authentication failed.", None, None
+
+    # 3. Successful login - clear failed attempts and active lockout
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            conn.execute("UPDATE users SET failed_attempts = 0, locked_until = 0.0 WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM ip_lockouts WHERE ip = ?", (client_ip,))
+            conn.commit()
+        finally:
+            conn.close()
 
     with FAILED_LOGINS_LOCK:
         if client_ip in FAILED_LOGINS:
@@ -1817,15 +1942,51 @@ def authenticate_user_credentials(user_id: str, password: str, client_ip: str = 
 
 
 def clear_account_lockout(user_id: str = None, ip_address: str = None):
-    """Clears failed login and lockout tracking for emergency recovery or password resets."""
+    """Clears failed login and lockout tracking in SQLite and memory for emergency recovery or password resets."""
     with FAILED_LOGINS_LOCK:
         if ip_address and ip_address in FAILED_LOGINS:
             del FAILED_LOGINS[ip_address]
         else:
             FAILED_LOGINS.clear()
 
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            if user_id:
+                clean_uid = str(user_id).strip().lower()
+                conn.execute("UPDATE users SET failed_attempts = 0, locked_until = 0.0 WHERE user_id = ?", (clean_uid,))
+            else:
+                conn.execute("UPDATE users SET failed_attempts = 0, locked_until = 0.0")
+
+            if ip_address:
+                conn.execute("DELETE FROM ip_lockouts WHERE ip = ?", (ip_address,))
+            else:
+                conn.execute("DELETE FROM ip_lockouts")
+
+            conn.commit()
+        finally:
+            conn.close()
+
 
 # --- Authentication Routes ---
+@app.route('/api/auth/lockout-status', methods=['GET'])
+def api_lockout_status():
+    """
+    Public safe endpoint returning active lockout status and remaining seconds.
+    Does NOT reveal passwords, password hashes, salts, or session tokens.
+    """
+    client_ip = request.remote_addr or "127.0.0.1"
+    user_id = request.args.get("user_id") or request.args.get("username") or "admin"
+    is_locked, remaining = get_account_lockout_status(user_id, client_ip)
+
+    return jsonify({
+        "locked": is_locked,
+        "lockout_seconds": remaining,
+        "remaining_seconds": remaining,
+        "retry_after": remaining
+    })
+
+
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
     client_ip = request.remote_addr or "127.0.0.1"
@@ -1837,9 +1998,10 @@ def api_login():
     if not success:
         if lockout_secs:
             return jsonify({
-                "error": "locked_out",
+                "error": "account_locked",
                 "message": f"Account Locked. Try again in {lockout_secs}s.",
                 "lockout_seconds": lockout_secs,
+                "remaining_seconds": lockout_secs,
                 "retry_after": lockout_secs
             }), 429
         if not user_id or not password:

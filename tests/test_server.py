@@ -77,12 +77,10 @@ class TestNexusNodeServer(unittest.TestCase):
         self.client = server_app.app.test_client()
         self.admin_token = self.__class__.admin_token
         server_app.governor.snapshot_cache.set(None)
-        with server_app.FAILED_LOGINS_LOCK:
-            server_app.FAILED_LOGINS.clear()
+        server_app.clear_account_lockout()
 
     def tearDown(self):
-        with server_app.FAILED_LOGINS_LOCK:
-            server_app.FAILED_LOGINS.clear()
+        server_app.clear_account_lockout()
 
     # 1. Health and Unprivileged Probing
     def test_01_health_endpoint(self):
@@ -901,8 +899,7 @@ class TestNexusNodeServer(unittest.TestCase):
     # 18. Emergency Login Lockout & Admin Password Recovery Tests
     def test_login_lockout_countdown_state(self):
         """Verify login lockout returns 429 with lockout_seconds and retry_after."""
-        with server_app.FAILED_LOGINS_LOCK:
-            server_app.FAILED_LOGINS.clear()
+        server_app.clear_account_lockout()
 
         # Trigger lockout threshold
         for _ in range(config.LOCKOUT_THRESHOLD):
@@ -911,16 +908,16 @@ class TestNexusNodeServer(unittest.TestCase):
         res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "wrongpassword"})
         self.assertEqual(res.status_code, 429)
         data = res.get_json()
-        self.assertEqual(data.get("error"), "locked_out")
+        self.assertIn(data.get("error"), ["account_locked", "locked_out"])
         self.assertIn("Account Locked. Try again in", data.get("message", ""))
         self.assertTrue(data.get("lockout_seconds", 0) > 0)
         self.assertTrue(data.get("retry_after", 0) > 0)
 
-        with server_app.FAILED_LOGINS_LOCK:
-            server_app.FAILED_LOGINS.clear()
+        server_app.clear_account_lockout()
 
     def test_login_unlock_after_countdown(self):
         """Verify account automatically unlocks after lockout expiry timestamp."""
+        server_app.clear_account_lockout()
         with server_app.FAILED_LOGINS_LOCK:
             server_app.FAILED_LOGINS["127.0.0.1"] = {
                 "count": config.LOCKOUT_THRESHOLD,
@@ -933,11 +930,11 @@ class TestNexusNodeServer(unittest.TestCase):
         data = res.get_json()
         self.assertIn("token", data)
 
-        with server_app.FAILED_LOGINS_LOCK:
-            server_app.FAILED_LOGINS.clear()
+        server_app.clear_account_lockout()
 
     def test_locked_login_submission_blocked(self):
         """Verify active lockout blocks all login attempts regardless of credentials."""
+        server_app.clear_account_lockout()
         with server_app.FAILED_LOGINS_LOCK:
             server_app.FAILED_LOGINS["127.0.0.1"] = {
                 "count": config.LOCKOUT_THRESHOLD,
@@ -948,11 +945,10 @@ class TestNexusNodeServer(unittest.TestCase):
         res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "adminpassword"})
         self.assertEqual(res.status_code, 429)
         data = res.get_json()
-        self.assertEqual(data.get("error"), "locked_out")
+        self.assertIn(data.get("error"), ["account_locked", "locked_out"])
         self.assertTrue(data.get("lockout_seconds") > 0)
 
-        with server_app.FAILED_LOGINS_LOCK:
-            server_app.FAILED_LOGINS.clear()
+        server_app.clear_account_lockout()
 
     def test_emergency_password_reset(self):
         """Verify local emergency reset helper updates password and enables login."""
@@ -1444,8 +1440,7 @@ class TestNexusNodeServer(unittest.TestCase):
 
     def test_web_lockout_countdown_regression(self):
         """Verify Web UI lockout countdown behavior has zero regression."""
-        with server_app.FAILED_LOGINS_LOCK:
-            server_app.FAILED_LOGINS.clear()
+        server_app.clear_account_lockout()
 
         # Trigger lockout
         for _ in range(config.LOCKOUT_THRESHOLD):
@@ -1454,13 +1449,81 @@ class TestNexusNodeServer(unittest.TestCase):
         res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "wrongpassword"})
         self.assertEqual(res.status_code, 429)
         data = res.get_json()
-        self.assertEqual(data["error"], "locked_out")
+        self.assertIn(data["error"], ["account_locked", "locked_out"])
         self.assertIn("lockout_seconds", data)
         self.assertIn("retry_after", data)
         self.assertTrue(data["lockout_seconds"] > 0)
 
+        server_app.clear_account_lockout()
+
+    def test_lockout_persistence_across_process_restart(self):
+        """Verify account lockout stored in SQLite persists even when memory cache is wiped."""
+        server_app.clear_account_lockout()
+
+        # Trigger lockout in SQLite
+        now = time.time()
+        with server_app.DB_LOCK:
+            conn = server_app.get_db_connection()
+            conn.execute(
+                "UPDATE users SET failed_attempts = ?, locked_until = ? WHERE user_id = 'admin'",
+                (config.LOCKOUT_THRESHOLD, now + 300.0)
+            )
+            conn.commit()
+            conn.close()
+
+        # Simulate fresh process restart by wiping in-memory structures
         with server_app.FAILED_LOGINS_LOCK:
             server_app.FAILED_LOGINS.clear()
+
+        # Query lockout status - must reflect SQLite persisted lockout
+        is_locked, remaining = server_app.get_account_lockout_status("admin", "127.0.0.1")
+        self.assertTrue(is_locked)
+        self.assertTrue(remaining > 250)
+
+        # Login attempt must be rejected with 429 and exact remaining seconds
+        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "adminpassword"})
+        self.assertEqual(res.status_code, 429)
+        data = res.get_json()
+        self.assertIn(data["error"], ["account_locked", "locked_out"])
+        self.assertTrue(data.get("lockout_seconds", 0) > 250)
+
+        server_app.clear_account_lockout()
+
+    def test_lockout_status_endpoint_security_and_accuracy(self):
+        """Verify GET /api/auth/lockout-status returns accurate remaining time and zero secrets."""
+        server_app.clear_account_lockout()
+
+        # 1. Check unlocked state
+        res = self.client.get('/api/auth/lockout-status?user_id=admin')
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertFalse(data["locked"])
+        self.assertEqual(data["remaining_seconds"], 0)
+        # Verify zero credential leaks
+        self.assertNotIn("password", data)
+        self.assertNotIn("password_hash", data)
+        self.assertNotIn("salt", data)
+        self.assertNotIn("token", data)
+
+        # 2. Lock account and check again
+        now = time.time()
+        with server_app.DB_LOCK:
+            conn = server_app.get_db_connection()
+            conn.execute(
+                "UPDATE users SET failed_attempts = ?, locked_until = ? WHERE user_id = 'admin'",
+                (5, now + 120.0)
+            )
+            conn.commit()
+            conn.close()
+
+        res = self.client.get('/api/auth/lockout-status?user_id=admin')
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data["locked"])
+        self.assertTrue(data["remaining_seconds"] > 100)
+        self.assertEqual(data["remaining_seconds"], data["lockout_seconds"])
+
+        server_app.clear_account_lockout()
 
     # 20. Real SSH Access & Restricted NexusNode Shell Tests
     # 20. Real SSH Access & Restricted NexusNode Shell Tests

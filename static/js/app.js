@@ -109,13 +109,18 @@ function clearLockoutCountdown() {
 }
 
 function startLockoutCountdown(seconds) {
+  const duration = parseInt(seconds, 10);
+  if (isNaN(duration) || duration <= 0) {
+    clearLockoutCountdown();
+    return;
+  }
+
   // Prevent duplicate intervals
   if (authState.lockoutTimer) {
     clearInterval(authState.lockoutTimer);
     authState.lockoutTimer = null;
   }
 
-  const duration = parseInt(seconds, 10) || 60;
   authState.isLocked = true;
   authState.lockoutRemaining = duration;
 
@@ -149,6 +154,29 @@ function startLockoutCountdown(seconds) {
   }, 1000);
 }
 
+async function checkServerLockoutState(username = null) {
+  try {
+    const usernameInput = document.getElementById('loginUsername');
+    const targetUser = (username || (usernameInput ? usernameInput.value : '') || 'admin').trim().toLowerCase();
+    const res = await fetch(`/api/auth/lockout-status?user_id=${encodeURIComponent(targetUser)}`, {
+      headers: { 'localtonet-skip-warning': 'true' }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const secs = data.remaining_seconds || data.lockout_seconds || 0;
+      if (data.locked && secs > 0) {
+        startLockoutCountdown(secs);
+      } else {
+        if (authState.isLocked) {
+          clearLockoutCountdown();
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to query server lockout status:', err);
+  }
+}
+
 async function initAuth() {
   const savedToken = localStorage.getItem('nexus_token');
   if (savedToken) {
@@ -165,6 +193,8 @@ async function initAuth() {
     }
   }
   handleLogout(false);
+  // Authoritatively reconstruct lockout state from server upon page load / refresh
+  await checkServerLockoutState();
 }
 
 function setAuthenticatedState(user, token) {
@@ -247,12 +277,12 @@ async function handleLoginSubmit(event) {
       showToast(`Welcome back, ${data.user.username || data.user.user_id || 'Operator'}`, 'success');
       passwordInput.value = '';
     } else {
-      if (res.status === 429 || data.error === 'locked_out' || data.lockout_seconds) {
-        const secs = data.lockout_seconds || data.retry_after || 60;
+      if (res.status === 429 || data.error === 'account_locked' || data.error === 'locked_out' || data.lockout_seconds || data.remaining_seconds) {
+        const secs = data.remaining_seconds || data.lockout_seconds || data.retry_after || 60;
         startLockoutCountdown(secs);
         showToast(data.message || `Account Locked. Try again in ${secs}s.`, 'error');
       } else {
-        showToast(data.message || data.error || 'Authentication rejected.', 'error');
+        showToast(data.message || data.error || 'Authentication failed.', 'error');
         if (submitBtn && !authState.isLocked) submitBtn.disabled = false;
       }
     }
@@ -1568,4 +1598,15 @@ function escapeHtml(str) {
 
 document.addEventListener('DOMContentLoaded', () => {
   initAuth();
+
+  const usernameInput = document.getElementById('loginUsername');
+  if (usernameInput) {
+    let debounceTimer = null;
+    usernameInput.addEventListener('input', (e) => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        checkServerLockoutState(e.target.value);
+      }, 350);
+    });
+  }
 });
