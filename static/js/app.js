@@ -390,6 +390,10 @@ async function handleLogout() {
 
 function switchTab(tabId) {
   // Permission checks before tab switch
+  if (tabId === 'diagnostics' && authState.role !== 'admin') {
+    showToast('Permission denied: Administrator role required for diagnostics.', 'error');
+    return;
+  }
   if (tabId === 'admin' && authState.role !== 'admin' && !hasPrivilege('can_manage_users')) {
     showToast('Permission denied: Admin role required.', 'error');
     return;
@@ -445,14 +449,17 @@ function switchTabDirect(tabId) {
     if (tabId === 'storage') fetchVaultFiles();
     else if (tabId === 'media') fetchMediaLibrary();
     else if (tabId === 'tasks') fetchTasks();
+    else if (tabId === 'ai-studio') initAIStudio();
     else if (tabId === 'events') fetchEvents();
     else if (tabId === 'storage-intel') fetchStorageIntelligence();
     else if (tabId === 'backups') fetchBackupsList();
     else if (tabId === 'automation') fetchAutomationJobs();
     else if (tabId === 'settings') loadSettings();
+    else if (tabId === 'diagnostics') runFullDiagnosticReport();
     else if (tabId === 'admin') { fetchAdminUsers(); fetchSharesList(); }
     else if (tabId === 'network') runAllNetworkTests();
   }
+}
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -975,8 +982,89 @@ async function cancelTask(taskId) {
 }
 
 // ==============================================================================
-// 8. AI STUDIO, RAG & OLLAMA
+// 8. AI STUDIO, RAG & OLLAMA (AUTHORITATIVE REGISTRY & RUNTIME)
 // ==============================================================================
+
+async function initAIStudio() {
+  await Promise.all([
+    fetchAIModels(),
+    fetchAIState(),
+    fetchAIMetrics()
+  ]);
+}
+
+async function fetchAIModels() {
+  const select = document.getElementById('aiModelSelect');
+  if (!select) return;
+
+  try {
+    const res = await apiFetch('/api/ai/models');
+    if (!res.ok) return;
+    const models = await res.json();
+
+    if (models.length === 0) {
+      select.innerHTML = `<option value="qwen2.5:0.5b">qwen2.5:0.5b (Default)</option>`;
+      return;
+    }
+
+    select.innerHTML = models.map(m => `
+      <option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${m.size_display} | ${m.quantization})</option>
+    `).join('');
+
+    const currentVal = select.value;
+    if (currentVal) {
+      checkModelEstimate(currentVal);
+    }
+  } catch (_) {}
+}
+
+async function fetchAIState() {
+  try {
+    const res = await apiFetch('/api/ai/state');
+    if (!res.ok) return;
+    const state = await res.json();
+
+    const selTxt = document.getElementById('aiSelectedModelText');
+    const loadTxt = document.getElementById('aiLoadedModelText');
+    if (selTxt) selTxt.textContent = state.selected_model || 'None';
+    if (loadTxt) loadTxt.textContent = state.loaded_model ? `${state.loaded_model} (${state.loaded_model_details?.runtime_size_mb || 0}MB)` : 'None (Standby)';
+
+    const select = document.getElementById('aiModelSelect');
+    if (select && state.selected_model) {
+      select.value = state.selected_model;
+    }
+  } catch (_) {}
+}
+
+async function fetchAIMetrics() {
+  try {
+    const res = await apiFetch('/api/ai/metrics');
+    if (!res.ok) return;
+    const metrics = await res.json();
+
+    const tpsEl = document.getElementById('aiThroughputText');
+    if (tpsEl && metrics.length > 0) {
+      const latest = metrics[0];
+      tpsEl.textContent = `${latest.gen_tokens_per_sec || 0} t/s`;
+    }
+  } catch (_) {}
+}
+
+async function handleModelSelectChange(modelName) {
+  try {
+    const res = await apiFetch('/api/ai/models/select', {
+      method: 'POST',
+      body: JSON.stringify({ model: modelName })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const selTxt = document.getElementById('aiSelectedModelText');
+      if (selTxt) selTxt.textContent = data.selected_model;
+      showToast(`Active chat model: ${data.selected_model}`, 'info');
+    }
+  } catch (_) {}
+  checkModelEstimate(modelName);
+}
 
 async function checkModelEstimate(modelName) {
   const badge = document.getElementById('modelResourceBadge');
@@ -989,8 +1077,8 @@ async function checkModelEstimate(modelName) {
     });
     if (res.ok) {
       const data = await res.json();
-      badge.textContent = `RAM: ~${data.estimated_mb} MB | Available: ${data.available_mb} MB | ${data.decision}`;
-      badge.className = `model-resource-badge ${data.decision === 'SAFE' ? 'safe' : 'blocked'}`;
+      badge.textContent = `Footprint: ~${data.estimated_runtime_mb} MB | Free RAM: ${data.available_mb} MB | ${data.decision}`;
+      badge.className = `model-resource-badge ${data.decision === 'SAFE' ? 'safe' : (data.decision === 'WARNING' ? 'warning' : 'blocked')}`;
     }
   } catch (_) {}
 }
@@ -1006,6 +1094,7 @@ async function toggleEngine(action) {
     const data = await res.json();
     showToast(data.message || data.error || 'Command sent', res.ok ? 'success' : 'error');
     fetchSystemStatus();
+    fetchAIState();
   } catch (err) {
     showToast(`Engine toggle failed: ${err.message}`, 'error');
   }
@@ -1019,7 +1108,7 @@ async function triggerRagRebuild() {
   try {
     const res = await apiFetch('/api/rag/index', { method: 'POST' });
     if (res.ok) {
-      showToast('RAG indexing initiated in background.', 'success');
+      showToast('RAG SQLite FTS5 indexing initiated in background.', 'success');
       fetchSystemStatus();
     }
   } catch (err) {
@@ -1093,9 +1182,12 @@ async function handleChatSubmit(e) {
         }
       }
     }
+    fetchAIMetrics();
+    fetchAIState();
   } catch (err) {
     assistantBubble.textContent = `Streaming failed: ${err.message}`;
   }
+}
 }
 
 function appendChatMessage(role, text) {
@@ -1712,3 +1804,128 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+// ==============================================================================
+// 17. TECHNICAL SYSTEM DIAGNOSTICS & ROOT-CAUSE ENGINE (ADMIN ONLY)
+// ==============================================================================
+
+async function runFullDiagnosticReport() {
+  if (authState.role !== 'admin') return;
+
+  const findingsContainer = document.getElementById('diagFindingsContainer');
+  if (findingsContainer) {
+    findingsContainer.innerHTML = '<p class="empty-state-muted">Executing full diagnostic rules & inspecting /proc...</p>';
+  }
+
+  try {
+    const res = await apiFetch('/api/admin/diagnostics/full-report');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    // 1. Update Health Summary & Timestamp
+    const healthPill = document.getElementById('diagOverallHealthPill');
+    const tsEl = document.getElementById('diagLastTimestamp');
+    const countEl = document.getElementById('diagFindingsCount');
+
+    if (healthPill) {
+      healthPill.textContent = `● ${data.overall_status}`;
+      healthPill.style.color = data.overall_status === 'HEALTHY' ? 'var(--accent-emerald)' : (data.overall_status === 'WARNING' ? 'var(--accent-amber)' : 'var(--accent-rose)');
+    }
+    if (tsEl) tsEl.textContent = new Date(data.timestamp * 1000).toLocaleTimeString();
+    if (countEl) countEl.textContent = data.findings_count;
+
+    // 2. Render Automated Root-Cause Findings Cards
+    if (findingsContainer) {
+      if (data.findings.length === 0) {
+        findingsContainer.innerHTML = `
+          <div class="finding-card" style="border-left-color: var(--accent-emerald);">
+            <div class="finding-card-header">
+              <span class="finding-title" style="color: var(--accent-emerald);">✔ All Subsystems Operating Within 4 GB RAM Android Budget</span>
+              <span class="finding-pill" style="background: rgba(16, 185, 129, 0.2); color: var(--accent-emerald);">OPTIMAL</span>
+            </div>
+            <p class="finding-detail-row">Memory footprint, thread pool, RAG SQLite cache, and process limits are fully compliant.</p>
+          </div>
+        `;
+      } else {
+        findingsContainer.innerHTML = data.findings.map(f => `
+          <div class="finding-card severity-${f.severity}">
+            <div class="finding-card-header">
+              <span class="finding-title">${escapeHtml(f.problem)}</span>
+              <span class="finding-pill ${f.severity}">${f.severity}</span>
+            </div>
+            <p class="finding-detail-row"><strong>Evidence:</strong> ${escapeHtml(f.evidence)}</p>
+            <p class="finding-detail-row"><strong>Likely Cause:</strong> ${escapeHtml(f.likely_cause)}</p>
+            <div class="finding-action-row"><strong>Recommended Action:</strong> ${escapeHtml(f.recommended_action)}</div>
+          </div>
+        `).join('');
+      }
+    }
+
+    // 3. Update Process Introspection Cards
+    const proc = data.diagnostics.telemetry.process;
+    const rssEl = document.getElementById('diagNexusRss');
+    const pssEl = document.getElementById('diagNexusPss');
+    const thEl = document.getElementById('diagNexusThreads');
+    const fdEl = document.getElementById('diagNexusFds');
+    if (rssEl) rssEl.textContent = `${proc.rss_mb} MB`;
+    if (pssEl) pssEl.textContent = `${proc.pss_mb} MB`;
+    if (thEl) thEl.textContent = proc.threads;
+    if (fdEl) fdEl.textContent = proc.open_fds;
+
+    // 4. Update RAG Deep Diagnostics
+    const rag = data.diagnostics.rag;
+    const rDbEl = document.getElementById('diagRagDbSize');
+    const rChunksEl = document.getElementById('diagRagTotalChunks');
+    const rDocsEl = document.getElementById('diagRagTotalDocs');
+    const rAvgEl = document.getElementById('diagRagAvgTokens');
+    const rLargeEl = document.getElementById('diagRagLargestDoc');
+    const rRamEl = document.getElementById('diagRagEstRam');
+    const rDurEl = document.getElementById('diagRagRebuildDuration');
+
+    if (rDbEl) rDbEl.textContent = `${rag.database_size_kb} KB`;
+    if (rChunksEl) rChunksEl.textContent = rag.chunk_count;
+    if (rDocsEl) rDocsEl.textContent = rag.document_count;
+    if (rAvgEl) rAvgEl.textContent = rag.avg_chunk_tokens;
+    if (rLargeEl) rLargeEl.textContent = rag.largest_document;
+    if (rRamEl) rRamEl.textContent = `< ${rag.memory_estimate_mb} MB`;
+    if (rDurEl) rDurEl.textContent = `${rag.rebuild_duration_ms} ms`;
+
+  } catch (err) {
+    if (findingsContainer) {
+      findingsContainer.innerHTML = `<p class="empty-state-muted">Diagnostic analysis failed: ${escapeHtml(err.message)}</p>`;
+    }
+  }
+}
+
+async function captureProfileSnapshot() {
+  if (authState.role !== 'admin') return;
+  try {
+    const res = await apiFetch('/api/admin/diagnostics/profile-snapshot', { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      showToast(`Snapshot captured! RSS: ${data.process_rss_mb} MB | Threads: ${data.threads_count} | WAL: ${data.wal_size_kb} KB`, 'success');
+      runFullDiagnosticReport();
+    }
+  } catch (err) {
+    showToast(`Snapshot error: ${err.message}`, 'error');
+  }
+}
+
+async function compactRagIndex() {
+  if (!hasPrivilege('can_use_rag')) return;
+  try {
+    const res = await apiFetch('/api/rag/compact', { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.migrated) {
+        showToast(`RAG SQLite FTS5 Compaction complete (${data.chunks_migrated} chunks migrated).`, 'success');
+      } else {
+        showToast(data.message || 'No legacy index file to compact.', 'info');
+      }
+      runFullDiagnosticReport();
+    }
+  } catch (err) {
+    showToast(`Compaction error: ${err.message}`, 'error');
+  }
+}
+

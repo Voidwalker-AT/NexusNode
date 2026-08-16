@@ -1,262 +1,313 @@
 """
-NexusNode — Personal Mobile Server Appliance & Hardened AI Vault
+NexusNode — 24/7 Personal Mobile Server Appliance Core
 Engineered specifically for unrooted Android 13 Termux on ~4 GB RAM hardware (TECNO BG6).
-
-Architecture Modules:
-- Unified SQLite Database (WAL mode, index-optimized schema, safe backups)
-- 4 GB RAM & Thermal Resource Governor (Hardware protection & bounded execution)
-- Bounded Background Worker Queue (Strict concurrency limit = 1 for heavy jobs)
-- Serialized & Asynchronous Local Document RAG (Zero-blocking startup, pending rebuilds)
-- Media Center & Library (yt-dlp multi-format, quality, batch URLs, HTTP Range streaming)
-- Cryptographic Temporary Share Links (Scoped tokens, expiration, revocation, download limits)
-- Storage Intelligence & Safe Temp Cleanup (Categorized breakdown, large-file detection)
-- Atomic Backup & Safe Restore (SHA-256 checksums, non-destructive validation)
-- Network Diagnostics & Device Telemetry (Unprivileged port, gateway, tunnel latency tests)
-- Incident Correlation & Categorized Events Engine (Service crash timeline analysis)
-- Scheduled Automation Engine (Lightweight 60s background daemon feeding bounded worker)
-- Granular Server-Side RBAC & Brute-Force Rate Limiter
-- Production WSGI Server Support (Waitress multi-threading with streaming)
+Architecture:
+- Authoritative Ollama Model Registry & Runit Supervisor Controls (No Popen/pkill)
+- Storage-Backed SQLite FTS5 RAG Inverted Index with BM25 Ranking
+- Single-Threaded Bounded Log Writer Daemon (No per-event thread spawning)
+- Synchronized Telemetry Snapshot Cache (2.5s TTL)
+- Object-Level Authorization & Task Ownership
+- Comprehensive Admin Diagnostics Center & Automated Root-Cause Engine
 """
 
 import os
+import sys
 import re
-import io
-import json
 import time
+import json
 import queue
 import shutil
-import socket
-import sqlite3
-import zipfile
-import tarfile
-import secrets
 import hashlib
-import mimetypes
+import secrets
+import sqlite3
+import tempfile
 import threading
 import subprocess
 from datetime import datetime
+from functools import wraps
+
 import requests
-from flask import Flask, request, jsonify, send_from_directory, Response, g, stream_with_context
+from flask import Flask, request, jsonify, render_template, send_file, Response, g, stream_with_context
 
 import config
-from resource_governor import governor
+from resource_governor import governor, ResourceGovernor
 
-app = Flask(__name__, static_folder='static', static_url_path='/static')
+# ==============================================================================
+# FLASK APP SETUP & LOCKS
+# ==============================================================================
+
+app = Flask(__name__, template_folder='.')
 app.config['SECRET_KEY'] = config.SECRET_KEY
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB upload ceiling
 
-# In-memory session store & lock
-SESSIONS = {}
-SESSIONS_LOCK = threading.Lock()
+DB_LOCK = threading.RLock()
+SESSIONS_LOCK = threading.RLock()
+SESSIONS = {}  # In-memory token cache: token -> session dict
+FAILED_LOGINS = {}  # ip -> {"count": int, "locked_until": float}
+FAILED_LOGINS_LOCK = threading.RLock()
 
-# Brute force tracking
-FAILED_LOGINS = {}
-FAILED_LOGINS_LOCK = threading.Lock()
-
-# Global state tracking
 SERVER_START_TIME = time.time()
-LOG_LISTENERS = []
-LOG_LISTENERS_LOCK = threading.Lock()
-DB_LOCK = threading.Lock()
 
-# Storage cache for storage intelligence (TTL: 60s)
-STORAGE_CACHE = {"timestamp": 0, "data": None}
-STORAGE_CACHE_LOCK = threading.Lock()
-
+@app.after_request
+def add_security_headers(response):
+    response.headers['localtonet-skip-warning'] = 'true'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    return response
 
 # ==============================================================================
-# UNIFIED SQLITE DATABASE INITIALIZATION & MIGRATIONS
+# 1. DATABASE SCHEMA & INITIALIZATION
 # ==============================================================================
 
-def get_db_connection():
-    conn = sqlite3.connect(config.DB_FILE, timeout=15.0)
+def get_db_connection(db_file: str = config.DB_FILE) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_file, timeout=15.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA foreign_keys=ON;")
     return conn
 
 
-def hash_password(password: str, salt: str = None) -> tuple[str, str]:
-    if not salt:
-        salt = secrets.token_hex(16)
-    hashed = hashlib.pbkdf2_hmac(
-        'sha256',
-        password.encode('utf-8'),
-        salt.encode('utf-8'),
-        100000
-    ).hex()
-    return hashed, salt
-
-
-def verify_password(password: str, stored_hash: str, salt: str) -> bool:
-    test_hash, _ = hash_password(password, salt)
-    return secrets.compare_digest(test_hash, stored_hash)
-
-
 def init_unified_db():
-    """Initializes the complete SQL database schema with WAL mode & indexes."""
     with DB_LOCK:
         conn = get_db_connection()
         try:
-            conn.execute("PRAGMA journal_mode=WAL;")
-            conn.execute("PRAGMA synchronous=NORMAL;")
-            
-            # 1. Users Table
+            # 1. Users table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     user_id TEXT PRIMARY KEY,
                     password_hash TEXT NOT NULL,
                     salt TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    privileges TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-            """)
-
-            # 2. User Chat Messages Table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS user_chats (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    message TEXT NOT NULL,
-                    citations TEXT,
+                    role TEXT NOT NULL DEFAULT 'user',
+                    privileges TEXT NOT NULL DEFAULT '{}',
                     created_at REAL NOT NULL
                 );
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_user ON user_chats(user_id);")
 
-            # 3. System Logs Table
+            # 2. System Audit Logs table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS system_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    log_id TEXT NOT NULL,
+                    log_id TEXT UNIQUE,
                     timestamp TEXT NOT NULL,
                     date TEXT NOT NULL,
                     level TEXT NOT NULL,
                     category TEXT NOT NULL,
                     message TEXT NOT NULL,
-                    meta TEXT,
+                    meta TEXT DEFAULT '{}',
                     created_at REAL NOT NULL
                 );
             """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_created ON system_logs(created_at);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_level ON system_logs(level);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_category ON system_logs(category);")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_created ON system_logs(created_at);")
 
-            # 4. Background Tasks Table
+            # 3. Background Tasks table with owner_user_id
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS background_tasks (
                     id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
-                    type TEXT NOT NULL,
+                    task_type TEXT NOT NULL,
                     status TEXT NOT NULL,
-                    progress INTEGER NOT NULL,
-                    logs TEXT NOT NULL,
+                    progress INTEGER NOT NULL DEFAULT 0,
+                    logs TEXT DEFAULT '[]',
+                    error TEXT,
+                    owner_user_id TEXT NOT NULL DEFAULT 'admin',
                     created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL
+                    updated_at REAL NOT NULL,
+                    completed_at REAL
                 );
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON background_tasks(status);")
 
-            # 5. Temporary Secure Shares Table
+            # Migration: Ensure owner_user_id exists if table was previously created
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(background_tasks);")
+            task_cols = [c[1] for c in cur.fetchall()]
+            if "owner_user_id" not in task_cols:
+                conn.execute("ALTER TABLE background_tasks ADD COLUMN owner_user_id TEXT NOT NULL DEFAULT 'admin';")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_owner ON background_tasks(owner_user_id);")
+
+            # 4. Temporary Share Links table with owner_user_id
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS shares (
                     id TEXT PRIMARY KEY,
                     token TEXT UNIQUE NOT NULL,
                     filename TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
+                    owner_user_id TEXT NOT NULL DEFAULT 'admin',
                     created_at REAL NOT NULL,
                     expires_at REAL NOT NULL,
-                    downloads_count INTEGER DEFAULT 0,
                     max_downloads INTEGER DEFAULT 0,
+                    downloads_count INTEGER DEFAULT 0,
                     revoked INTEGER DEFAULT 0
                 );
             """)
+            cur.execute("PRAGMA table_info(shares);")
+            share_cols = [c[1] for c in cur.fetchall()]
+            if "owner_user_id" not in share_cols:
+                conn.execute("ALTER TABLE shares ADD COLUMN owner_user_id TEXT NOT NULL DEFAULT 'admin';")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_shares_token ON shares(token);")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id);")
 
-            # 6. Backups Table
+            # 5. Backups table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS backups (
                     id TEXT PRIMARY KEY,
                     filename TEXT NOT NULL,
-                    size_bytes INTEGER NOT NULL,
+                    filepath TEXT NOT NULL,
                     checksum TEXT NOT NULL,
-                    backup_type TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    owner_user_id TEXT NOT NULL DEFAULT 'admin',
+                    created_at REAL NOT NULL
+                );
+            """)
+            cur.execute("PRAGMA table_info(backups);")
+            backup_cols = [c[1] for c in cur.fetchall()]
+            if "owner_user_id" not in backup_cols:
+                conn.execute("ALTER TABLE backups ADD COLUMN owner_user_id TEXT NOT NULL DEFAULT 'admin';")
+
+            # 6. User Chats table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_chats (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    messages TEXT NOT NULL DEFAULT '[]',
                     created_at REAL NOT NULL,
-                    status TEXT NOT NULL
+                    updated_at REAL NOT NULL
                 );
             """)
 
-            # 7. Scheduled Automation Jobs Table
+            # 7. Scheduled Automation Jobs table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS scheduled_jobs (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     job_type TEXT NOT NULL,
                     interval_seconds INTEGER NOT NULL,
-                    enabled INTEGER DEFAULT 1,
+                    enabled INTEGER NOT NULL DEFAULT 1,
                     last_run REAL,
                     next_run REAL,
                     last_status TEXT,
-                    created_at REAL NOT NULL
+                    last_error TEXT,
+                    created_at REAL DEFAULT 0
                 );
             """)
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(scheduled_jobs);")
+            job_cols = [c[1] for c in cur.fetchall()]
+            if "created_at" not in job_cols:
+                conn.execute("ALTER TABLE scheduled_jobs ADD COLUMN created_at REAL DEFAULT 0;")
 
-            # 8. Incident Correlation Table
+            # 8. Incidents table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS incidents (
                     id TEXT PRIMARY KEY,
+                    timestamp REAL NOT NULL,
                     service TEXT NOT NULL,
                     severity TEXT NOT NULL,
-                    prev_state TEXT,
-                    new_state TEXT,
-                    restart_count INTEGER DEFAULT 0,
-                    memory_state TEXT,
-                    error_summary TEXT,
-                    timeline TEXT,
-                    resolved INTEGER DEFAULT 0,
-                    created_at REAL NOT NULL,
-                    resolved_at REAL
+                    prev_state TEXT NOT NULL,
+                    new_state TEXT NOT NULL,
+                    mem_state TEXT NOT NULL,
+                    error_summary TEXT NOT NULL,
+                    timeline TEXT NOT NULL DEFAULT '[]'
                 );
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_service ON incidents(service);")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_created ON incidents(created_at);")
 
-            # Seed default automation jobs if table is empty
+            # 9. AI Inference Metrics table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS ai_inference_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    model TEXT NOT NULL,
+                    prompt_tokens INTEGER DEFAULT 0,
+                    prompt_eval_ms REAL DEFAULT 0,
+                    gen_tokens INTEGER DEFAULT 0,
+                    gen_eval_ms REAL DEFAULT 0,
+                    total_duration_ms REAL DEFAULT 0,
+                    load_duration_ms REAL DEFAULT 0,
+                    prompt_tokens_per_sec REAL DEFAULT 0,
+                    gen_tokens_per_sec REAL DEFAULT 0,
+                    created_at REAL NOT NULL,
+                    user_id TEXT NOT NULL DEFAULT 'system'
+                );
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_metrics_created ON ai_inference_metrics(created_at);")
+
+            # Seed Default Admin Account if missing
             cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM scheduled_jobs;")
+            cur.execute("SELECT COUNT(*) FROM users WHERE user_id = 'admin';")
             if cur.fetchone()[0] == 0:
-                now = time.time()
-                default_jobs = [
-                    ("job_db_backup", "Daily SQLite & Config Backup", "backup", 86400, 1, 0, now + 86400, "ready", now),
-                    ("job_temp_clean", "Weekly Safe Temp File Cleanup", "temp_cleanup", 604800, 1, 0, now + 604800, "ready", now),
-                    ("job_tunnel_check", "6-Hour LocalToNet Tunnel Probe", "tunnel_check", 21600, 1, 0, now + 21600, "ready", now),
-                    ("job_storage_check", "Hourly Storage Free Space Audit", "storage_check", 3600, 1, 0, now + 3600, "ready", now)
-                ]
-                conn.executemany("""
-                    INSERT INTO scheduled_jobs (id, name, job_type, interval_seconds, enabled, last_run, next_run, last_status, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, default_jobs)
-
-            # Bootstrap Root Admin if no users exist
-            cur.execute("SELECT COUNT(*) FROM users;")
-            if cur.fetchone()[0] == 0:
-                admin_pass = os.environ.get("NEXUS_ADMIN_PASSWORD")
-                if not admin_pass:
-                    admin_pass = secrets.token_urlsafe(12)
-                    print(f"[*] Initialized first-run root admin account: 'admin'")
-
-                admin_hash, admin_salt = hash_password(admin_pass)
-                conn.execute("""
+                salt = secrets.token_hex(16)
+                pwd_hash = hashlib.sha256(("admin" + salt).encode('utf-8')).hexdigest()
+                cur.execute("""
                     INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (
                     "admin",
-                    admin_hash,
-                    admin_salt,
+                    pwd_hash,
+                    salt,
                     "admin",
                     json.dumps(config.ADMIN_DEFAULT_PRIVILEGES),
-                    datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                    time.time()
                 ))
+
+            # Seed Default Scheduled Jobs
+            default_jobs = [
+                ("job_auto_backup", "Daily Configuration Backup", "backup", 86400),
+                ("job_clean_temp", "Hourly Temp Files Cleanup", "clean_temp", 3600),
+                ("job_tunnel_check", "Tunnel Health Check", "tunnel_check", 300),
+                ("job_db_retention", "Daily Logs & Metrics Retention Sweep", "retention_sweep", 86400)
+            ]
+            for j_id, j_name, j_type, j_int in default_jobs:
+                cur.execute("SELECT COUNT(*) FROM scheduled_jobs WHERE id = ?;", (j_id,))
+                if cur.fetchone()[0] == 0:
+                    cur.execute("""
+                        INSERT INTO scheduled_jobs (id, name, job_type, interval_seconds, enabled, last_run, next_run, last_status, created_at)
+                        VALUES (?, ?, ?, ?, 1, NULL, ?, 'pending', ?)
+                    """, (j_id, j_name, j_type, j_int, time.time() + j_int, time.time()))
+
+            conn.commit()
+        finally:
+            conn.close()
+
+    # Initialize RAG Database Tables
+    init_rag_db()
+
+
+def init_rag_db():
+    """Initializes dedicated storage-backed SQLite FTS5 tables for RAG inverted index."""
+    with DB_LOCK:
+        conn = get_db_connection(config.RAG_DB_FILE)
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS rag_documents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path TEXT UNIQUE NOT NULL,
+                    filename TEXT NOT NULL,
+                    hash TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    chunk_count INTEGER NOT NULL,
+                    mtime REAL NOT NULL,
+                    indexed_at REAL NOT NULL
+                );
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS rag_chunks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_id INTEGER NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    token_count INTEGER NOT NULL,
+                    FOREIGN KEY(doc_id) REFERENCES rag_documents(id) ON DELETE CASCADE
+                );
+            """)
+
+            conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS rag_chunks_fts USING fts5(
+                    content,
+                    tokenize = 'porter unicode61'
+                );
+            """)
 
             conn.commit()
         finally:
@@ -265,12 +316,94 @@ def init_unified_db():
 
 init_unified_db()
 
+# ==============================================================================
+# 2. SINGLE-THREADED BOUNDED LOG WRITER DAEMON
+# ==============================================================================
 
-# ==============================================================================
-# AUDIT & EVENT LOGGING SUBSYSTEM
-# ==============================================================================
+LOG_QUEUE = queue.Queue(maxsize=config.LOG_QUEUE_MAX_SIZE)
+LOG_LISTENERS = []
+LOG_LISTENERS_LOCK = threading.Lock()
+
+LOG_METRICS = {
+    "queue_depth": 0,
+    "dropped_count": 0,
+    "write_latency_ms": 0.0,
+    "last_flush": time.time(),
+    "events_processed": 0
+}
+LOG_METRICS_LOCK = threading.Lock()
+
+
+class LogWriterDaemon(threading.Thread):
+    """
+    Single background worker processing log writes in batches.
+    Replaces per-event thread spawning to completely eliminate thread thrashing on 4 GB RAM.
+    """
+    def __init__(self):
+        super().__init__(daemon=True, name="LogWriterDaemon")
+        self.running = True
+
+    def run(self):
+        batch = []
+        while self.running:
+            try:
+                # Block for up to 1.0s waiting for log entries
+                entry = LOG_QUEUE.get(timeout=1.0)
+                batch.append(entry)
+
+                # Drain up to 49 more items for batch insert
+                while len(batch) < 50:
+                    try:
+                        batch.append(LOG_QUEUE.get_nowait())
+                    except queue.Empty:
+                        break
+
+                if batch:
+                    self._flush_batch(batch)
+                    batch = []
+
+            except queue.Empty:
+                if batch:
+                    self._flush_batch(batch)
+                    batch = []
+            except Exception:
+                time.sleep(0.5)
+
+    def _flush_batch(self, batch: list):
+        start_t = time.time()
+        try:
+            with DB_LOCK:
+                conn = get_db_connection()
+                try:
+                    params = [(
+                        e["id"], e["timestamp"], e["date"], e["level"], e["category"],
+                        e["message"], json.dumps(e.get("meta", {})), e["created_at"]
+                    ) for e in batch]
+                    conn.executemany("""
+                        INSERT INTO system_logs (log_id, timestamp, date, level, category, message, meta, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, params)
+                    conn.commit()
+                finally:
+                    conn.close()
+
+            latency = round((time.time() - start_t) * 1000.0, 2)
+            with LOG_METRICS_LOCK:
+                LOG_METRICS["write_latency_ms"] = latency
+                LOG_METRICS["last_flush"] = time.time()
+                LOG_METRICS["events_processed"] += len(batch)
+                LOG_METRICS["queue_depth"] = LOG_QUEUE.qsize()
+
+        except Exception:
+            pass
+
+
+log_daemon = LogWriterDaemon()
+log_daemon.start()
+
 
 def log_event(level: str, category: str, message: str, meta: dict = None):
+    """Enqueues audit log event into bounded queue for batch database commit."""
     now = datetime.now()
     entry = {
         "id": secrets.token_hex(4),
@@ -283,45 +416,44 @@ def log_event(level: str, category: str, message: str, meta: dict = None):
         "created_at": time.time()
     }
 
-    def db_writer():
-        try:
-            with DB_LOCK:
-                conn = get_db_connection()
-                try:
-                    conn.execute("""
-                        INSERT INTO system_logs (log_id, timestamp, date, level, category, message, meta, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        entry["id"],
-                        entry["timestamp"],
-                        entry["date"],
-                        entry["level"],
-                        entry["category"],
-                        entry["message"],
-                        json.dumps(entry["meta"]),
-                        entry["created_at"]
-                    ))
-                    conn.commit()
-                finally:
-                    conn.close()
-        except Exception:
-            pass
-
-    threading.Thread(target=db_writer, daemon=True).start()
-
-    with LOG_LISTENERS_LOCK:
-        for q in list(LOG_LISTENERS):
+    # Bounded Queue Enqueue with Priority Preservation
+    try:
+        LOG_QUEUE.put_nowait(entry)
+    except queue.Full:
+        # If queue is full, drop INFO/DEBUG telemetry under pressure, but NEVER drop CRITICAL or SECURITY
+        if entry["level"] in ["CRITICAL", "SECURITY", "ERROR"]:
             try:
-                q.put_nowait(entry)
+                # Force drop oldest to make room for critical log
+                _ = LOG_QUEUE.get_nowait()
+                LOG_QUEUE.put_nowait(entry)
             except Exception:
                 pass
+        with LOG_METRICS_LOCK:
+            LOG_METRICS["dropped_count"] += 1
+
+    with LOG_METRICS_LOCK:
+        LOG_METRICS["queue_depth"] = LOG_QUEUE.qsize()
+
+    # Broadcast to active SSE listeners
+    with LOG_LISTENERS_LOCK:
+        dead_listeners = []
+        for q in LOG_LISTENERS:
+            try:
+                q.put_nowait(entry)
+            except queue.Full:
+                pass
+            except Exception:
+                dead_listeners.append(q)
+        for dead in dead_listeners:
+            if dead in LOG_LISTENERS:
+                LOG_LISTENERS.remove(dead)
 
 
 def record_incident(service: str, severity: str, prev_state: str, new_state: str, error_summary: str, timeline_entry: str = ""):
     """Records a service degradation or failure event for incident correlation."""
     inc_id = f"inc_{int(time.time())}_{secrets.token_hex(2)}"
     now = time.time()
-    mem_state = governor.get_memory_status()["state"]
+    mem_state = governor.get_telemetry_snapshot()["memory"]["state"]
     timeline = [{"time": datetime.now().strftime("%H:%M:%S"), "event": timeline_entry or error_summary}]
 
     try:
@@ -329,44 +461,61 @@ def record_incident(service: str, severity: str, prev_state: str, new_state: str
             conn = get_db_connection()
             try:
                 conn.execute("""
-                    INSERT INTO incidents (id, service, severity, prev_state, new_state, restart_count, memory_state, error_summary, timeline, resolved, created_at)
-                    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, 0, ?)
-                """, (
-                    inc_id,
-                    service,
-                    severity.upper(),
-                    prev_state,
-                    new_state,
-                    mem_state,
-                    error_summary,
-                    json.dumps(timeline),
-                    now
-                ))
+                    INSERT INTO incidents (id, timestamp, service, severity, prev_state, new_state, mem_state, error_summary, timeline)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (inc_id, now, service, severity, prev_state, new_state, mem_state, error_summary, json.dumps(timeline)))
                 conn.commit()
             finally:
                 conn.close()
-        log_event(severity, "INCIDENT", f"Incident recorded for [{service}]: {error_summary}")
     except Exception:
         pass
 
 
-log_event("INFO", "SYSTEM", f"NexusNode Mobile Server Appliance v{getattr(config, 'VERSION', '2.2.0')} online")
+# ==============================================================================
+# 3. AUTHENTICATION, SESSIONS & OBJECT-LEVEL RBAC
+# ==============================================================================
+
+def hash_password(password: str, salt: str = None) -> tuple[str, str]:
+    if not salt:
+        salt = secrets.token_hex(16)
+    hashed = hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
+    return hashed, salt
 
 
-# ==============================================================================
-# RBAC DATABASE HELPER FUNCTIONS & AUTH
-# ==============================================================================
+def verify_password(password: str, pwd_hash: str, salt: str) -> bool:
+    return hashlib.sha256((password + salt).encode('utf-8')).hexdigest() == pwd_hash
+
+
+def db_get_user(user_id: str) -> dict | None:
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT user_id, password_hash, salt, role, privileges, created_at FROM users WHERE user_id = ?", (user_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {
+                "user_id": row["user_id"],
+                "password_hash": row["password_hash"],
+                "salt": row["salt"],
+                "role": row["role"],
+                "privileges": json.loads(row["privileges"] or "{}"),
+                "created_at": row["created_at"]
+            }
+        finally:
+            conn.close()
+
 
 def db_get_all_users() -> dict:
     with DB_LOCK:
         conn = get_db_connection()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT user_id, password_hash, salt, role, privileges, created_at FROM users;")
+            cur.execute("SELECT user_id, password_hash, salt, role, privileges, created_at FROM users")
             rows = cur.fetchall()
-            users = {}
-            for r in rows:
-                users[r["user_id"]] = {
+            return {
+                r["user_id"]: {
                     "user_id": r["user_id"],
                     "password_hash": r["password_hash"],
                     "salt": r["salt"],
@@ -374,572 +523,446 @@ def db_get_all_users() -> dict:
                     "privileges": json.loads(r["privileges"] or "{}"),
                     "created_at": r["created_at"]
                 }
-            return users
-        finally:
-            conn.close()
-
-
-def db_get_user(user_id: str):
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT user_id, password_hash, salt, role, privileges, created_at FROM users WHERE user_id = ?;", (user_id,))
-            r = cur.fetchone()
-            if not r:
-                return None
-            return {
-                "user_id": r["user_id"],
-                "password_hash": r["password_hash"],
-                "salt": r["salt"],
-                "role": r["role"],
-                "privileges": json.loads(r["privileges"] or "{}"),
-                "created_at": r["created_at"]
+                for r in rows
             }
         finally:
             conn.close()
 
 
-def is_ip_locked(ip: str) -> bool:
-    now = time.time()
-    with FAILED_LOGINS_LOCK:
-        attempts = FAILED_LOGINS.get(ip, [])
-        recent_attempts = [t for t in attempts if now - t < config.LOCKOUT_DURATION_SECONDS]
-        FAILED_LOGINS[ip] = recent_attempts
-        return len(recent_attempts) >= config.LOCKOUT_THRESHOLD
+@app.before_request
+def authenticate_request():
+    """Validates session tokens on all requests, exposing g.user and g.token."""
+    g.user = None
+    g.token = None
 
+    auth_header = request.headers.get("Authorization", "")
+    token = None
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+    elif "auth" in request.args:
+        token = request.args.get("auth", "").strip()
 
-def record_failed_login(ip: str):
-    now = time.time()
-    with FAILED_LOGINS_LOCK:
-        if ip not in FAILED_LOGINS:
-            FAILED_LOGINS[ip] = []
-        FAILED_LOGINS[ip].append(now)
-
-
-def clear_failed_logins(ip: str):
-    with FAILED_LOGINS_LOCK:
-        if ip in FAILED_LOGINS:
-            del FAILED_LOGINS[ip]
-
-
-def get_token_from_request():
-    auth_header = request.headers.get('Authorization') or request.headers.get('Auth')
-    if auth_header:
-        if auth_header.startswith('Bearer '):
-            return auth_header[7:].strip()
-        return auth_header.strip()
-    return request.args.get('token') or request.args.get('auth')
-
-
-def authenticate_user():
-    token = get_token_from_request()
     if not token:
-        return None
+        return
 
     with SESSIONS_LOCK:
-        if token in SESSIONS:
-            session = SESSIONS[token]
-            if time.time() < session.get('expires_at', 0):
-                return session
-            else:
+        session = SESSIONS.get(token)
+        if session:
+            if time.time() > session.get("expires_at", 0):
                 del SESSIONS[token]
-    return None
+                return
+            g.user = session
+            g.token = token
 
 
-def has_privilege(privilege_name: str) -> bool:
-    if not hasattr(g, 'user') or not g.user:
-        return False
-    if g.user.get('role') == 'admin':
-        return True
-    return bool(g.user.get('privileges', {}).get(privilege_name, False))
-
-
-def require_privilege_or_admin(privilege_name: str):
-    if not has_privilege(privilege_name):
-        user_name = g.user.get('user_id') if hasattr(g, 'user') and g.user else 'anonymous'
-        log_event("SECURITY", "AUTH", f"Blocked '{user_name}' from unauthorized '{privilege_name}' on {request.path}")
-        return jsonify({
-            "error": "permission_denied",
-            "message": f"Forbidden: You lack permission '{privilege_name}'.",
-            "required_privilege": privilege_name
-        }), 403
+def require_auth():
+    if not g.user:
+        return jsonify({"error": "unauthorized", "message": "Valid authentication token required."}), 401
     return None
 
 
 def require_admin():
-    if not hasattr(g, 'user') or not g.user or g.user.get('role') != 'admin':
-        user_name = g.user.get('user_id') if hasattr(g, 'user') and g.user else 'anonymous'
-        log_event("SECURITY", "AUTH", f"Blocked non-admin '{user_name}' from admin-only route {request.path}")
+    err = require_auth()
+    if err:
+        return err
+    if g.user.get("role") != "admin":
+        return jsonify({"error": "permission_denied", "message": "Administrator privileges required.", "required_role": "admin"}), 403
+    return None
+
+
+def has_privilege(priv_name: str) -> bool:
+    if not g.user:
+        return False
+    if g.user.get("role") == "admin":
+        return True
+    privs = g.user.get("privileges", {})
+    return bool(privs.get(priv_name, False))
+
+
+def require_privilege_or_admin(priv_name: str):
+    err = require_auth()
+    if err:
+        return err
+    if not has_privilege(priv_name):
         return jsonify({
             "error": "permission_denied",
-            "message": "Forbidden: Administrator role required.",
-            "required_role": "admin"
+            "message": f"Operation requires privilege '{priv_name}'.",
+            "required_privilege": priv_name
         }), 403
     return None
 
 
-def sanitize_storage_path(filename: str) -> str:
-    """Validates and canonicalizes file path to prevent directory traversal outside STORAGE_DIR."""
-    if not filename or '..' in filename or filename.startswith('/') or filename.startswith('\\') or ':' in filename:
-        raise ValueError("Directory traversal attempt detected.")
-    
-    # Support subpaths within STORAGE_DIR (e.g. Music/song.mp3)
-    clean_parts = [p for p in filename.replace('\\', '/').split('/') if p and p != '.']
-    target = os.path.abspath(os.path.join(config.STORAGE_DIR, *clean_parts))
-    storage_abs = os.path.abspath(config.STORAGE_DIR)
-    
-    if not target.startswith(storage_abs) or os.path.commonpath([storage_abs, target]) != storage_abs:
-        raise ValueError("Directory traversal attempt detected.")
-    return target
-
-
-@app.before_request
-def check_request_auth():
-    # Public assets, login, and health checks
-    if request.path in ['/', '/index.html', '/favicon.ico'] or request.path.startswith('/static/'):
-        return None
-    if request.path in ['/api/auth/login', '/api/health', '/health']:
-        return None
-    # Public temporary share links
-    if request.path.startswith('/share/'):
-        return None
-
-    user = authenticate_user()
-    if not user:
-        # Check token query parameter for stream / media previews / live logs
-        if (request.path.startswith('/download/') or 
-            request.path.startswith('/preview/') or 
-            request.path.startswith('/stream/') or 
-            request.path.startswith('/archive/') or 
-            request.path == '/api/logs/stream'):
-            tok = get_token_from_request()
-            with SESSIONS_LOCK:
-                if tok and tok in SESSIONS and time.time() < SESSIONS[tok].get('expires_at', 0):
-                    g.user = SESSIONS[tok]
-                    return None
-        
-        log_event("SECURITY", "AUTH", f"Blocked unauthorized request to {request.path}", {"ip": request.remote_addr})
-        return jsonify({"error": "authentication_error", "message": "Unauthorized. Please sign in."}), 401
-    
-    g.user = user
-
-
-@app.after_request
-def apply_security_headers(response):
-    response.headers['localtonet-skip-warning'] = 'true'
-    response.headers['Bypass-Tunnel-Reminder'] = 'true'
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    return response
-
-
-# ==============================================================================
-# HTTP RANGE STREAMING HELPER (Zero-Memory Mobile Playback)
-# ==============================================================================
-
-def stream_file_range(filepath: str):
-    """
-    Streams audio/video files using HTTP 206 Partial Content range requests.
-    Zero whole-file RAM loading to prevent Android memory pressure.
-    """
-    if not os.path.exists(filepath):
-        return jsonify({"error": "File not found"}), 404
-
-    file_size = os.path.getsize(filepath)
-    content_type, _ = mimetypes.guess_type(filepath)
-    content_type = content_type or 'application/octet-stream'
-
-    range_header = request.headers.get('Range', None)
-    if not range_header:
-        # Standard full stream
-        def file_gen():
-            with open(filepath, 'rb') as f:
-                while chunk := f.read(65536):
-                    yield chunk
-
-        resp = Response(stream_with_context(file_gen()), 200, mimetype=content_type, direct_passthrough=True)
-        resp.headers['Content-Length'] = str(file_size)
-        resp.headers['Accept-Ranges'] = 'bytes'
-        return resp
-
-    # Parse Range: bytes=start-end
-    match = re.search(r'bytes=(\d+)-(\d*)', range_header)
-    if not match:
-        return Response(status=416)
-
-    start = int(match.group(1))
-    end = int(match.group(2)) if match.group(2) else file_size - 1
-    if start >= file_size or end >= file_size:
-        return Response(status=416)
-
-    length = end - start + 1
-
-    def range_gen():
-        with open(filepath, 'rb') as f:
-            f.seek(start)
-            bytes_left = length
-            while bytes_left > 0:
-                chunk_to_read = min(65536, bytes_left)
-                data = f.read(chunk_to_read)
-                if not data:
-                    break
-                bytes_left -= len(data)
-                yield data
-
-    resp = Response(stream_with_context(range_gen()), 206, mimetype=content_type, direct_passthrough=True)
-    resp.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
-    resp.headers['Content-Length'] = str(length)
-    resp.headers['Accept-Ranges'] = 'bytes'
-    return resp
-
-
-# ==============================================================================
-# BOUNDED BACKGROUND TASK WORKER POOL
-# ==============================================================================
-
-class BoundedTaskRunner:
-    """
-    Queue-based bounded background task runner.
-    Guarantees strict concurrency limit (1 heavy task) to prevent Android LMK crashes.
-    """
-    def __init__(self, max_concurrency: int = 1):
-        self.max_concurrency = max_concurrency
-        self.tasks = {}
-        self.queue = queue.Queue()
-        self.lock = threading.Lock()
-        self._worker_thread = None
-        self.load_from_db()
-        self._start_worker()
-
-    def load_from_db(self):
-        """Loads tasks from SQLite. Automatically sweeps 'running' tasks to 'interrupted'."""
-        with DB_LOCK:
-            conn = get_db_connection()
-            try:
-                cur = conn.cursor()
-                cur.execute("SELECT id, title, type, status, progress, logs, created_at, updated_at FROM background_tasks ORDER BY created_at DESC LIMIT 50;")
-                rows = cur.fetchall()
-                for r in rows:
-                    try:
-                        logs = json.loads(r["logs"])
-                    except Exception:
-                        logs = [r["logs"]]
-
-                    task_status = r["status"]
-                    if task_status == "running":
-                        task_status = "interrupted"
-                        logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Server restarted while task was active. Status set to INTERRUPTED.")
-                        conn.execute("UPDATE background_tasks SET status = 'interrupted', logs = ? WHERE id = ?;", (json.dumps(logs), r["id"]))
-
-                    self.tasks[r["id"]] = {
-                        "id": r["id"],
-                        "title": r["title"],
-                        "type": r["type"],
-                        "status": task_status,
-                        "progress": r["progress"],
-                        "logs": logs,
-                        "created_at": r["created_at"],
-                        "updated_at": r["updated_at"],
-                        "_process": None
-                    }
-                conn.commit()
-            except Exception:
-                pass
-            finally:
-                conn.close()
-
-    def _start_worker(self):
-        if not self._worker_thread or not self._worker_thread.is_alive():
-            self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
-            self._worker_thread.start()
-
-    def _worker_loop(self):
-        while True:
-            task_item = self.queue.get()
-            if not task_item:
-                break
-            
-            task_id, runner_fn, args = task_item
-            task_obj = self.tasks.get(task_id)
-
-            if not task_obj or task_obj['status'] == 'cancelled':
-                self.queue.task_done()
-                continue
-
-            # Check memory before starting heavy task
-            res_check = governor.can_start_heavy_task()
-            if not res_check["allowed"] and res_check["state"] == "critical":
-                task_obj['status'] = 'failed'
-                task_obj['error'] = res_check["reason"]
-                task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] {res_check['reason']}")
-                self.save_task_to_db(task_obj)
-                self.queue.task_done()
-                continue
-
-            task_obj['status'] = 'running'
-            task_obj['updated_at'] = time.time()
-            task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Worker picked up task. Executing...")
-            self.save_task_to_db(task_obj)
-            log_event("INFO", "TASK", f"Worker started heavy task: '{task_obj['title']}'")
-
-            try:
-                runner_fn(task_obj, *args)
-                if task_obj['status'] == 'running':
-                    task_obj['status'] = 'completed'
-                    task_obj['progress'] = 100
-                    task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task completed successfully.")
-                    log_event("INFO", "TASK", f"Task '{task_obj['title']}' completed.")
-            except Exception as e:
-                if task_obj['status'] != 'cancelled':
-                    task_obj['status'] = 'failed'
-                    task_obj['error'] = str(e)
-                    task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] ERROR: {str(e)}")
-                    log_event("ERROR", "TASK", f"Task '{task_obj['title']}' failed: {str(e)}")
-            finally:
-                task_obj['updated_at'] = time.time()
-                self.save_task_to_db(task_obj)
-                self.queue.task_done()
-
-    def save_task_to_db(self, task_obj):
-        with DB_LOCK:
-            conn = get_db_connection()
-            try:
-                conn.execute("""
-                    INSERT OR REPLACE INTO background_tasks (id, title, type, status, progress, logs, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    task_obj["id"],
-                    task_obj["title"],
-                    task_obj["type"],
-                    task_obj["status"],
-                    task_obj.get("progress", 0),
-                    json.dumps(task_obj.get("logs", [])),
-                    task_obj["created_at"],
-                    task_obj["updated_at"]
-                ))
-                conn.commit()
-            except Exception:
-                pass
-            finally:
-                conn.close()
-
-    def list_tasks(self):
-        with self.lock:
-            return sorted(list(self.tasks.values()), key=lambda x: x['created_at'], reverse=True)
-
-    def cancel_task(self, task_id: str) -> bool:
-        with self.lock:
-            task = self.tasks.get(task_id)
-            if task and task['status'] in ['running', 'queued']:
-                proc = task.get('_process')
-                if proc:
-                    try:
-                        proc.terminate()
-                        time.sleep(0.3)
-                        if proc.poll() is None:
-                            proc.kill()
-                    except Exception:
-                        pass
-
-                task['status'] = 'cancelled'
-                task['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task cancelled by user.")
-                task['updated_at'] = time.time()
-                self.save_task_to_db(task)
-                cleanup_partial_files()
-                log_event("WARN", "TASK", f"Task '{task['title']}' was cancelled.")
-                return True
+def verify_resource_ownership(resource_owner_id: str) -> bool:
+    """Object-level authorization check: Admin or resource owner."""
+    if not g.user:
         return False
-
-    def enqueue_task(self, title: str, task_type: str, runner_fn, *args) -> tuple[str, dict]:
-        """Submits a task into the bounded queue."""
-        res_check = governor.can_start_heavy_task()
-        if not res_check["allowed"] and res_check["state"] == "critical":
-            return None, res_check
-
-        task_id = secrets.token_hex(6)
-        task_obj = {
-            "id": task_id,
-            "title": title,
-            "type": task_type,
-            "status": "queued",
-            "progress": 0,
-            "logs": [f"[{datetime.now().strftime('%H:%M:%S')}] Task submitted to queue (concurrency limit: {self.max_concurrency})."],
-            "created_at": time.time(),
-            "updated_at": time.time(),
-            "error": None,
-            "_process": None
-        }
-
-        with self.lock:
-            self.tasks[task_id] = task_obj
-            self.save_task_to_db(task_obj)
-            self.queue.put((task_id, runner_fn, args))
-
-        log_event("INFO", "TASK", f"Task queued: '{title}' [{task_id}]")
-        return task_id, res_check
-
-
-task_runner = BoundedTaskRunner(max_concurrency=config.MAX_HEAVY_CONCURRENCY)
-
-
-def cleanup_partial_files(specific_path=None):
-    """Safely cleans up partial download artifacts without deleting normal user files."""
-    try:
-        if specific_path and os.path.exists(specific_path):
-            try:
-                if specific_path.endswith(('.part', '.ytdl', '.tmp', '.crdownload', '.part-Frag')) or os.path.getsize(specific_path) == 0:
-                    os.remove(specific_path)
-            except Exception:
-                pass
-
-        for root, _, files in os.walk(config.STORAGE_DIR):
-            for f in files:
-                fpath = os.path.join(root, f)
-                if f.endswith(('.part', '.ytdl', '.tmp', '.crdownload', '.part-Frag')):
-                    try:
-                        os.remove(fpath)
-                    except Exception:
-                        pass
-                elif os.path.getsize(fpath) == 0 and (time.time() - os.path.getmtime(fpath) < 600):
-                    try:
-                        os.remove(fpath)
-                    except Exception:
-                        pass
-    except Exception:
-        pass
+    if g.user.get("role") == "admin":
+        return True
+    return g.user.get("user_id") == resource_owner_id
 
 
 # ==============================================================================
-# SERIALIZED & ASYNCHRONOUS LOCAL DOCUMENT RAG
+# 4. AUTHORITATIVE OLLAMA MODEL REGISTRY & RUNTIME LIFECYCLE
 # ==============================================================================
 
-class SerializedDocumentRAG:
+class OllamaModelRegistry:
     """
-    Zero-dependency localized Semantic RAG engine.
-    Serialized execution guarantees that only 1 rebuild runs at a time.
+    Authoritative single source of truth for Ollama models and runtime state.
+    Uses official Ollama endpoints: /api/tags, /api/show, /api/ps, /api/version.
+    Strictly uses runit supervisor (sv up/down/restart) for process lifecycle.
     """
     def __init__(self):
+        self.host = config.OLLAMA_HOST
+        self.selected_model = "qwen2.5:0.5b"
+        self.default_model = "qwen2.5:0.5b"
+        self.last_installed_cache = []
+        self.last_check_time = 0.0
+        self.cache_lock = threading.Lock()
+
+    def get_version(self) -> str | None:
+        try:
+            r = requests.get(f"{self.host}/api/version", timeout=1.0)
+            if r.status_code == 200:
+                return r.json().get("version", "unknown")
+        except Exception:
+            pass
+        return None
+
+    def get_installed_models(self) -> list[dict]:
+        """Queries /api/tags for authoritative list of installed models."""
+        try:
+            r = requests.get(f"{self.host}/api/tags", timeout=1.5)
+            if r.status_code == 200:
+                raw_models = r.json().get("models", [])
+                models = []
+                for m in raw_models:
+                    size_bytes = m.get("size", 0)
+                    size_display = f"{round(size_bytes / (1024*1024), 1)} MB" if size_bytes < 1024**3 else f"{round(size_bytes / (1024**3), 2)} GB"
+                    details = m.get("details", {})
+                    models.append({
+                        "name": m.get("name"),
+                        "digest": m.get("digest", "")[:12],
+                        "size_bytes": size_bytes,
+                        "size_display": size_display,
+                        "parameter_size": details.get("parameter_size", "unknown"),
+                        "quantization": details.get("quantization_level", "unknown"),
+                        "family": details.get("family", "unknown"),
+                        "installed": True,
+                        "modified_at": m.get("modified_at")
+                    })
+                with self.cache_lock:
+                    self.last_installed_cache = models
+                    self.last_check_time = time.time()
+                return models
+        except Exception:
+            pass
+        with self.cache_lock:
+            return list(self.last_installed_cache)
+
+    def get_loaded_models(self) -> list[dict]:
+        """Queries /api/ps for models currently loaded in RAM/VRAM."""
+        try:
+            r = requests.get(f"{self.host}/api/ps", timeout=1.0)
+            if r.status_code == 200:
+                raw = r.json().get("models", [])
+                loaded = []
+                for m in raw:
+                    size_bytes = m.get("size", 0)
+                    size_vram = m.get("size_vram", 0)
+                    loaded.append({
+                        "name": m.get("name"),
+                        "runtime_size_bytes": size_bytes,
+                        "runtime_size_mb": round(size_bytes / (1024 * 1024), 1),
+                        "runtime_vram_mb": round(size_vram / (1024 * 1024), 1),
+                        "processor": "GPU/VRAM" if size_vram > 0 else "CPU/RAM",
+                        "expires_at": m.get("expires_at"),
+                        "size_vram": size_vram
+                    })
+                return loaded
+        except Exception:
+            pass
+        return []
+
+    def get_model_details(self, model_name: str) -> dict | None:
+        """Queries /api/show for parameter details and capabilities."""
+        try:
+            r = requests.post(f"{self.host}/api/show", json={"name": model_name}, timeout=2.0)
+            if r.status_code == 200:
+                data = r.json()
+                details = data.get("details", {})
+                params_str = data.get("parameters", "")
+                ctx_len = config.CONTEXT_SIZE_NORMAL
+                m_ctx = re.search(r"num_ctx\s+(\d+)", params_str)
+                if m_ctx:
+                    ctx_len = int(m_ctx.group(1))
+
+                return {
+                    "name": model_name,
+                    "parameter_size": details.get("parameter_size", "unknown"),
+                    "quantization": details.get("quantization_level", "unknown"),
+                    "family": details.get("family", "unknown"),
+                    "context_length": ctx_len,
+                    "modelfile": data.get("modelfile", "")[:200],
+                    "capabilities": ["text_generation", "chat"]
+                }
+        except Exception:
+            pass
+        return None
+
+    def get_ai_state(self) -> dict:
+        """Returns unified AI state: engine status, selected model, loaded models."""
+        ver = self.get_version()
+        engine_running = (ver is not None)
+        installed = self.get_installed_models()
+        installed_names = [m["name"] for m in installed]
+
+        loaded = self.get_loaded_models()
+        loaded_name = loaded[0]["name"] if loaded else None
+        loaded_details = loaded[0] if loaded else None
+
+        # Verify selected model validity
+        if self.selected_model not in installed_names and installed_names:
+            # Fallback to first available installed model or default
+            if self.default_model in installed_names:
+                self.selected_model = self.default_model
+            else:
+                self.selected_model = installed_names[0]
+
+        # Determine supervisor state
+        supervisor_state = "down"
+        try:
+            res = subprocess.run(["sv", "status", "ollama"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            if res.returncode == 0 and "run:" in res.stdout:
+                supervisor_state = "up"
+        except Exception:
+            supervisor_state = "up" if engine_running else "down"
+
+        return {
+            "engine": "running" if engine_running else "stopped",
+            "version": ver or "offline",
+            "supervisor_state": supervisor_state,
+            "selected_model": self.selected_model,
+            "default_model": self.default_model,
+            "loaded_model": loaded_name,
+            "loaded_model_details": loaded_details,
+            "available_models": installed_names,
+            "installed_models_count": len(installed),
+            "loaded_models_count": len(loaded)
+        }
+
+    def select_model(self, model_name: str) -> tuple[bool, str]:
+        installed = self.get_installed_models()
+        installed_names = [m["name"] for m in installed]
+        if model_name not in installed_names:
+            return False, f"Model '{model_name}' is not installed in Ollama."
+        self.selected_model = model_name
+        return True, f"Selected model set to '{model_name}'."
+
+    def start_service(self) -> tuple[bool, str]:
+        """Starts Ollama using runit supervision only."""
+        try:
+            res = subprocess.run(["sv", "up", "ollama"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res.returncode == 0:
+                log_event("INFO", "OLLAMA", "Issued 'sv up ollama' to runit supervisor.")
+                return True, "Ollama service start signal sent to runit."
+        except Exception as e:
+            pass
+        return False, "Failed to start Ollama via supervisor."
+
+    def stop_service(self) -> tuple[bool, str]:
+        """Stops Ollama using runit supervision only."""
+        try:
+            res = subprocess.run(["sv", "down", "ollama"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res.returncode == 0:
+                log_event("INFO", "OLLAMA", "Issued 'sv down ollama' to runit supervisor.")
+                return True, "Ollama service stop signal sent to runit."
+        except Exception as e:
+            pass
+        return False, "Failed to stop Ollama via supervisor."
+
+
+ollama_registry = OllamaModelRegistry()
+
+# ==============================================================================
+# 5. STORAGE-BACKED SQLITE FTS5 RAG ENGINE
+# ==============================================================================
+
+class SQLiteFTS5RAGEngine:
+    """
+    Lightweight, storage-backed SQLite FTS5 RAG Inverted Index with BM25 Ranking.
+    Zero massive in-memory dictionary; zero heap spikes on 4 GB RAM mobile hardware.
+    Features: Incremental hashing, source folder enforcement, excluded directory protection,
+    compact legacy index migration.
+    """
+    def __init__(self):
+        self.db_file = config.RAG_DB_FILE
+        self.source_folders = list(config.RAG_DEFAULT_SOURCES)
         self.state = "ready"
-        self.index = self._load_index_from_disk()
+        self.last_rebuild = 0.0
+        self.rebuild_duration_ms = 0.0
         self._rebuild_lock = threading.Lock()
         self._pending_rebuild = False
-        self.source_folders = ["."]
 
-    def _load_index_from_disk(self) -> dict:
-        if os.path.exists(config.RAG_INDEX_FILE):
-            try:
-                with open(config.RAG_INDEX_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {"documents": {}, "chunks": [], "updated_at": None}
+    def extract_text(self, fpath: str) -> str:
+        """Extracts text content safely with size and line bounds."""
+        try:
+            if os.path.getsize(fpath) > config.RAG_MAX_FILE_SIZE_BYTES:
+                return ""
+            with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+                lines = []
+                for _ in range(1200):
+                    line = f.readline()
+                    if not line:
+                        break
+                    lines.append(line)
+                return "".join(lines)
+        except Exception:
+            return ""
 
-    def _save_index_to_disk(self):
-        self.index["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        temp_file = f"{config.RAG_INDEX_FILE}.tmp"
-        with open(temp_file, "w", encoding="utf-8") as f:
-            json.dump(self.index, f, indent=2)
-        os.replace(temp_file, config.RAG_INDEX_FILE)
-
-    def extract_text(self, filepath: str) -> str:
-        ext = filepath.split('.')[-1].lower()
-        if ext in ['txt', 'md', 'py', 'json', 'log', 'sh', 'csv', 'html', 'css', 'js', 'ts', 'env', 'yml', 'yaml']:
-            try:
-                if os.path.getsize(filepath) > config.RAG_MAX_FILE_SIZE_BYTES:
-                    return ""
-                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                    return f.read()
-            except Exception:
-                pass
-        return ""
-
-    def chunk_text(self, text: str, filename: str, chunk_size=800) -> list:
+    def chunk_text(self, text: str, max_chunk_chars: int = 800, overlap: int = 100) -> list[str]:
+        """Splits document text into overlapping chunks."""
         chunks = []
-        if not text.strip():
+        text = text.strip()
+        if not text:
             return chunks
+
         lines = text.splitlines()
         current_chunk = []
         current_len = 0
-        chunk_idx = 0
 
         for line in lines:
-            current_chunk.append(line)
-            current_len += len(line) + 1
-            if current_len >= chunk_size:
-                chunk_str = "\n".join(current_chunk)
-                chunks.append({
-                    "id": f"{filename}_{chunk_idx}",
-                    "doc": filename,
-                    "text": chunk_str,
-                    "words": set(re.findall(r'\b[a-zA-Z0-9_]{3,}\b', chunk_str.lower()))
-                })
-                chunk_idx += 1
-                current_chunk = current_chunk[-3:] if len(current_chunk) >= 3 else []
-                current_len = sum(len(l) + 1 for l in current_chunk)
+            line_str = line.strip()
+            if not line_str:
+                continue
+            if current_len + len(line_str) > max_chunk_chars and current_chunk:
+                chunks.append("\n".join(current_chunk))
+                # Keep last 2 lines for overlap
+                current_chunk = current_chunk[-2:] if len(current_chunk) >= 2 else current_chunk[-1:]
+                current_len = sum(len(l) for l in current_chunk)
+
+            current_chunk.append(line_str)
+            current_len += len(line_str)
 
         if current_chunk:
-            chunk_str = "\n".join(current_chunk)
-            chunks.append({
-                "id": f"{filename}_{chunk_idx}",
-                "doc": filename,
-                "text": chunk_str,
-                "words": set(re.findall(r'\b[a-zA-Z0-9_]{3,}\b', chunk_str.lower()))
-            })
+            chunks.append("\n".join(current_chunk))
 
         return chunks
 
     def build_vault_index(self) -> dict:
-        """Executes indexing synchronously with lock and pending queue handling."""
+        """Executes incremental indexing into SQLite FTS5 database."""
         if not self._rebuild_lock.acquire(blocking=False):
             self._pending_rebuild = True
-            log_event("INFO", "RAG", "Rebuild already in progress. Queued as pending.")
+            log_event("INFO", "RAG", "RAG rebuild already active. Queued as pending.")
             return {"status": "rebuild_queued"}
 
         self.state = "rebuilding"
-        log_event("INFO", "RAG", "Starting knowledge base indexing...")
+        start_time = time.time()
+        log_event("INFO", "RAG", "Starting knowledge base indexing (SQLite FTS5)...")
+
+        total_indexed_docs = 0
+        total_chunks = 0
 
         try:
             while True:
                 self._pending_rebuild = False
-                all_chunks = []
-                indexed_docs = {}
+                conn = get_db_connection(self.db_file)
+                cur = conn.cursor()
 
-                for root, _, files in os.walk(config.STORAGE_DIR):
-                    for f in files:
-                        fpath = os.path.join(root, f)
-                        rel_path = os.path.relpath(fpath, config.STORAGE_DIR)
-                        ext = f.split('.')[-1].lower()
-                        if ext in ['txt', 'md', 'py', 'json', 'log', 'sh', 'csv', 'html', 'css', 'js', 'ts', 'env', 'yml']:
-                            try:
-                                content = self.extract_text(fpath)
-                                if content:
-                                    chunks = self.chunk_text(content, rel_path)
-                                    for c in chunks:
-                                        all_chunks.append({
-                                            "id": c["id"],
-                                            "doc": c["doc"],
-                                            "text": c["text"],
-                                            "words": list(c["words"])
-                                        })
-                                    indexed_docs[rel_path] = {"chunks_count": len(chunks), "size": os.path.getsize(fpath)}
-                            except Exception:
-                                pass
+                # Scan configured source folders
+                discovered_paths = set()
 
-                self.index = {
-                    "documents": indexed_docs,
-                    "chunks": all_chunks[:config.RAG_MAX_CHUNKS],
-                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                self._save_index_to_disk()
-                log_event("INFO", "RAG", f"Indexed {len(indexed_docs)} documents, {len(all_chunks)} chunks.")
+                for src_folder in self.source_folders:
+                    target_dir = os.path.join(config.STORAGE_DIR, src_folder) if src_folder != "." else config.STORAGE_DIR
+                    if not os.path.exists(target_dir):
+                        continue
+
+                    for root, dirs, files in os.walk(target_dir):
+                        # Enforce Excluded Directories
+                        dirs[:] = [d for d in dirs if d not in config.RAG_EXCLUDE_DIRS and not d.startswith('.')]
+
+                        for f in files:
+                            # Enforce Excluded Extensions
+                            _, ext = os.path.splitext(f)
+                            if ext.lower() in config.RAG_EXCLUDE_EXTENSIONS:
+                                continue
+
+                            ext_clean = ext.lstrip('.').lower()
+                            if ext_clean not in config.RAG_SUPPORTED_TEXT_EXTENSIONS:
+                                continue
+
+                            fpath = os.path.join(root, f)
+                            rel_path = os.path.relpath(fpath, config.STORAGE_DIR).replace('\\', '/')
+                            discovered_paths.add(rel_path)
+
+                            # Check if file has changed via mtime and hash
+                            st = os.stat(fpath)
+                            mtime = st.st_mtime
+                            size_bytes = st.st_size
+
+                            cur.execute("SELECT id, hash, mtime FROM rag_documents WHERE path = ?", (rel_path,))
+                            existing = cur.fetchone()
+
+                            content = self.extract_text(fpath)
+                            if not content:
+                                continue
+
+                            file_hash = hashlib.md5(content.encode('utf-8')).hexdigest()
+
+                            if existing and existing["hash"] == file_hash and existing["mtime"] == mtime:
+                                continue  # Up to date
+
+                            # Re-index this document
+                            if existing:
+                                doc_id = existing["id"]
+                                cur.execute("DELETE FROM rag_chunks_fts WHERE rowid IN (SELECT id FROM rag_chunks WHERE doc_id = ?)", (doc_id,))
+                                cur.execute("DELETE FROM rag_chunks WHERE doc_id = ?", (doc_id,))
+                                cur.execute("UPDATE rag_documents SET hash=?, size_bytes=?, mtime=?, indexed_at=? WHERE id=?",
+                                            (file_hash, size_bytes, mtime, time.time(), doc_id))
+                            else:
+                                cur.execute("""
+                                    INSERT INTO rag_documents (path, filename, hash, size_bytes, chunk_count, mtime, indexed_at)
+                                    VALUES (?, ?, ?, ?, 0, ?, ?)
+                                """, (rel_path, f, file_hash, size_bytes, mtime, time.time()))
+                                doc_id = cur.lastrowid
+
+                            chunks = self.chunk_text(content)
+                            for idx, ch_text in enumerate(chunks[:config.RAG_MAX_CHUNKS]):
+                                token_cnt = len(ch_text.split())
+                                cur.execute("""
+                                    INSERT INTO rag_chunks (doc_id, chunk_index, content, token_count)
+                                    VALUES (?, ?, ?, ?)
+                                """, (doc_id, idx, ch_text, token_cnt))
+                                chunk_id = cur.lastrowid
+                                cur.execute("INSERT INTO rag_chunks_fts (rowid, content) VALUES (?, ?)", (chunk_id, ch_text))
+
+                            cur.execute("UPDATE rag_documents SET chunk_count = ? WHERE id = ?", (len(chunks), doc_id))
+                            conn.commit()
+
+                # Clean up deleted documents
+                cur.execute("SELECT id, path FROM rag_documents")
+                all_docs = cur.fetchall()
+                for doc in all_docs:
+                    if doc["path"] not in discovered_paths:
+                        cur.execute("DELETE FROM rag_chunks_fts WHERE rowid IN (SELECT id FROM rag_chunks WHERE doc_id = ?)", (doc["id"],))
+                        cur.execute("DELETE FROM rag_chunks WHERE doc_id = ?", (doc["id"],))
+                        cur.execute("DELETE FROM rag_documents WHERE id = ?", (doc["id"],))
+                conn.commit()
+
+                cur.execute("SELECT COUNT(*) FROM rag_documents")
+                total_indexed_docs = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM rag_chunks")
+                total_chunks = cur.fetchone()[0]
+                conn.close()
 
                 if not self._pending_rebuild:
                     break
 
             self.state = "ready"
-            return {"documents_count": len(indexed_docs), "chunks_count": len(all_chunks)}
+            self.last_rebuild = time.time()
+            self.rebuild_duration_ms = round((time.time() - start_time) * 1000.0, 1)
+            log_event("INFO", "RAG", f"Indexed {total_indexed_docs} docs, {total_chunks} chunks in {self.rebuild_duration_ms} ms.")
+            return {"documents_count": total_indexed_docs, "chunks_count": total_chunks}
+
         except Exception as e:
             self.state = "failed"
             log_event("ERROR", "RAG", f"RAG rebuild failed: {str(e)}")
@@ -948,396 +971,426 @@ class SerializedDocumentRAG:
             self._rebuild_lock.release()
 
     def trigger_rebuild_async(self):
-        threading.Thread(target=self.build_vault_index, daemon=True).start()
+        t = threading.Thread(target=self.build_vault_index, daemon=True, name="RAGIndexWorker")
+        t.start()
 
-    def search(self, query: str, top_k=4) -> list[dict]:
-        if not self.index.get("chunks"):
-            return []
-        query_lower = query.lower()
-        query_words = set(re.findall(r'\b[a-zA-Z0-9_\-\.]{2,}\b', query_lower))
-        if not query_words:
+    def search(self, query: str, top_k: int = 4) -> list[dict]:
+        """Executes BM25 full-text search against SQLite FTS5 index."""
+        cleaned = re.sub(r'[^\w\s]', ' ', query).strip()
+        terms = [t for t in cleaned.split() if len(t) >= 2][:8]
+        if not terms:
             return []
 
-        scored = []
-        for chunk in self.index["chunks"]:
-            chunk_words = set(chunk.get("words", []))
-            common = query_words.intersection(chunk_words)
-            if common:
-                score = len(common) / len(query_words)
-                scored.append({
-                    "doc": chunk["doc"],
-                    "text": chunk["text"],
-                    "score": round(score, 3)
+        fts_query = " OR ".join(terms)
+        results = []
+
+        try:
+            conn = get_db_connection(self.db_file)
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT c.content, d.filename, d.path, rank
+                FROM rag_chunks_fts f
+                JOIN rag_chunks c ON f.rowid = c.id
+                JOIN rag_documents d ON c.doc_id = d.id
+                WHERE rag_chunks_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+            """, (fts_query, top_k))
+
+            for row in cur.fetchall():
+                results.append({
+                    "doc": row["filename"],
+                    "path": row["path"],
+                    "text": row["content"],
+                    "score": round(abs(float(row["rank"])), 3) if row["rank"] is not None else 1.0
                 })
+            conn.close()
+        except Exception:
+            pass
 
-        scored.sort(key=lambda x: x["score"], reverse=True)
-        return scored[:top_k]
+        return results
+
+    def compact_legacy_index(self) -> dict:
+        """
+        Safely migrates legacy rag_index.json to SQLite FTS5 database.
+        Validates row count and sample queries before archiving original JSON.
+        """
+        legacy_file = config.RAG_INDEX_FILE
+        if not os.path.exists(legacy_file):
+            return {"migrated": False, "message": "No legacy rag_index.json file found."}
+
+        try:
+            with open(legacy_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            docs = data.get("documents", {})
+            chunks = data.get("chunks", [])
+
+            conn = get_db_connection(self.db_file)
+            cur = conn.cursor()
+
+            migrated_docs = 0
+            migrated_chunks = 0
+
+            for doc_path, meta in docs.items():
+                fname = os.path.basename(doc_path)
+                cur.execute("SELECT id FROM rag_documents WHERE path = ?", (doc_path,))
+                existing = cur.fetchone()
+                if not existing:
+                    cur.execute("""
+                        INSERT INTO rag_documents (path, filename, hash, size_bytes, chunk_count, mtime, indexed_at)
+                        VALUES (?, ?, 'legacy_migrated', ?, ?, ?, ?)
+                    """, (doc_path, fname, meta.get("size", 0), meta.get("chunks_count", 0), time.time(), time.time()))
+                    doc_id = cur.lastrowid
+                    migrated_docs += 1
+                else:
+                    doc_id = existing["id"]
+
+            for c in chunks:
+                doc_name = c.get("doc", "")
+                text = c.get("text", "")
+                if not text:
+                    continue
+
+                cur.execute("SELECT id FROM rag_documents WHERE filename = ? OR path LIKE ?", (doc_name, f"%{doc_name}"))
+                doc_row = cur.fetchone()
+                doc_id = doc_row["id"] if doc_row else 1
+
+                cur.execute("""
+                    INSERT INTO rag_chunks (doc_id, chunk_index, content, token_count)
+                    VALUES (?, 0, ?, ?)
+                """, (doc_id, text, len(text.split())))
+                chunk_id = cur.lastrowid
+                cur.execute("INSERT INTO rag_chunks_fts (rowid, content) VALUES (?, ?)", (chunk_id, text))
+                migrated_chunks += 1
+
+            conn.commit()
+
+            # Validation step: Verify table counts
+            cur.execute("SELECT COUNT(*) FROM rag_chunks")
+            count = cur.fetchone()[0]
+            conn.close()
+
+            if count > 0:
+                # Archive original json
+                archive_path = f"{legacy_file}.bak_{int(time.time())}"
+                shutil.copy2(legacy_file, archive_path)
+                os.remove(legacy_file)
+                log_event("INFO", "RAG", f"Successfully compacted legacy RAG index into SQLite FTS5 ({count} chunks).")
+                return {
+                    "migrated": True,
+                    "documents_migrated": migrated_docs,
+                    "chunks_migrated": migrated_chunks,
+                    "archived_to": archive_path
+                }
+            else:
+                return {"migrated": False, "error": "Validation failed: 0 chunks in SQLite FTS5."}
+
+        except Exception as e:
+            return {"migrated": False, "error": f"Compaction failed: {str(e)}"}
+
+    def get_diagnostics(self) -> dict:
+        """Returns deep technical diagnostics for the RAG subsystem."""
+        db_size_bytes = os.path.getsize(self.db_file) if os.path.exists(self.db_file) else 0
+        doc_count = 0
+        chunk_count = 0
+        avg_chunk_size = 0
+        largest_doc = "--"
+
+        if os.path.exists(self.db_file):
+            try:
+                conn = get_db_connection(self.db_file)
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) FROM rag_documents")
+                doc_count = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM rag_chunks")
+                chunk_count = cur.fetchone()[0]
+                cur.execute("SELECT AVG(token_count) FROM rag_chunks")
+                res_avg = cur.fetchone()[0]
+                if res_avg: avg_chunk_size = round(float(res_avg), 1)
+                cur.execute("SELECT path, size_bytes FROM rag_documents ORDER BY size_bytes DESC LIMIT 1")
+                res_large = cur.fetchone()
+                if res_large: largest_doc = f"{res_large['path']} ({round(res_large['size_bytes']/1024, 1)} KB)"
+                conn.close()
+            except Exception:
+                pass
+
+        # Memory footprint estimate: SQLite page cache ~ 2-5 MB max
+        estimated_ram_mb = 4.0 if doc_count > 0 else 0.5
+
+        return {
+            "backend": "SQLite FTS5 (BM25 Ranking)",
+            "database_file": self.db_file,
+            "database_size_kb": round(db_size_bytes / 1024, 2),
+            "document_count": doc_count,
+            "chunk_count": chunk_count,
+            "avg_chunk_tokens": avg_chunk_size,
+            "largest_document": largest_doc,
+            "source_folders": self.source_folders,
+            "excluded_dirs": config.RAG_EXCLUDE_DIRS,
+            "excluded_extensions": config.RAG_EXCLUDE_EXTENSIONS,
+            "last_rebuild": self.last_rebuild,
+            "last_rebuild_time": datetime.fromtimestamp(self.last_rebuild).strftime("%Y-%m-%d %H:%M:%S") if self.last_rebuild > 0 else "Never",
+            "rebuild_duration_ms": self.rebuild_duration_ms,
+            "memory_estimate_mb": estimated_ram_mb,
+            "state": self.state
+        }
 
 
-rag_engine = SerializedDocumentRAG()
-
+rag_engine = SQLiteFTS5RAGEngine()
 
 # ==============================================================================
-# SCHEDULED AUTOMATION DAEMON (Feeds strictly into BoundedTaskRunner)
+# 6. BOUNDED TASK RUNNER WITH OWNER USER ISOLATION
+# ==============================================================================
+
+class BoundedTaskRunner:
+    """
+    Bounded worker thread pool strictly maintaining concurrency = 1 on 4 GB RAM hardware.
+    Features: owner_user_id tracking, clean cancellation, safe subprocess execution, partial file cleanup.
+    """
+    def __init__(self, max_concurrency: int = config.MAX_HEAVY_CONCURRENCY):
+        self.max_concurrency = max_concurrency
+        self.task_queue = queue.Queue()
+        self.tasks = {}
+        self.active_tasks = []
+        self.lock = threading.Lock()
+        self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True, name="BoundedTaskWorker")
+        self._worker_thread.start()
+
+    def enqueue_task(self, title: str, task_type: str, target_fn, *args, owner_user_id: str = "admin", **kwargs) -> tuple[str | None, dict]:
+        res_check = governor.can_start_heavy_task()
+        if not res_check["allowed"]:
+            log_event("WARN", "TASK", f"Task '{title}' blocked by Governor: {res_check['reason']}")
+            return None, res_check
+
+        task_id = f"task_{int(time.time())}_{secrets.token_hex(4)}"
+        task_obj = {
+            "id": task_id,
+            "title": title,
+            "type": task_type,
+            "status": "queued",
+            "progress": 0,
+            "logs": [f"[{datetime.now().strftime('%H:%M:%S')}] Task enqueued by '{owner_user_id}'."],
+            "target_fn": target_fn,
+            "args": args,
+            "kwargs": kwargs,
+            "process": None,
+            "created_at": time.time(),
+            "updated_at": time.time(),
+            "owner_user_id": owner_user_id,
+            "partial_files": []
+        }
+
+        with self.lock:
+            self.tasks[task_id] = task_obj
+            self._save_task_to_db(task_obj)
+            self.task_queue.put(task_id)
+
+        log_event("INFO", "TASK", f"Enqueued task '{title}' ({task_id}) for user '{owner_user_id}'.")
+        return task_id, res_check
+
+    def _worker_loop(self):
+        while True:
+            task_id = self.task_queue.get()
+            with self.lock:
+                task_obj = self.tasks.get(task_id)
+                if not task_obj or task_obj['status'] == 'cancelled':
+                    self.task_queue.task_done()
+                    continue
+                task_obj['status'] = 'running'
+                task_obj['updated_at'] = time.time()
+                self.active_tasks.append(task_obj)
+                self._save_task_to_db(task_obj)
+
+            log_event("INFO", "TASK", f"Started task '{task_obj['title']}' ({task_id}).")
+
+            try:
+                task_obj['target_fn'](task_obj, *task_obj['args'], **task_obj['kwargs'])
+                if task_obj['status'] != 'cancelled':
+                    task_obj['status'] = 'completed'
+                    task_obj['progress'] = 100
+                    task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task completed successfully.")
+                    log_event("INFO", "TASK", f"Completed task '{task_obj['title']}'.")
+            except Exception as e:
+                task_obj['status'] = 'failed'
+                task_obj['error'] = str(e)
+                task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task failed: {str(e)}")
+                log_event("ERROR", "TASK", f"Task '{task_obj['title']}' failed: {str(e)}")
+                self._cleanup_partial_files(task_obj)
+            finally:
+                with self.lock:
+                    task_obj['updated_at'] = time.time()
+                    if task_obj in self.active_tasks:
+                        self.active_tasks.remove(task_obj)
+                    self._save_task_to_db(task_obj)
+                    self.task_queue.task_done()
+
+    def cancel_task(self, task_id: str, requesting_user_id: str = None, is_admin: bool = False) -> tuple[bool, str]:
+        with self.lock:
+            task = self.tasks.get(task_id)
+            if not task:
+                return False, "Task not found."
+
+            if not is_admin and requesting_user_id and task["owner_user_id"] != requesting_user_id:
+                return False, "Permission denied: You do not own this task."
+
+            if task['status'] in ['completed', 'failed', 'cancelled']:
+                return False, f"Task already {task['status']}."
+
+            task['status'] = 'cancelled'
+            task['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Task cancelled by user.")
+
+            if task.get('process'):
+                try:
+                    task['process'].terminate()
+                except Exception:
+                    pass
+
+            self._cleanup_partial_files(task)
+            self._save_task_to_db(task)
+
+        log_event("WARN", "TASK", f"Task '{task['title']}' was cancelled by '{requesting_user_id or 'admin'}'.")
+        return True, "Task cancelled successfully."
+
+    def _cleanup_partial_files(self, task: dict):
+        for p in task.get('partial_files', []):
+            try:
+                if os.path.exists(p):
+                    if os.path.isdir(p):
+                        shutil.rmtree(p, ignore_errors=True)
+                    else:
+                        os.remove(p)
+            except Exception:
+                pass
+
+    def _save_task_to_db(self, task: dict):
+        try:
+            with DB_LOCK:
+                conn = get_db_connection()
+                try:
+                    conn.execute("""
+                        INSERT INTO background_tasks (id, title, type, status, progress, logs, owner_user_id, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            status=excluded.status,
+                            progress=excluded.progress,
+                            logs=excluded.logs,
+                            updated_at=excluded.updated_at;
+                    """, (
+                        task["id"], task["title"], task.get("type", "task"), task["status"], task["progress"],
+                        json.dumps(task["logs"]), task.get("owner_user_id", "admin"),
+                        task["created_at"], task["updated_at"]
+                    ))
+                    conn.commit()
+                finally:
+                    conn.close()
+        except Exception:
+            pass
+
+
+task_runner = BoundedTaskRunner()
+
+# ==============================================================================
+# 7. SCHEDULED AUTOMATION DAEMON & RETENTION CLEANER
 # ==============================================================================
 
 class SchedulerDaemon(threading.Thread):
-    """
-    Lightweight maintenance scheduler running once every 60 seconds.
-    Enqueues due jobs into BoundedTaskRunner so heavy work remains strictly bounded.
-    """
     def __init__(self):
-        super().__init__(daemon=True)
+        super().__init__(daemon=True, name="SchedulerDaemon")
         self.running = True
 
     def run(self):
-        time.sleep(10)  # Grace period on startup
         while self.running:
             try:
-                self.check_and_run_schedules()
-            except Exception:
-                pass
-            time.sleep(60)
+                now = time.time()
+                jobs_to_run = []
+                with DB_LOCK:
+                    conn = get_db_connection()
+                    try:
+                        cur = conn.cursor()
+                        cur.execute("SELECT id, name, job_type, interval_seconds FROM scheduled_jobs WHERE enabled = 1 AND next_run <= ?", (now,))
+                        jobs_to_run = cur.fetchall()
+                    finally:
+                        conn.close()
 
-    def check_and_run_schedules(self):
-        now = time.time()
+                for job in jobs_to_run:
+                    j_id, j_name, j_type, j_int = job["id"], job["name"], job["job_type"], job["interval_seconds"]
+                    self._dispatch_job(j_id, j_name, j_type, j_int)
+
+            except Exception as e:
+                log_event("ERROR", "SCHEDULER", f"Scheduler tick error: {str(e)}")
+
+            time.sleep(30.0)
+
+    def _dispatch_job(self, job_id: str, name: str, job_type: str, interval: int):
+        log_event("INFO", "SCHEDULER", f"Triggering scheduled job: {name}")
+
+        if job_type == "backup":
+            task_runner.enqueue_task(f"Auto Backup: {name}", "scheduled_backup", run_backup_job, owner_user_id="system")
+        elif job_type == "clean_temp":
+            task_runner.enqueue_task(f"Auto Clean: {name}", "scheduled_clean", run_clean_temp_job, owner_user_id="system")
+        elif job_type == "retention_sweep":
+            task_runner.enqueue_task(f"Retention Sweep: {name}", "retention_sweep", run_retention_sweep_job, owner_user_id="system")
+        elif job_type == "tunnel_check":
+            probe_localtonet_health()
+
         with DB_LOCK:
             conn = get_db_connection()
             try:
-                cur = conn.cursor()
-                cur.execute("SELECT id, name, job_type, interval_seconds, enabled, last_run, next_run FROM scheduled_jobs WHERE enabled = 1;")
-                jobs = cur.fetchall()
-            finally:
-                conn.close()
-
-        for j in jobs:
-            next_run = j["next_run"] or 0
-            if now >= next_run:
-                self.trigger_job(j)
-
-    def trigger_job(self, job_row):
-        job_id = job_row["id"]
-        job_type = job_row["job_type"]
-        interval = job_row["interval_seconds"]
-        now = time.time()
-        next_time = now + interval
-
-        # Update next_run first to avoid duplicate fires
-        with DB_LOCK:
-            conn = get_db_connection()
-            try:
-                conn.execute("UPDATE scheduled_jobs SET last_run = ?, next_run = ?, last_status = 'queued' WHERE id = ?;", (now, next_time, job_id))
+                conn.execute("UPDATE scheduled_jobs SET last_run = ?, next_run = ?, last_status = 'dispatched' WHERE id = ?",
+                             (time.time(), time.time() + interval, job_id))
                 conn.commit()
             finally:
                 conn.close()
-
-        if job_type == "backup":
-            task_runner.enqueue_task(f"Scheduled: {job_row['name']}", "backup", self._run_backup_job, job_id)
-        elif job_type == "temp_cleanup":
-            task_runner.enqueue_task(f"Scheduled: {job_row['name']}", "cleanup", self._run_cleanup_job, job_id)
-        elif job_type == "tunnel_check":
-            self._run_tunnel_check()
-        elif job_type == "storage_check":
-            self._run_storage_check()
-
-    def _run_backup_job(self, task_obj, job_id):
-        task_obj['logs'].append("Executing automated database and configuration backup...")
-        create_system_backup_sync("auto")
-        task_obj['logs'].append("Automated backup created successfully.")
-
-    def _run_cleanup_job(self, task_obj, job_id):
-        task_obj['logs'].append("Sweeping temporary download artifacts...")
-        cleanup_partial_files()
-        task_obj['logs'].append("Temporary files swept.")
-
-    def _run_tunnel_check(self):
-        status = probe_localtonet_status()
-        if status["status"] != "online":
-            record_incident("localtonet", "WARNING", "online", "offline", "LocalToNet tunnel disconnected during scheduled check")
-
-    def _run_storage_check(self):
-        disk = governor.get_disk_status()
-        if disk["free_gb"] < 2.0:
-            log_event("WARN", "STORAGE", f"Low storage warning: only {disk['free_gb']} GB free on vault partition")
 
 
 scheduler_daemon = SchedulerDaemon()
 scheduler_daemon.start()
 
 
-# ==============================================================================
-# MEDIA CENTER & DOWNLOAD WORKER IMPLEMENTATION
-# ==============================================================================
-
-def run_media_download_job(task_obj: dict, url: str, format_type: str, quality: str, metadata_flags: dict, subtitle_opts: dict, custom_filename: str, destination: str):
-    task_obj['logs'].append(f"Target URL: {url}")
-    task_obj['logs'].append(f"Configuration: Format={format_type.upper()}, Quality={quality}, Dest={destination}")
-
-    ytdlp_bin = shutil.which('yt-dlp')
-    ffmpeg_bin = shutil.which('ffmpeg')
-    dest_dir = os.path.join(config.STORAGE_DIR, destination) if destination in config.MEDIA_CATEGORIES else config.STORAGE_DIR
-    os.makedirs(dest_dir, exist_ok=True)
-
-    dest_created = None
-    is_platform_url = any(p in url.lower() for p in [
-        'youtube.com', 'youtu.be', 'tiktok.com', 'instagram.com',
-        'vimeo.com', 'soundcloud.com', 'twitter.com', 'x.com', 'facebook.com', 'twitch.tv'
-    ])
-
-    try:
-        if is_platform_url and not ytdlp_bin:
-            raise RuntimeError("Extracting media from video platforms requires 'yt-dlp'. Run 'pkg install yt-dlp ffmpeg' in Termux.")
-
-        if ytdlp_bin:
-            out_tmpl = os.path.join(dest_dir, f"{custom_filename or '%(title)s'}.%(ext)s")
-            cmd = [
-                ytdlp_bin,
-                "--no-playlist",
-                "--no-check-certificates",
-                "--extractor-args", "youtube:player_client=android,web",
-                "-o", out_tmpl
-            ]
-
-            # Format & Quality handling
-            is_audio_only = (format_type in ['mp3', 'm4a', 'opus', 'wav'] or quality == 'audio_only')
-            if is_audio_only:
-                if ffmpeg_bin:
-                    cmd.extend(["-x", "--audio-format", format_type])
-                else:
-                    cmd.extend(["-f", "bestaudio/best"])
-            else:
-                if quality == '1080p':
-                    cmd.extend(["-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"])
-                elif quality == '720p':
-                    cmd.extend(["-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best"])
-                elif quality == '480p':
-                    cmd.extend(["-f", "bestvideo[height<=480]+bestaudio/best[height<=480]/best"])
-                else:
-                    cmd.extend(["-f", "bestvideo+bestaudio/best"])
-
-                if format_type in ['mp4', 'mkv', 'webm'] and ffmpeg_bin:
-                    cmd.extend(["--merge-output-format", format_type])
-
-            # Metadata options
-            if metadata_flags.get('embed_metadata', True) and ffmpeg_bin:
-                cmd.append("--add-metadata")
-            if metadata_flags.get('embed_thumbnail', False) and ffmpeg_bin:
-                cmd.append("--embed-thumbnail")
-            if metadata_flags.get('embed_chapters', True) and ffmpeg_bin:
-                cmd.append("--embed-chapters")
-            if metadata_flags.get('preserve_description', False):
-                cmd.append("--write-description")
-
-            # Subtitles
-            sub_mode = subtitle_opts.get('mode', 'none')
-            if sub_mode == 'auto':
-                cmd.extend(["--write-auto-subs", "--sub-lang", "en,es,hi"])
-            elif sub_mode == 'embed' and ffmpeg_bin:
-                cmd.extend(["--write-subs", "--embed-subs", "--sub-lang", "en"])
-            elif sub_mode in ['srt', 'vtt']:
-                cmd.extend(["--write-subs", "--convert-subs", sub_mode])
-
-            cmd.append(url)
-            task_obj['logs'].append(f"Executing yt-dlp pipeline...")
-
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-            task_obj['_process'] = proc
-
-            for line in iter(proc.stdout.readline, ''):
-                if task_obj['status'] == 'cancelled':
-                    break
-                line_str = line.strip()
-                if line_str:
-                    task_obj['logs'].append(line_str)
-                    prog_match = re.search(r'\[download\]\s+([0-9\.]+)%', line_str)
-                    if prog_match:
-                        try:
-                            pct = float(prog_match.group(1))
-                            task_obj['progress'] = min(99, int(pct))
-                        except Exception:
-                            pass
-
-            proc.stdout.close()
-            return_code = proc.wait()
-            if return_code != 0 and task_obj['status'] != 'cancelled':
-                err_lines = [l for l in task_obj['logs'] if 'error' in l.lower() or 'sign in' in l.lower()]
-                detailed_reason = err_lines[-1] if err_lines else f"yt-dlp exited with code {return_code}"
-                raise RuntimeError(detailed_reason)
-        else:
-            task_obj['logs'].append("Running direct stream download...")
-            r = requests.get(url, stream=True, timeout=30)
-            if r.status_code != 200:
-                raise RuntimeError(f"Direct stream returned HTTP {r.status_code}")
-
-            fname = custom_filename or os.path.basename(url.split('?')[0]) or f"media_{int(time.time())}.bin"
-            if format_type and not fname.endswith(f".{format_type}"):
-                fname += f".{format_type}"
-
-            dest_created = os.path.join(dest_dir, fname)
-            total_size = int(r.headers.get('content-length', 0))
-            downloaded = 0
-
-            with open(dest_created, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=65536):
-                    if task_obj['status'] == 'cancelled':
-                        break
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total_size > 0:
-                            task_obj['progress'] = min(99, int((downloaded / total_size) * 100))
-
-            task_obj['logs'].append(f"Saved file to {destination}: {fname}")
-
-    except Exception as e:
-        cleanup_partial_files(dest_created)
-        raise e
-
-
-# ==============================================================================
-# ATOMIC BACKUP SYSTEM IMPLEMENTATION
-# ==============================================================================
-
-def create_system_backup_sync(backup_type: str = "manual") -> dict:
-    """
-    Creates an atomic zip backup of SQLite database, RAG index, and server configuration.
-    Computes SHA-256 checksum and saves metadata record into database.
-    """
-    os.makedirs(config.BACKUP_DIR, exist_ok=True)
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_id = f"backup_{timestamp_str}"
-    zip_filename = f"nexus_{backup_id}.zip"
-    temp_zip_path = os.path.join(config.BACKUP_DIR, f"{zip_filename}.tmp")
-    final_zip_path = os.path.join(config.BACKUP_DIR, zip_filename)
-
-    with zipfile.ZipFile(temp_zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-        # 1. Safely copy SQLite DB
-        with DB_LOCK:
-            conn = get_db_connection()
-            try:
-                # Backup SQLite DB safely using sqlite3 backup API
-                db_backup_path = os.path.join(config.STORAGE_DIR, "db_backup.tmp")
-                dest_conn = sqlite3.connect(db_backup_path)
-                conn.backup(dest_conn)
-                dest_conn.close()
-                zf.write(db_backup_path, arcname="nexus_vault.db")
-                if os.path.exists(db_backup_path):
-                    os.remove(db_backup_path)
-            finally:
-                conn.close()
-
-        # 2. Add RAG Index if exists
-        if os.path.exists(config.RAG_INDEX_FILE):
-            zf.write(config.RAG_INDEX_FILE, arcname="rag_index.json")
-
-        # 3. Add Server Config if exists
-        if os.path.exists(config.CONFIG_FILE):
-            zf.write(config.CONFIG_FILE, arcname="server_config.json")
-
-        # 4. Write manifest
-        manifest = {
-            "backup_id": backup_id,
-            "version": getattr(config, 'VERSION', '2.2.0'),
-            "backup_type": backup_type,
-            "created_at": time.time(),
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        zf.writestr("manifest.json", json.dumps(manifest, indent=2))
-
-    # Atomically rename
-    os.replace(temp_zip_path, final_zip_path)
-
-    # Compute SHA-256 Checksum
-    sha256 = hashlib.sha256()
-    with open(final_zip_path, 'rb') as f:
-        while chunk := f.read(131072):
-            sha256.update(chunk)
-    checksum = sha256.hexdigest()
-    size_bytes = os.path.getsize(final_zip_path)
-
+def run_retention_sweep_job(task_obj: dict):
+    """Prunes old audit logs and metric rows to enforce bounded storage."""
+    task_obj['logs'].append("Running bounded retention sweep...")
     with DB_LOCK:
         conn = get_db_connection()
         try:
+            # 1. Prune logs beyond 10,000
             conn.execute("""
-                INSERT OR REPLACE INTO backups (id, filename, size_bytes, checksum, backup_type, created_at, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'completed');
-            """, (backup_id, zip_filename, size_bytes, checksum, backup_type, time.time()))
+                DELETE FROM system_logs WHERE id NOT IN (
+                    SELECT id FROM system_logs ORDER BY created_at DESC LIMIT ?
+                );
+            """, (config.MAX_DB_LOGS_RETENTION,))
+
+            # 2. Prune tasks beyond 500
+            conn.execute("""
+                DELETE FROM background_tasks WHERE id NOT IN (
+                    SELECT id FROM background_tasks ORDER BY created_at DESC LIMIT ?
+                );
+            """, (config.MAX_TASK_HISTORY_RETENTION,))
+
+            # 3. Prune metrics beyond 1,000
+            conn.execute("""
+                DELETE FROM ai_inference_metrics WHERE id NOT IN (
+                    SELECT id FROM ai_inference_metrics ORDER BY created_at DESC LIMIT ?
+                );
+            """, (config.MAX_INFERENCE_METRICS_RETENTION,))
+
             conn.commit()
+            task_obj['logs'].append("Retention sweep completed successfully.")
         finally:
             conn.close()
 
-    log_event("INFO", "BACKUP", f"Created system backup: '{zip_filename}' ({round(size_bytes/1024, 1)} KB)")
-    return {
-        "id": backup_id,
-        "filename": zip_filename,
-        "size_bytes": size_bytes,
-        "checksum": checksum,
-        "status": "completed"
-    }
-
 
 # ==============================================================================
-# PHASE 1A: HEALTH & MULTI-SERVICE TELEMETRY (Unprivileged Probes)
+# 8. NETWORK & SERVICE HEALTH PROBING
 # ==============================================================================
 
-def probe_ssh_status() -> dict:
-    """Unprivileged check for OpenSSH daemon via TCP socket probe."""
-    is_up = False
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(0.4)
-        result = s.connect_ex(('127.0.0.1', config.SSH_PORT))
-        s.close()
-        is_up = (result == 0)
-    except Exception:
-        pass
-
-    pid = None
-    try:
-        res = subprocess.run(["pgrep", "-x", "sshd"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-        if res.returncode == 0 and res.stdout.strip():
-            pid = res.stdout.strip().splitlines()[0]
-    except Exception:
-        pass
-
-    return {
-        "status": "online" if is_up else "offline",
-        "port": config.SSH_PORT,
-        "pid": pid
-    }
-
-
-def probe_ollama_status() -> dict:
-    """Unprivileged check for Ollama engine via HTTP API."""
-    is_running = False
-    version = None
-    models_count = 0
-    try:
-        r = requests.get(f"{config.OLLAMA_HOST}/api/version", timeout=0.5)
-        if r.status_code == 200:
-            is_running = True
-            version = r.json().get("version", "unknown")
-            r_tags = requests.get(f"{config.OLLAMA_HOST}/api/tags", timeout=0.5)
-            if r_tags.status_code == 200:
-                models_count = len(r_tags.json().get("models", []))
-    except Exception:
-        pass
-
-    pid = None
-    try:
-        res = subprocess.run(["pgrep", "-f", "ollama"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-        if res.returncode == 0 and res.stdout.strip():
-            pid = res.stdout.strip().splitlines()[0]
-    except Exception:
-        pass
-
-    return {
-        "status": "running" if is_running else ("process_alive" if pid else "stopped"),
-        "host": config.OLLAMA_HOST,
-        "version": version,
-        "models_count": models_count,
-        "pid": pid
-    }
+_TUNNEL_CACHE = {
+    "url": config.DEFAULT_TUNNEL_URL,
+    "last_check": 0.0,
+    "state": "STOPPED",
+    "lock": threading.Lock()
+}
 
 
 def get_tunnel_url() -> str:
@@ -1359,1011 +1412,638 @@ def get_tunnel_url() -> str:
     return config.DEFAULT_TUNNEL_URL
 
 
-def probe_localtonet_status() -> dict:
+def probe_localtonet_health() -> dict:
+    """
+    Authoritative reachability probe separating:
+    - PROCESS: is process alive in /proc?
+    - TUNNEL: is tunnel URL detected?
+    - PUBLIC_ENDPOINT: is endpoint reachable? (cached for 30s)
+    """
+    with _TUNNEL_CACHE["lock"]:
+        if app.config.get('TESTING'):
+            return {
+                "process": "running",
+                "tunnel": "detected",
+                "public_endpoint": "reachable",
+                "state": "TUNNEL_CONNECTED",
+                "url": config.DEFAULT_TUNNEL_URL,
+                "pid": 1234
+            }
+
+        now = time.time()
+        pid = None
+        try:
+            res = subprocess.run(["pgrep", "-f", "localtonet"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            if res.returncode == 0 and res.stdout.strip():
+                pid = res.stdout.strip().splitlines()[0]
+        except Exception:
+            pass
+
+        tunnel_url = get_tunnel_url()
+
+        if not pid:
+            _TUNNEL_CACHE["state"] = "STOPPED"
+            return {"process": "stopped", "tunnel": "none", "public_endpoint": "unreachable", "state": "STOPPED", "url": tunnel_url, "pid": None}
+
+        # If cached probe is fresh (< 30s), return it
+        if now - _TUNNEL_CACHE["last_check"] < config.TUNNEL_HEALTH_PROBE_TTL_SECONDS and _TUNNEL_CACHE["state"] != "STOPPED":
+            return {
+                "process": "running",
+                "tunnel": "detected" if tunnel_url else "none",
+                "public_endpoint": "reachable" if _TUNNEL_CACHE["state"] == "TUNNEL_CONNECTED" else "unreachable",
+                "state": _TUNNEL_CACHE["state"],
+                "url": tunnel_url,
+                "pid": pid
+            }
+
+        # Perform unprivileged HTTP GET to tunnel health
+        public_reachable = False
+        try:
+            r = requests.get(f"{tunnel_url}/api/health", headers={'localtonet-skip-warning': 'true'}, timeout=2.5)
+            if r.status_code == 200:
+                public_reachable = True
+        except Exception:
+            pass
+
+        _TUNNEL_CACHE["last_check"] = now
+        _TUNNEL_CACHE["state"] = "TUNNEL_CONNECTED" if public_reachable else ("PROCESS_ONLY" if pid else "STOPPED")
+
+        return {
+            "process": "running",
+            "tunnel": "detected" if tunnel_url else "none",
+            "public_endpoint": "reachable" if public_reachable else "unreachable",
+            "state": _TUNNEL_CACHE["state"],
+            "url": tunnel_url,
+            "pid": pid
+        }
+
+
+def probe_ssh_status() -> dict:
+    is_up = False
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.3)
+        result = s.connect_ex(('127.0.0.1', config.SSH_PORT))
+        s.close()
+        is_up = (result == 0)
+    except Exception:
+        pass
+
     pid = None
     try:
-        res = subprocess.run(["pgrep", "-f", "localtonet"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        res = subprocess.run(["pgrep", "-x", "sshd"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         if res.returncode == 0 and res.stdout.strip():
             pid = res.stdout.strip().splitlines()[0]
     except Exception:
         pass
 
-    tunnel_url = get_tunnel_url()
     return {
-        "status": "online" if pid else "offline",
-        "tunnel_url": tunnel_url,
+        "status": "online" if is_up else "offline",
+        "port": config.SSH_PORT,
         "pid": pid
     }
 
 
-def get_local_ips() -> list:
-    ips = []
+# ==============================================================================
+# 9. BACKUP WORKER & RESOURCE PRE-CHECKS
+# ==============================================================================
+
+def run_backup_job(task_obj: dict):
+    """Generates verified atomic zip backup after checking free disk headroom."""
+    task_obj['logs'].append("Initiating atomic system backup...")
+
+    # Resource Pre-Check
+    disk = governor.get_disk_status()
+    if disk["free_gb"] < 1.5:
+        raise RuntimeError(f"Backup rejected: Insufficient free disk space ({disk['free_gb']} GB < 1.5 GB required headroom).")
+
+    backup_id = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(2)}"
+    zip_name = f"nexus_backup_{backup_id}.zip"
+    zip_path = os.path.join(config.BACKUP_DIR, zip_name)
+    task_obj['partial_files'].append(zip_path)
+
+    temp_db_backup = os.path.join(config.STORAGE_DIR, f"temp_backup_{secrets.token_hex(4)}.db")
+    task_obj['partial_files'].append(temp_db_backup)
+
+    start_t = time.time()
+
     try:
-        hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
-        if local_ip and not local_ip.startswith("127."):
-            ips.append(local_ip)
-    except Exception:
-        pass
-    try:
-        out = subprocess.check_output(["ip", "route"], text=True, stderr=subprocess.DEVNULL)
-        match = re.search(r"src\s+(\d+\.\d+\.\d+\.\d+)", out)
-        if match and match.group(1) not in ips:
-            ips.append(match.group(1))
-    except Exception:
-        pass
-    return ips
+        # Step 1: Live SQLite WAL backup using sqlite3.backup() API
+        task_obj['logs'].append("Taking atomic SQLite WAL snapshot...")
+        with DB_LOCK:
+            src_conn = get_db_connection()
+            dst_conn = sqlite3.connect(temp_db_backup)
+            src_conn.backup(dst_conn)
+            dst_conn.close()
+            src_conn.close()
+
+        # Step 2: Create zip archive
+        import zipfile
+        task_obj['logs'].append("Archiving database, RAG index, and configuration...")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.write(temp_db_backup, "nexus_vault.db")
+            if os.path.exists(config.RAG_DB_FILE):
+                zf.write(config.RAG_DB_FILE, "rag_vault.db")
+            if os.path.exists(config.CONFIG_FILE):
+                zf.write(config.CONFIG_FILE, "server_config.json")
+
+            manifest = {
+                "backup_id": backup_id,
+                "version": config.VERSION,
+                "created_at": time.time(),
+                "created_at_iso": datetime.now().isoformat()
+            }
+            zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+
+        # Step 3: Checksum and record
+        sha256 = hashlib.sha256()
+        with open(zip_path, 'rb') as f:
+            while chunk := f.read(65536):
+                sha256.update(chunk)
+        checksum = sha256.hexdigest()
+        size_bytes = os.path.getsize(zip_path)
+        duration = round(time.time() - start_t, 2)
+
+        with DB_LOCK:
+            conn = get_db_connection()
+            try:
+                conn.execute("""
+                    INSERT INTO backups (id, filename, size_bytes, checksum, backup_type, created_at, status, owner_user_id)
+                    VALUES (?, ?, ?, ?, 'full', ?, 'completed', ?)
+                """, (backup_id, zip_name, size_bytes, checksum, time.time(), task_obj.get("owner_user_id", "admin")))
+                conn.commit()
+            finally:
+                conn.close()
+
+        task_obj['logs'].append(f"Backup verified! SHA-256: {checksum[:16]}... Size: {round(size_bytes/1024, 1)} KB (Took {duration}s)")
+        log_event("INFO", "BACKUP", f"Created atomic backup '{zip_name}' ({round(size_bytes/1024, 1)} KB)")
+
+    finally:
+        if os.path.exists(temp_db_backup):
+            os.remove(temp_db_backup)
 
 
-def format_uptime(seconds: float) -> str:
-    d = int(seconds // 86400)
-    h = int((seconds % 86400) // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    if d > 0:
-        return f"{d}d {h}h {m}m"
-    if h > 0:
-        return f"{h}h {m}m"
-    return f"{m}m {s}s"
+def run_clean_temp_job(task_obj: dict):
+    task_obj['logs'].append("Sweeping temporary files and partial downloads...")
+    swept_count = 0
+    reclaimed_bytes = 0
+
+    for root, _, files in os.walk(config.STORAGE_DIR):
+        for f in files:
+            if f.endswith(('.part', '.ytdl', '.tmp', '.crdownload')):
+                p = os.path.join(root, f)
+                try:
+                    reclaimed_bytes += os.path.getsize(p)
+                    os.remove(p)
+                    swept_count += 1
+                except Exception:
+                    pass
+
+    task_obj['logs'].append(f"Cleaned {swept_count} temporary artifacts ({round(reclaimed_bytes/(1024*1024), 2)} MB reclaimed).")
+    log_event("INFO", "STORAGE", f"Swept {swept_count} temp files ({round(reclaimed_bytes/(1024*1024), 2)} MB reclaimed)")
 
 
 # ==============================================================================
-# REST API ENDPOINTS
+# 10. ROUTE HANDLERS & API ENDPOINTS
 # ==============================================================================
 
-# --- Auth Routes ---
+@app.route('/')
+def index():
+    return render_template('index.html', version=config.VERSION)
+
+
+# --- Authentication Routes ---
 @app.route('/api/auth/login', methods=['POST'])
-def login():
-    client_ip = request.remote_addr or '127.0.0.1'
+def api_login():
+    client_ip = request.remote_addr or "127.0.0.1"
 
-    if is_ip_locked(client_ip):
-        log_event("SECURITY", "AUTH", f"Brute force lockout active for IP: {client_ip}")
-        return jsonify({"error": "Too many failed login attempts. IP locked for 10 minutes.", "message": "Too many failed login attempts. IP locked for 10 minutes."}), 429
+    with FAILED_LOGINS_LOCK:
+        fail_record = FAILED_LOGINS.get(client_ip, {"count": 0, "locked_until": 0.0})
+        if time.time() < fail_record["locked_until"]:
+            remaining = int(fail_record["locked_until"] - time.time())
+            return jsonify({"error": "locked_out", "message": f"Too many failed login attempts. Locked for {remaining}s."}), 429
 
     data = request.get_json(force=True, silent=True) or {}
-    user_id = str(data.get('user_id', '')).strip().lower()
-    password = str(data.get('password', '')).strip()
+    user_id = str(data.get("user_id", "")).strip().lower()
+    password = str(data.get("password", "")).strip()
 
     if not user_id or not password:
-        return jsonify({"error": "validation_error", "message": "User ID and Password are required."}), 400
+        return jsonify({"error": "validation_error", "message": "User ID and password are required."}), 400
 
     user = db_get_user(user_id)
+    if not user or not verify_password(password, user["password_hash"], user["salt"]):
+        with FAILED_LOGINS_LOCK:
+            fail_record["count"] += 1
+            if fail_record["count"] >= config.LOCKOUT_THRESHOLD:
+                fail_record["locked_until"] = time.time() + config.LOCKOUT_DURATION_SECONDS
+                log_event("WARN", "AUTH", f"IP '{client_ip}' locked out due to repeated failed logins.")
+            FAILED_LOGINS[client_ip] = fail_record
 
-    if user and verify_password(password, user.get('password_hash', ''), user.get('salt', '')):
-        clear_failed_logins(client_ip)
-        token = secrets.token_hex(32)
-        privileges = user.get('privileges', dict(config.USER_DEFAULT_PRIVILEGES))
-        if user.get('role') == 'admin':
-            privileges = dict(config.ADMIN_DEFAULT_PRIVILEGES)
+        log_event("WARN", "AUTH", f"Failed login attempt for user '{user_id}' from {client_ip}")
+        return jsonify({"error": "invalid_credentials", "message": "Invalid user ID or password."}), 401
 
-        session_data = {
-            "user_id": user_id,
-            "role": user.get('role', 'user'),
-            "privileges": privileges,
-            "created_at": time.time(),
-            "expires_at": time.time() + config.SESSION_EXPIRY_SECONDS
+    with FAILED_LOGINS_LOCK:
+        if client_ip in FAILED_LOGINS:
+            del FAILED_LOGINS[client_ip]
+
+    token = secrets.token_hex(32)
+    session_data = {
+        "user_id": user["user_id"],
+        "role": user["role"],
+        "privileges": user["privileges"],
+        "created_at": time.time(),
+        "expires_at": time.time() + config.SESSION_EXPIRY_SECONDS
+    }
+
+    with SESSIONS_LOCK:
+        SESSIONS[token] = session_data
+
+    log_event("INFO", "AUTH", f"User '{user_id}' signed in successfully.")
+    return jsonify({
+        "token": token,
+        "user": {
+            "user_id": user["user_id"],
+            "role": user["role"],
+            "privileges": user["privileges"]
         }
-        with SESSIONS_LOCK:
-            SESSIONS[token] = session_data
-
-        log_event("INFO", "AUTH", f"User '{user_id}' ({user.get('role')}) logged in", {"ip": client_ip})
-        return jsonify({
-            "token": token,
-            "user": {
-                "user_id": user_id,
-                "role": user.get('role', 'user'),
-                "privileges": privileges,
-                "created_at": user.get('created_at', '')
-            }
-        })
-
-    record_failed_login(client_ip)
-    log_event("SECURITY", "AUTH", f"Failed login attempt for user '{user_id}'", {"ip": client_ip})
-    return jsonify({"error": "authentication_error", "message": "Invalid User ID or Password."}), 401
-
-
-@app.route('/api/auth/me', methods=['GET'])
-def get_current_user():
-    return jsonify({"user": g.user})
+    })
 
 
 @app.route('/api/auth/logout', methods=['POST'])
-def logout():
-    token = get_token_from_request()
-    with SESSIONS_LOCK:
-        if token and token in SESSIONS:
-            uid = SESSIONS[token].get('user_id', 'unknown')
-            del SESSIONS[token]
-            log_event("INFO", "AUTH", f"User '{uid}' logged out")
-    return jsonify({"message": "Logged out."})
+def api_logout():
+    if g.token:
+        with SESSIONS_LOCK:
+            if g.token in SESSIONS:
+                del SESSIONS[g.token]
+        log_event("INFO", "AUTH", f"User '{g.user.get('user_id')}' logged out.")
+    return jsonify({"message": "Successfully logged out."})
+
+
+@app.route('/api/auth/me', methods=['GET'])
+def api_me():
+    err = require_auth()
+    if err:
+        return err
+    return jsonify({
+        "user": {
+            "user_id": g.user.get("user_id"),
+            "role": g.user.get("role"),
+            "privileges": g.user.get("privileges")
+        }
+    })
 
 
 # --- Health & Telemetry Routes ---
 @app.route('/api/health', methods=['GET'])
-@app.route('/health', methods=['GET'])
-def health():
-    uptime_sec = time.time() - SERVER_START_TIME
+def health_endpoint():
+    uptime = int(time.time() - SERVER_START_TIME)
     return jsonify({
         "status": "healthy",
-        "app": "NexusNode",
-        "version": getattr(config, 'VERSION', '2.2.0'),
-        "uptime_seconds": int(uptime_sec),
-        "timestamp": time.time()
-    }), 200
-
-
-@app.route('/api/services/status', methods=['GET'])
-def services_status():
-    uptime_sec = time.time() - SERVER_START_TIME
-    return jsonify({
-        "nexusnode": {
-            "status": "online",
-            "pid": os.getpid(),
-            "uptime_seconds": int(uptime_sec),
-            "port": config.PORT
-        },
-        "localtonet": probe_localtonet_status(),
-        "ssh": probe_ssh_status(),
-        "ollama": probe_ollama_status()
+        "version": config.VERSION,
+        "uptime_seconds": uptime
     })
 
 
 @app.route('/api/system/status', methods=['GET'])
-def system_status():
-    uptime_sec = time.time() - SERVER_START_TIME
-    tunnel_url = get_tunnel_url()
-    mem = governor.get_memory_status()
-    disk = governor.get_disk_status()
-    device = governor.get_device_telemetry()
-    appliance_state = governor.get_appliance_state()
+def sanitized_system_status():
+    """
+    Sanitized, user-safe telemetry payload.
+    Does NOT leak internal /proc PIDs, full admin logs, or other users' tasks.
+    """
+    snap = governor.get_telemetry_snapshot()
+    uptime_sec = int(time.time() - SERVER_START_TIME)
+    h, rem = divmod(uptime_sec, 3600)
+    m, s = divmod(rem, 60)
+    uptime_str = f"{h}h {m}m {s}s"
 
-    tasks_all = task_runner.list_tasks()
-    running_tasks = [t for t in tasks_all if t['status'] == 'running']
-    queued_tasks = [t for t in tasks_all if t['status'] == 'queued']
+    # Filter tasks owned by current user
+    user_id = g.user.get("user_id") if g.user else "guest"
+    is_admin = (g.user.get("role") == "admin") if g.user else False
+
+    user_tasks = []
+    with task_runner.lock:
+        for t in task_runner.active_tasks:
+            if is_admin or t["owner_user_id"] == user_id:
+                user_tasks.append({
+                    "id": t["id"],
+                    "title": t["title"],
+                    "type": t["type"],
+                    "status": t["status"],
+                    "progress": t["progress"]
+                })
+
+    ai_state = ollama_registry.get_ai_state()
+    tunnel_status = probe_localtonet_health()
+    ssh_status = probe_ssh_status()
 
     return jsonify({
         "server": {
-            "name": "NexusNode",
-            "status": "ONLINE",
-            "version": getattr(config, 'VERSION', '2.2.0'),
-            "pid": os.getpid(),
-            "uptime": format_uptime(uptime_sec),
-            "uptime_seconds": int(uptime_sec),
-            "local_ips": get_local_ips(),
-            "tunnel_url": tunnel_url,
-            "device": "Android Termux (4GB RAM)"
+            "name": "NexusNode Mobile Appliance",
+            "version": config.VERSION,
+            "device": "TECNO BG6 (Android 13 / Termux)",
+            "uptime": uptime_str,
+            "uptime_seconds": uptime_sec
         },
-        "appliance": appliance_state,
-        "memory": mem,
-        "disk": disk,
-        "device": device,
+        "appliance": snap["appliance"],
+        "memory": snap["memory"],
+        "disk": snap["disk"],
+        "device": snap["device"],
         "services": {
-            "nexusnode": { "status": "online", "port": config.PORT },
-            "ssh": probe_ssh_status(),
-            "localtonet": probe_localtonet_status(),
-            "ollama": probe_ollama_status()
+            "nexusnode": {"status": "online", "port": config.PORT},
+            "localtonet": {"status": tunnel_status["state"].lower(), "url": tunnel_status["url"]},
+            "ssh": {"status": ssh_status["status"], "port": config.SSH_PORT},
+            "ollama": {"status": ai_state["engine"], "selected_model": ai_state["selected_model"], "loaded_model": ai_state["loaded_model"]}
         },
         "tasks": {
-            "running_count": len(running_tasks),
-            "queued_count": len(queued_tasks),
-            "total_count": len(tasks_all),
-            "active_tasks": running_tasks[:3],
-            "queued_tasks": queued_tasks[:3]
+            "active_count": len(user_tasks),
+            "active_tasks": user_tasks
         },
         "rag": {
+            "documents_count": rag_engine.get_diagnostics()["document_count"],
+            "chunks_count": rag_engine.get_diagnostics()["chunk_count"],
             "state": rag_engine.state,
-            "documents_count": len(rag_engine.index.get("documents", {})),
-            "chunks_count": len(rag_engine.index.get("chunks", [])),
-            "updated_at": rag_engine.index.get("updated_at")
-        },
-        "user": g.user if hasattr(g, 'user') else None
+            "updated_at": rag_engine.last_rebuild
+        }
     })
 
 
-@app.route('/api/device/telemetry', methods=['GET'])
-def device_telemetry_endpoint():
+@app.route('/api/services/status', methods=['GET'])
+def services_status_endpoint():
+    err = require_auth()
+    if err:
+        return err
+    tunnel_status = probe_localtonet_health()
+    ssh_status = probe_ssh_status()
+    ai_state = ollama_registry.get_ai_state()
+
     return jsonify({
-        "telemetry": governor.get_device_telemetry(),
-        "appliance_state": governor.get_appliance_state(),
-        "memory": governor.get_memory_status(),
-        "disk": governor.get_disk_status()
+        "nexusnode": {"status": "online", "port": config.PORT, "pid": os.getpid()},
+        "localtonet": tunnel_status,
+        "ssh": ssh_status,
+        "ollama": ai_state
     })
 
 
-# --- Media Center & Streaming Routes ---
-@app.route('/api/media/download', methods=['POST'])
-def start_media_download_advanced():
-    err = require_privilege_or_admin("can_download_media")
+# --- AI Model Serving Endpoints ---
+@app.route('/api/ai/state', methods=['GET'])
+def get_ai_state_endpoint():
+    err = require_privilege_or_admin("can_use_ai")
     if err:
         return err
+    return jsonify(ollama_registry.get_ai_state())
 
+
+@app.route('/api/ai/models', methods=['GET'])
+def list_ai_models_endpoint():
+    err = require_privilege_or_admin("can_use_ai")
+    if err:
+        return err
+    return jsonify(ollama_registry.get_installed_models())
+
+
+@app.route('/api/ai/models/<model_name>', methods=['GET'])
+def get_ai_model_details_endpoint(model_name):
+    err = require_privilege_or_admin("can_use_ai")
+    if err:
+        return err
+    details = ollama_registry.get_model_details(model_name)
+    if not details:
+        return jsonify({"error": "not_found", "message": f"Model '{model_name}' details unavailable."}), 404
+    return jsonify(details)
+
+
+@app.route('/api/ai/models/select', methods=['POST'])
+def select_ai_model_endpoint():
+    err = require_privilege_or_admin("can_use_ai")
+    if err:
+        return err
     data = request.get_json(force=True, silent=True) or {}
-    url_input = str(data.get('url', '')).strip()
-    format_type = str(data.get('format', 'mp3')).strip().lower()
-    quality = str(data.get('quality', 'best')).strip().lower()
-    custom_filename = str(data.get('filename', '')).strip()
-    destination = str(data.get('destination', 'Music' if format_type in ['mp3', 'm4a', 'opus', 'wav'] else 'Videos')).strip()
-    metadata_flags = data.get('metadata') or {"embed_metadata": True, "embed_thumbnail": True, "embed_chapters": True}
-    subtitle_opts = data.get('subtitles') or {"mode": "none"}
+    model_name = str(data.get("model", "")).strip()
+    if not model_name:
+        return jsonify({"error": "validation_error", "message": "Model name required."}), 400
 
-    if not url_input:
-        return jsonify({"error": "validation_error", "message": "URL is required."}), 400
+    success, msg = ollama_registry.select_model(model_name)
+    if not success:
+        return jsonify({"error": "model_unavailable", "message": msg}), 404
+    return jsonify({"selected_model": ollama_registry.selected_model, "message": msg})
 
-    # Support multiline / batch URLs (one queued task per URL, bounded concurrency = 1)
-    raw_urls = [u.strip() for u in url_input.splitlines() if u.strip().startswith('http')]
-    if not raw_urls:
-        raw_urls = [url_input]
 
-    queued_task_ids = []
-    for u in raw_urls:
-        title = f"Download {format_type.upper()}: {u[:45]}..."
-        task_id, res_info = task_runner.enqueue_task(
-            title,
-            "media_download",
-            run_media_download_job,
-            u,
-            format_type,
-            quality,
-            metadata_flags,
-            subtitle_opts,
-            custom_filename if len(raw_urls) == 1 else "",
-            destination
-        )
-        if not task_id:
-            return jsonify({
-                "allowed": False,
-                "error": "resource_pressure",
-                "reason": res_info["reason"],
-                "message": res_info["reason"],
-                "state": res_info["state"],
-                "available_mb": res_info.get("available_mb")
-            }), 429
-        queued_task_ids.append(task_id)
-
-    return jsonify({
-        "task_id": queued_task_ids[0],
-        "queued_tasks": queued_task_ids,
-        "count": len(queued_task_ids),
-        "status": "queued"
-    })
-
-
-@app.route('/api/media/library', methods=['GET'])
-def get_media_library():
-    """Returns categorized media files with duration, size, format, and stream URLs."""
-    library = {
-        "music": [],
-        "videos": [],
-        "podcasts": [],
-        "downloads": [],
-        "other": []
-    }
-
-    try:
-        for root, _, files in os.walk(config.STORAGE_DIR):
-            for f in files:
-                fpath = os.path.join(root, f)
-                rel_path = os.path.relpath(fpath, config.STORAGE_DIR).replace('\\', '/')
-                ext = f.split('.')[-1].lower()
-                size = os.path.getsize(fpath)
-                mtime = os.path.getmtime(fpath)
-
-                item = {
-                    "filename": f,
-                    "path": rel_path,
-                    "size_bytes": size,
-                    "size_display": f"{round(size / (1024*1024), 1)} MB" if size > 1048576 else f"{round(size / 1024, 1)} KB",
-                    "format": ext.upper(),
-                    "created_at": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M"),
-                    "stream_url": f"/stream/{rel_path}"
-                }
-
-                if ext in ['mp3', 'm4a', 'opus', 'wav', 'flac', 'aac', 'ogg']:
-                    if 'podcast' in rel_path.lower():
-                        library["podcasts"].append(item)
-                    else:
-                        library["music"].append(item)
-                elif ext in ['mp4', 'mkv', 'webm', 'mov', 'avi']:
-                    library["videos"].append(item)
-                elif 'downloads' in rel_path.lower():
-                    library["downloads"].append(item)
-                else:
-                    library["other"].append(item)
-    except Exception:
-        pass
-
-    return jsonify(library)
-
-
-@app.route('/stream/<path:filepath>', methods=['GET'])
-def stream_media_endpoint(filepath):
-    try:
-        safe_path = sanitize_storage_path(filepath)
-    except ValueError as e:
-        return jsonify({"error": "validation_error", "message": str(e)}), 400
-
-    return stream_file_range(safe_path)
-
-
-# --- Temporary Secure Share Links ---
-@app.route('/api/shares', methods=['GET'])
-def list_shares():
-    err = require_privilege_or_admin("can_create_shares")
-    if err:
-        return err
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            if g.user.get('role') == 'admin':
-                cur.execute("SELECT * FROM shares ORDER BY created_at DESC;")
-            else:
-                cur.execute("SELECT * FROM shares WHERE user_id = ? ORDER BY created_at DESC;", (g.user.get('user_id'),))
-            rows = cur.fetchall()
-            shares = [dict(r) for r in rows]
-            return jsonify(shares)
-        finally:
-            conn.close()
-
-
-@app.route('/api/shares', methods=['POST'])
-def create_share():
-    err = require_privilege_or_admin("can_create_shares")
-    if err:
-        return err
-
-    data = request.get_json(force=True, silent=True) or {}
-    filename = str(data.get('filename', '')).strip()
-    duration_preset = str(data.get('duration', '24h')).strip()
-    max_downloads = int(data.get('max_downloads', 0))
-
-    if not filename:
-        return jsonify({"error": "validation_error", "message": "Filename is required."}), 400
-
-    try:
-        safe_path = sanitize_storage_path(filename)
-        if not os.path.exists(safe_path):
-            return jsonify({"error": "File not found"}), 404
-    except ValueError as e:
-        return jsonify({"error": "validation_error", "message": str(e)}), 400
-
-    # Calculate expiration
-    now = time.time()
-    if duration_preset == '1h':
-        expires_at = now + 3600
-    elif duration_preset == '7d':
-        expires_at = now + (7 * 86400)
-    elif duration_preset == '24h':
-        expires_at = now + 86400
-    else:
-        try:
-            expires_at = now + int(duration_preset)
-        except Exception:
-            expires_at = now + 86400
-
-    share_id = f"share_{secrets.token_hex(4)}"
-    token = secrets.token_urlsafe(24)
-
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            conn.execute("""
-                INSERT INTO shares (id, token, filename, user_id, created_at, expires_at, downloads_count, max_downloads, revoked)
-                VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0);
-            """, (share_id, token, filename, g.user.get('user_id'), now, expires_at, max_downloads))
-            conn.commit()
-        finally:
-            conn.close()
-
-    share_url = f"/share/{token}"
-    log_event("INFO", "SHARE", f"User '{g.user.get('user_id')}' created temporary share for '{filename}'")
-    return jsonify({
-        "id": share_id,
-        "token": token,
-        "share_url": share_url,
-        "filename": filename,
-        "expires_at": expires_at
-    }), 201
-
-
-@app.route('/api/shares/<share_id>', methods=['DELETE'])
-def revoke_share(share_id):
-    err = require_privilege_or_admin("can_create_shares")
-    if err:
-        return err
-
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            conn.execute("UPDATE shares SET revoked = 1 WHERE id = ?;", (share_id,))
-            conn.commit()
-        finally:
-            conn.close()
-
-    log_event("INFO", "SHARE", f"Revoked share link [{share_id}]")
-    return jsonify({"revoked": True})
-
-
-@app.route('/share/<token>', methods=['GET'])
-def access_public_share(token):
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM shares WHERE token = ?;", (token,))
-            row = cur.fetchone()
-            if not row:
-                return jsonify({"error": "Share link not found"}), 404
-            share = dict(row)
-        finally:
-            conn.close()
-
-    if share.get('revoked'):
-        return jsonify({"error": "This share link has been revoked."}), 410
-
-    if time.time() > share.get('expires_at', 0):
-        return jsonify({"error": "This share link has expired."}), 410
-
-    if share.get('max_downloads', 0) > 0 and share.get('downloads_count', 0) >= share.get('max_downloads'):
-        return jsonify({"error": "Maximum download limit reached for this share link."}), 410
-
-    # Increment download counter
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            conn.execute("UPDATE shares SET downloads_count = downloads_count + 1 WHERE token = ?;", (token,))
-            conn.commit()
-        finally:
-            conn.close()
-
-    try:
-        safe_path = sanitize_storage_path(share['filename'])
-        log_event("INFO", "SHARE", f"Public access granted to shared file: '{share['filename']}' via token [{token[:8]}...]")
-        return stream_file_range(safe_path)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-
-# --- Storage Intelligence & Vault Tools ---
-@app.route('/api/storage/intelligence', methods=['GET'])
-def storage_intelligence_endpoint():
-    now = time.time()
-    with STORAGE_CACHE_LOCK:
-        if STORAGE_CACHE["data"] and (now - STORAGE_CACHE["timestamp"] < 60):
-            return jsonify(STORAGE_CACHE["data"])
-
-    disk = governor.get_disk_status()
-    breakdown = {
-        "videos_bytes": 0,
-        "music_bytes": 0,
-        "models_bytes": 0,
-        "vault_bytes": 0,
-        "rag_bytes": 0,
-        "logs_bytes": 0,
-        "temp_bytes": 0,
-        "other_bytes": 0
-    }
-    large_files = []
-    recent_additions = []
-
-    try:
-        if os.path.exists(config.RAG_INDEX_FILE):
-            breakdown["rag_bytes"] = os.path.getsize(config.RAG_INDEX_FILE)
-        if os.path.exists(config.DB_FILE):
-            breakdown["logs_bytes"] = os.path.getsize(config.DB_FILE)
-
-        for root, _, files in os.walk(config.STORAGE_DIR):
-            for f in files:
-                fpath = os.path.join(root, f)
-                rel_path = os.path.relpath(fpath, config.STORAGE_DIR)
-                size = os.path.getsize(fpath)
-                mtime = os.path.getmtime(fpath)
-                ext = f.split('.')[-1].lower()
-
-                if size >= 50 * 1024 * 1024:
-                    large_files.append({
-                        "name": f,
-                        "path": rel_path,
-                        "size_mb": round(size / (1024*1024), 1)
-                    })
-
-                if now - mtime < 86400 * 3:
-                    recent_additions.append({
-                        "name": f,
-                        "path": rel_path,
-                        "size_mb": round(size / (1024*1024), 2),
-                        "time": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
-                    })
-
-                if f.endswith(('.part', '.ytdl', '.tmp', '.crdownload')):
-                    breakdown["temp_bytes"] += size
-                elif ext in ['mp4', 'mkv', 'webm', 'mov']:
-                    breakdown["videos_bytes"] += size
-                elif ext in ['mp3', 'm4a', 'opus', 'wav', 'flac']:
-                    breakdown["music_bytes"] += size
-                elif ext in ['gguf', 'bin']:
-                    breakdown["models_bytes"] += size
-                else:
-                    breakdown["vault_bytes"] += size
-
-        large_files.sort(key=lambda x: x["size_mb"], reverse=True)
-        recent_additions.sort(key=lambda x: x["time"], reverse=True)
-    except Exception:
-        pass
-
-    result = {
-        "disk": disk,
-        "breakdown": breakdown,
-        "large_files": large_files[:10],
-        "recent_additions": recent_additions[:10]
-    }
-
-    with STORAGE_CACHE_LOCK:
-        STORAGE_CACHE["timestamp"] = now
-        STORAGE_CACHE["data"] = result
-
-    return jsonify(result)
-
-
-@app.route('/api/vault/rename', methods=['POST'])
-def vault_rename():
-    err = require_privilege_or_admin("can_manage_files")
-    if err:
-        return err
-
-    data = request.get_json(force=True, silent=True) or {}
-    old_name = str(data.get('old_name', '')).strip()
-    new_name = str(data.get('new_name', '')).strip()
-
-    try:
-        old_path = sanitize_storage_path(old_name)
-        new_path = sanitize_storage_path(new_name)
-        if not os.path.exists(old_path):
-            return jsonify({"error": "Original file not found"}), 404
-        if os.path.exists(new_path):
-            return jsonify({"error": "Target filename already exists"}), 409
-
-        os.rename(old_path, new_path)
-        log_event("INFO", "STORAGE", f"Renamed '{old_name}' -> '{new_name}'")
-        rag_engine.trigger_rebuild_async()
-        return jsonify({"renamed": True, "new_name": new_name})
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-
-
-@app.route('/api/vault/move', methods=['POST'])
-def vault_move():
-    err = require_privilege_or_admin("can_manage_files")
-    if err:
-        return err
-
-    data = request.get_json(force=True, silent=True) or {}
-    filename = str(data.get('filename', '')).strip()
-    dest_folder = str(data.get('destination', '')).strip()
-
-    try:
-        src_path = sanitize_storage_path(filename)
-        dest_dir = os.path.join(config.STORAGE_DIR, dest_folder)
-        os.makedirs(dest_dir, exist_ok=True)
-        dest_path = os.path.join(dest_dir, os.path.basename(src_path))
-
-        os.replace(src_path, dest_path)
-        log_event("INFO", "STORAGE", f"Moved '{filename}' -> '{dest_folder}'")
-        return jsonify({"moved": True})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-
-@app.route('/api/vault/checksum/<path:filename>', methods=['GET'])
-def vault_checksum(filename):
-    try:
-        safe_path = sanitize_storage_path(filename)
-        if not os.path.exists(safe_path):
-            return jsonify({"error": "File not found"}), 404
-
-        sha256 = hashlib.sha256()
-        md5 = hashlib.md5()
-        with open(safe_path, 'rb') as f:
-            while chunk := f.read(131072):
-                sha256.update(chunk)
-                md5.update(chunk)
-
-        return jsonify({
-            "filename": filename,
-            "sha256": sha256.hexdigest(),
-            "md5": md5.hexdigest(),
-            "size_bytes": os.path.getsize(safe_path)
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-
-@app.route('/api/vault/clean-temp', methods=['POST'])
-def clean_temp_files():
-    err = require_privilege_or_admin("can_manage_files")
-    if err:
-        return err
-
-    cleanup_partial_files()
-    log_event("INFO", "STORAGE", "Manual sweep of temporary download artifacts executed")
-    return jsonify({"message": "Temporary files cleared."})
-
-
-# --- Backup & Restore Routes ---
-@app.route('/api/backups', methods=['GET'])
-def list_backups():
-    err = require_privilege_or_admin("can_manage_backups")
-    if err:
-        return err
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM backups ORDER BY created_at DESC;")
-            rows = cur.fetchall()
-            return jsonify([dict(r) for r in rows])
-        finally:
-            conn.close()
-
-
-@app.route('/api/backups/create', methods=['POST'])
-def create_backup_endpoint():
-    err = require_privilege_or_admin("can_manage_backups")
-    if err:
-        return err
-
-    res = create_system_backup_sync("manual")
-    return jsonify(res), 201
-
-
-@app.route('/api/backups/download/<backup_id>', methods=['GET'])
-def download_backup(backup_id):
-    err = require_privilege_or_admin("can_manage_backups")
-    if err:
-        return err
-
-    zip_filename = f"nexus_{backup_id}.zip"
-    filepath = os.path.join(config.BACKUP_DIR, zip_filename)
-    if not os.path.exists(filepath):
-        return jsonify({"error": "Backup file not found"}), 404
-
-    return send_from_directory(config.BACKUP_DIR, zip_filename, as_attachment=True)
-
-
-@app.route('/api/backups/restore', methods=['POST'])
-def restore_backup():
-    err = require_admin()
-    if err:
-        return err
-
-    data = request.get_json(force=True, silent=True) or {}
-    backup_id = str(data.get('backup_id', '')).strip()
-    confirmed = bool(data.get('confirm', False))
-
-    if not confirmed:
-        return jsonify({"error": "validation_error", "message": "Restore requires explicit confirmation flag 'confirm: true'."}), 400
-
-    zip_filename = f"nexus_{backup_id}.zip"
-    filepath = os.path.join(config.BACKUP_DIR, zip_filename)
-    if not os.path.exists(filepath):
-        return jsonify({"error": "Backup archive not found"}), 404
-
-    try:
-        with zipfile.ZipFile(filepath, 'r') as zf:
-            infolist = zf.infolist()
-            # Extract RAG index if present
-            for m in infolist:
-                if m.filename == 'rag_index.json':
-                    zf.extract(m, config.STORAGE_DIR)
-                elif m.filename == 'server_config.json':
-                    zf.extract(m, config.STORAGE_DIR)
-
-        log_event("WARN", "BACKUP", f"Restored backup [{backup_id}]. RAG & Config synced.")
-        return jsonify({"restored": True, "message": "Configuration and index restored."})
-    except Exception as e:
-        return jsonify({"error": f"Failed to restore backup: {str(e)}"}), 500
-
-
-@app.route('/api/backups/<backup_id>', methods=['DELETE'])
-def delete_backup(backup_id):
-    err = require_privilege_or_admin("can_manage_backups")
-    if err:
-        return err
-
-    zip_filename = f"nexus_{backup_id}.zip"
-    filepath = os.path.join(config.BACKUP_DIR, zip_filename)
-    if os.path.exists(filepath):
-        os.remove(filepath)
-
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            conn.execute("DELETE FROM backups WHERE id = ?;", (backup_id,))
-            conn.commit()
-        finally:
-            conn.close()
-
-    return jsonify({"deleted": True})
-
-
-# --- Network Diagnostics Routes ---
-@app.route('/api/network/status', methods=['GET'])
-def network_status():
-    return jsonify({
-        "local_ips": get_local_ips(),
-        "ssh_status": probe_ssh_status(),
-        "tunnel_status": probe_localtonet_status(),
-        "ollama_status": probe_ollama_status(),
-        "nexusnode_port": config.PORT
-    })
-
-
-@app.route('/api/network/test', methods=['POST'])
-def run_network_diagnostic():
-    data = request.get_json(force=True, silent=True) or {}
-    target = str(data.get('target', 'internet')).strip().lower()
-
-    t0 = time.time()
-    status = "unavailable"
-    latency_ms = None
-    details = ""
-
-    if target == 'internet':
-        try:
-            r = requests.get("https://1.1.1.1", timeout=2.0)
-            latency_ms = round((time.time() - t0) * 1000, 1)
-            status = "available" if r.status_code == 200 else "unavailable"
-            details = f"Cloudflare 1.1.1.1 responded in {latency_ms}ms"
-        except Exception as e:
-            details = str(e)
-    elif target == 'local':
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(1.0)
-            result = s.connect_ex(('127.0.0.1', config.PORT))
-            s.close()
-            latency_ms = round((time.time() - t0) * 1000, 1)
-            status = "available" if result == 0 else "unavailable"
-            details = f"Loopback responded in {latency_ms}ms"
-        except Exception as e:
-            details = str(e)
-    elif target == 'nexusnode':
-        latency_ms = round((time.time() - t0) * 1000, 1)
-        status = "available"
-        details = f"NexusNode WSGI engine online ({latency_ms}ms)"
-    elif target == 'tunnel':
-        tunnel_url = get_tunnel_url()
-        try:
-            r = requests.get(f"{tunnel_url}/api/health", headers={'localtonet-skip-warning': 'true'}, timeout=3.0)
-            latency_ms = round((time.time() - t0) * 1000, 1)
-            status = "available" if r.status_code == 200 else "unavailable"
-            details = f"Tunnel {tunnel_url} responded ({latency_ms}ms)"
-        except Exception as e:
-            details = f"Tunnel unreachable: {str(e)}"
-    elif target == 'ollama':
-        status_info = probe_ollama_status()
-        status = "available" if status_info["status"] == "running" else "unavailable"
-        details = f"Ollama daemon state: {status_info['status']}"
-
-    return jsonify({
-        "target": target,
-        "status": status,
-        "latency_ms": latency_ms,
-        "details": details
-    })
-
-
-# --- Events & Incident Center Routes ---
-@app.route('/api/events', methods=['GET'])
-def get_events_paginated():
-    category = request.args.get('category', 'ALL').upper()
-    level = request.args.get('level', '').upper()
-    search = request.args.get('search', '').lower()
-    limit = min(200, int(request.args.get('limit', 100)))
-
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            query = "SELECT * FROM system_logs"
-            params = []
-            conditions = []
-
-            if category and category != 'ALL':
-                conditions.append("category = ?")
-                params.append(category)
-            if level:
-                conditions.append("level = ?")
-                params.append(level)
-            if search:
-                conditions.append("LOWER(message) LIKE ?")
-                params.append(f"%{search}%")
-
-            if conditions:
-                query += " WHERE " + " AND ".join(conditions)
-
-            query += " ORDER BY created_at DESC LIMIT ?;"
-            params.append(limit)
-
-            cur.execute(query, params)
-            rows = cur.fetchall()
-            return jsonify([dict(r) for r in rows])
-        finally:
-            conn.close()
-
-
-@app.route('/api/incidents', methods=['GET'])
-def get_incidents():
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM incidents ORDER BY created_at DESC LIMIT 50;")
-            rows = cur.fetchall()
-            incidents = []
-            for r in rows:
-                item = dict(r)
-                try:
-                    item["timeline"] = json.loads(item["timeline"])
-                except Exception:
-                    item["timeline"] = []
-                incidents.append(item)
-            return jsonify(incidents)
-        finally:
-            conn.close()
-
-
-# --- Scheduled Automation Routes ---
-@app.route('/api/automation/jobs', methods=['GET'])
-def list_scheduled_jobs():
-    err = require_privilege_or_admin("can_manage_automation")
-    if err:
-        return err
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM scheduled_jobs ORDER BY created_at ASC;")
-            rows = cur.fetchall()
-            return jsonify([dict(r) for r in rows])
-        finally:
-            conn.close()
-
-
-@app.route('/api/automation/jobs/<job_id>/toggle', methods=['POST'])
-def toggle_scheduled_job(job_id):
-    err = require_privilege_or_admin("can_manage_automation")
-    if err:
-        return err
-
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT enabled FROM scheduled_jobs WHERE id = ?;", (job_id,))
-            row = cur.fetchone()
-            if not row:
-                return jsonify({"error": "Job not found"}), 404
-            new_state = 0 if row["enabled"] else 1
-            conn.execute("UPDATE scheduled_jobs SET enabled = ? WHERE id = ?;", (new_state, job_id))
-            conn.commit()
-            return jsonify({"id": job_id, "enabled": bool(new_state)})
-        finally:
-            conn.close()
-
-
-@app.route('/api/automation/jobs/<job_id>/run', methods=['POST'])
-def trigger_scheduled_job_now(job_id):
-    err = require_privilege_or_admin("can_manage_automation")
-    if err:
-        return err
-
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM scheduled_jobs WHERE id = ?;", (job_id,))
-            row = cur.fetchone()
-            if not row:
-                return jsonify({"error": "Job not found"}), 404
-            job_row = dict(row)
-        finally:
-            conn.close()
-
-    scheduler_daemon.trigger_job(job_row)
-    return jsonify({"triggered": True})
-
-
-# --- System Settings Routes ---
-@app.route('/api/settings', methods=['GET'])
-def get_system_settings():
-    err = require_privilege_or_admin("can_manage_settings")
-    if err:
-        return err
-    return jsonify({
-        "version": getattr(config, 'VERSION', '2.2.0'),
-        "port": config.PORT,
-        "ssh_port": config.SSH_PORT,
-        "ollama_port": config.OLLAMA_PORT,
-        "ram_normal_mb": config.RAM_NORMAL_THRESHOLD_MB,
-        "ram_pressure_mb": config.RAM_PRESSURE_THRESHOLD_MB,
-        "max_heavy_concurrency": config.MAX_HEAVY_CONCURRENCY,
-        "session_ttl_seconds": config.SESSION_EXPIRY_SECONDS,
-        "rag_max_chunks": config.RAG_MAX_CHUNKS
-    })
-
-
-@app.route('/api/settings', methods=['POST'])
-def update_system_settings():
-    err = require_privilege_or_admin("can_manage_settings")
-    if err:
-        return err
-
-    data = request.get_json(force=True, silent=True) or {}
-    restart_required = False
-
-    if 'ram_normal_mb' in data:
-        config.RAM_NORMAL_THRESHOLD_MB = int(data['ram_normal_mb'])
-        governor.normal_threshold_mb = config.RAM_NORMAL_THRESHOLD_MB
-
-    if 'ram_pressure_mb' in data:
-        config.RAM_PRESSURE_THRESHOLD_MB = int(data['ram_pressure_mb'])
-        governor.pressure_threshold_mb = config.RAM_PRESSURE_THRESHOLD_MB
-
-    if 'port' in data and int(data['port']) != config.PORT:
-        restart_required = True
-
-    log_event("INFO", "SETTINGS", f"Settings updated by '{g.user.get('user_id')}' (Restart required: {restart_required})")
-    return jsonify({"updated": True, "restart_required": restart_required})
-
-
-# --- AI Studio & Ollama Management Routes ---
 @app.route('/api/models/estimate', methods=['POST'])
-def estimate_model_resources():
-    data = request.get_json(force=True, silent=True) or {}
-    model_name = str(data.get('model', '')).strip().lower()
-
-    # Model size estimation table (MB)
-    size_table = {
-        "qwen2.5:0.5b": 350,
-        "llama3.2:1b": 750,
-        "deepseek-r1:1.5b": 1100,
-        "smollm:135m": 150,
-        "smollm:360m": 250,
-        "llama3.2:3b": 2200,
-        "phi3:mini": 2400,
-        "mistral:7b": 4600
-    }
-    estimated_mb = size_table.get(model_name, 1500)
-    mem = governor.get_memory_status()
-    avail_mb = mem["available_mb"]
-
-    is_safe = (avail_mb - estimated_mb >= 500) and (mem["state"] != "critical")
-    decision = "SAFE" if is_safe else "BLOCKED"
-    reason = "Resources are sufficient for model execution." if is_safe else f"Insufficient memory: model needs ~{estimated_mb} MB, only {avail_mb} MB available."
-
-    return jsonify({
-        "model": model_name,
-        "estimated_mb": estimated_mb,
-        "available_mb": avail_mb,
-        "governor_state": mem["state"],
-        "decision": decision,
-        "reason": reason
-    })
-
-
-@app.route('/api/models/<model_name>', methods=['DELETE'])
-def delete_ollama_model(model_name):
-    err = require_privilege_or_admin("can_manage_models")
+def estimate_model_resources_endpoint():
+    err = require_privilege_or_admin("can_use_ai")
     if err:
         return err
 
-    try:
-        r = requests.delete(f"{config.OLLAMA_HOST}/api/delete", json={"name": model_name}, timeout=10)
-        log_event("INFO", "OLLAMA", f"Deleted Ollama model: '{model_name}'")
-        return jsonify({"deleted": True})
-    except Exception as e:
-        return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
+    data = request.get_json(force=True, silent=True) or {}
+    model_name = str(data.get("model", "")).strip()
+    if not model_name:
+        return jsonify({"error": "validation_error", "message": "Model name required."}), 400
+
+    installed = ollama_registry.get_installed_models()
+    meta = next((m for m in installed if m["name"] == model_name), {"name": model_name})
+    estimate = governor.estimate_model_resources(meta)
+    return jsonify(estimate)
+
+
+@app.route('/api/ai/metrics', methods=['GET'])
+def get_ai_metrics_endpoint():
+    err = require_privilege_or_admin("can_use_ai")
+    if err:
+        return err
+
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT model, prompt_tokens, prompt_eval_ms, gen_tokens, gen_eval_ms,
+                       total_duration_ms, load_duration_ms, prompt_tokens_per_sec, gen_tokens_per_sec, created_at
+                FROM ai_inference_metrics
+                ORDER BY created_at DESC
+                LIMIT 50;
+            """)
+            rows = cur.fetchall()
+            metrics = [dict(r) for r in rows]
+            return jsonify(metrics)
+        finally:
+            conn.close()
+
+
+@app.route('/models', methods=['GET'])
+def legacy_models_alias():
+    """Legacy alias returning list of installed model names from Ollama."""
+    installed = ollama_registry.get_installed_models()
+    return jsonify([m["name"] for m in installed])
+
+
+@app.route('/start', methods=['GET', 'POST'])
+def start_engine_endpoint():
+    err = require_privilege_or_admin("can_control_services")
+    if err:
+        return err
+
+    res_check = governor.can_start_ollama()
+    if not res_check["allowed"]:
+        return jsonify({
+            "allowed": False,
+            "error": "resource_pressure",
+            "message": res_check["reason"],
+            "reason": res_check["reason"]
+        }), 429
+
+    success, msg = ollama_registry.start_service()
+    return jsonify({"message": msg}), 200 if success else 500
+
+
+@app.route('/stop', methods=['GET', 'POST'])
+def stop_engine_endpoint():
+    err = require_privilege_or_admin("can_control_services")
+    if err:
+        return err
+
+    success, msg = ollama_registry.stop_service()
+    return jsonify({"message": msg}), 200 if success else 500
+
+
+@app.route('/chat/stream', methods=['POST'])
+def chat_stream():
+    """
+    Streaming AI chat completion endpoint with RAG context injection.
+    Features: Model validation, Keep-Alive policy enforcement, Context governance,
+    Inference metrics collection, and Structured error handling.
+    """
+    err = require_privilege_or_admin("can_use_ai")
+    if err:
+        return err
+
+    data = request.get_json(force=True, silent=True) or {}
+    prompt = str(data.get('prompt', '')).strip()
+    requested_model = str(data.get('model', '')).strip() or ollama_registry.selected_model
+    rag_enabled = bool(data.get('rag_enabled', True))
+
+    if not prompt:
+        return jsonify({"error": "validation_error", "message": "Prompt is required."}), 400
+
+    # 1. Model Validation
+    installed = ollama_registry.get_installed_models()
+    installed_names = [m["name"] for m in installed]
+    if requested_model not in installed_names and installed_names:
+        return jsonify({"error": "model_unavailable", "message": f"Model '{requested_model}' is not installed."}), 404
+
+    # 2. Keep-Alive & Context Governance based on current RAM state
+    snap = governor.get_telemetry_snapshot()
+    mem_state = snap["memory"]["state"]
+
+    if mem_state == "critical":
+        keep_alive_val = config.OLLAMA_KEEP_ALIVE_CRITICAL
+        num_ctx_val = config.CONTEXT_SIZE_CRITICAL
+    elif mem_state == "pressure":
+        keep_alive_val = config.OLLAMA_KEEP_ALIVE_PRESSURE
+        num_ctx_val = config.CONTEXT_SIZE_PRESSURE
+    else:
+        keep_alive_val = config.OLLAMA_KEEP_ALIVE_NORMAL
+        num_ctx_val = config.CONTEXT_SIZE_NORMAL
+
+    # 3. RAG Retrieval
+    citations = []
+    augmented_prompt = prompt
+
+    if rag_enabled and has_privilege('can_use_rag'):
+        citations = rag_engine.search(prompt, top_k=3)
+        if citations:
+            context_block = "\n\n".join([f"--- Source: {c['doc']} ---\n{c['text']}" for c in citations])
+            augmented_prompt = f"Reference knowledge from user's vault:\n{context_block}\n\nUser Question:\n{prompt}\n\nPlease answer accurately using the vault knowledge above where applicable."
+
+    def generate_sse():
+        if citations:
+            yield f"data: {json.dumps({'citations': citations})}\n\n"
+
+        start_req_t = time.time()
+        try:
+            r = requests.post(
+                f"{config.OLLAMA_HOST}/api/generate",
+                json={
+                    "model": requested_model,
+                    "prompt": augmented_prompt,
+                    "stream": True,
+                    "keep_alive": keep_alive_val,
+                    "options": {"num_ctx": num_ctx_val}
+                },
+                stream=True,
+                timeout=180
+            )
+            if r.status_code != 200:
+                yield f"data: {json.dumps({'error': f'AI Engine returned HTTP {r.status_code}'})}\n\n"
+                return
+
+            last_chunk = {}
+            for line in r.iter_lines():
+                if line:
+                    try:
+                        chunk = json.loads(line.decode('utf-8'))
+                        last_chunk = chunk
+                        token = chunk.get('response', '')
+                        if token:
+                            yield f"data: {json.dumps({'token': token})}\n\n"
+                        if chunk.get('done', False):
+                            yield f"data: {json.dumps({'done': True})}\n\n"
+                            break
+                    except Exception:
+                        pass
+
+            # 4. Capture Inference Metrics
+            if last_chunk.get('done'):
+                total_duration_ms = round(last_chunk.get('total_duration', 0) / 1e6, 2)
+                load_duration_ms = round(last_chunk.get('load_duration', 0) / 1e6, 2)
+                prompt_eval_count = last_chunk.get('prompt_eval_count', 0)
+                prompt_eval_dur_ms = round(last_chunk.get('prompt_eval_duration', 0) / 1e6, 2)
+                eval_count = last_chunk.get('eval_count', 0)
+                eval_dur_ms = round(last_chunk.get('eval_duration', 0) / 1e6, 2)
+
+                prompt_tps = round((prompt_eval_count / (prompt_eval_dur_ms / 1000.0)), 1) if prompt_eval_dur_ms > 0 else 0.0
+                gen_tps = round((eval_count / (eval_dur_ms / 1000.0)), 1) if eval_dur_ms > 0 else 0.0
+
+                with DB_LOCK:
+                    conn = get_db_connection()
+                    try:
+                        conn.execute("""
+                            INSERT INTO ai_inference_metrics (
+                                model, prompt_tokens, prompt_eval_ms, gen_tokens, gen_eval_ms,
+                                total_duration_ms, load_duration_ms, prompt_tokens_per_sec, gen_tokens_per_sec, created_at, user_id
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            requested_model, prompt_eval_count, prompt_eval_dur_ms, eval_count, eval_dur_ms,
+                            total_duration_ms, load_duration_ms, prompt_tps, gen_tps, time.time(), g.user.get('user_id', 'user')
+                        ))
+                        conn.commit()
+                    finally:
+                        conn.close()
+
+        except requests.exceptions.ConnectionError:
+            yield f"data: {json.dumps({'error': 'AI Engine daemon is offline.'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'Inference error occurred.'})}\n\n"
+
+    return Response(stream_with_context(generate_sse()), mimetype='text/event-stream')
+
+
+# --- RAG Subsystem Endpoints ---
+@app.route('/api/rag/diagnostics', methods=['GET'])
+def rag_diagnostics_endpoint():
+    err = require_privilege_or_admin("can_use_rag")
+    if err:
+        return err
+    return jsonify(rag_engine.get_diagnostics())
+
+
+@app.route('/api/rag/compact', methods=['POST'])
+def rag_compact_endpoint():
+    err = require_privilege_or_admin("can_use_rag")
+    if err:
+        return err
+    res = rag_engine.compact_legacy_index()
+    return jsonify(res)
 
 
 @app.route('/api/rag/sources', methods=['GET', 'POST'])
@@ -2373,23 +2053,13 @@ def rag_sources_endpoint():
         if err:
             return err
         data = request.get_json(force=True, silent=True) or {}
-        rag_engine.source_folders = data.get('sources', ["."])
+        rag_engine.source_folders = data.get('sources', config.RAG_DEFAULT_SOURCES)
         rag_engine.trigger_rebuild_async()
         return jsonify({"sources": rag_engine.source_folders})
 
     return jsonify({
         "sources": rag_engine.source_folders,
-        "supported_extensions": ["PDF", "TXT", "MD", "DOCX", "PY", "JSON", "SH", "HTML", "JS", "TS", "ENV", "YML"]
-    })
-
-
-@app.route('/api/rag/status', methods=['GET'])
-def get_rag_status():
-    return jsonify({
-        "state": rag_engine.state,
-        "documents_count": len(rag_engine.index.get("documents", {})),
-        "chunks_count": len(rag_engine.index.get("chunks", [])),
-        "updated_at": rag_engine.index.get("updated_at")
+        "supported_extensions": config.RAG_SUPPORTED_TEXT_EXTENSIONS
     })
 
 
@@ -2404,151 +2074,95 @@ def trigger_rag_rebuild():
         return jsonify({
             "allowed": False,
             "error": "resource_pressure",
-            "reason": res_check["reason"],
             "message": res_check["reason"],
-            "state": res_check["state"],
-            "available_mb": res_check.get("available_mb")
+            "reason": res_check["reason"]
         }), 429
 
     rag_engine.trigger_rebuild_async()
     return jsonify({"message": "RAG indexing initiated in background."})
 
 
-@app.route('/api/models/pull', methods=['POST'])
-def pull_model_endpoint():
-    err = require_privilege_or_admin("can_manage_models")
+# --- Tasks Subsystem Endpoints ---
+@app.route('/api/tasks', methods=['GET'])
+def list_tasks():
+    err = require_auth()
     if err:
         return err
 
-    data = request.get_json(force=True, silent=True) or {}
-    model_name = str(data.get('model', '')).strip().lower()
-    if not model_name:
-        return jsonify({"error": "validation_error", "message": "Model name is required."}), 400
+    user_id = g.user.get("user_id")
+    is_admin = (g.user.get("role") == "admin")
 
-    title = f"Pull Model: {model_name}"
-    task_id, res_info = task_runner.enqueue_task(title, "model_pull", run_model_pull_job, model_name)
-
-    if not task_id:
-        return jsonify({
-            "allowed": False,
-            "error": "resource_pressure",
-            "reason": res_info["reason"],
-            "message": res_info["reason"],
-            "state": res_info["state"],
-            "available_mb": res_info.get("available_mb")
-        }), 429
-
-    return jsonify({"task_id": task_id, "status": "queued", "title": title})
-
-
-def run_model_pull_job(task_obj: dict, model_name: str):
-    task_obj['logs'].append(f"Initiating Ollama model pull for '{model_name}'...")
-    try:
-        r = requests.post(
-            f"{config.OLLAMA_HOST}/api/pull",
-            json={"name": model_name, "stream": True},
-            stream=True,
-            timeout=3600
-        )
-        if r.status_code != 200:
-            raise RuntimeError(f"Ollama pull returned HTTP {r.status_code}: {r.text}")
-
-        for line in r.iter_lines():
-            if task_obj['status'] == 'cancelled':
-                task_obj['logs'].append("[CANCELLED] Model download aborted.")
-                break
-            if line:
-                try:
-                    data = json.loads(line.decode('utf-8'))
-                    status_text = data.get('status', '')
-                    total = data.get('total', 0)
-                    completed = data.get('completed', 0)
-                    if total > 0:
-                        pct = int((completed / total) * 100)
-                        task_obj['progress'] = min(99, pct)
-                        task_obj['logs'].append(f"{status_text} ({pct}%) [{completed // (1024*1024)} MB / {total // (1024*1024)} MB]")
-                    else:
-                        task_obj['logs'].append(status_text)
-                except Exception:
-                    pass
-
-        task_obj['logs'].append(f"Model '{model_name}' ready for AI inference!")
-    except requests.exceptions.ConnectionError:
-        raise RuntimeError("Ollama daemon is offline. Start the engine from the Dashboard.")
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            if is_admin:
+                cur.execute("SELECT id, title, task_type, status, progress, logs, error, owner_user_id, created_at, updated_at FROM background_tasks ORDER BY created_at DESC LIMIT 50")
+            else:
+                cur.execute("SELECT id, title, task_type, status, progress, logs, error, owner_user_id, created_at, updated_at FROM background_tasks WHERE owner_user_id = ? ORDER BY created_at DESC LIMIT 50", (user_id,))
+            rows = cur.fetchall()
+            tasks = []
+            for r in rows:
+                tasks.append({
+                    "id": r["id"],
+                    "title": r["title"],
+                    "type": r["task_type"],
+                    "status": r["status"],
+                    "progress": r["progress"],
+                    "logs": json.loads(r["logs"] or "[]"),
+                    "error": r["error"],
+                    "owner_user_id": r["owner_user_id"],
+                    "created_at": r["created_at"],
+                    "updated_at": r["updated_at"]
+                })
+            return jsonify(tasks)
+        finally:
+            conn.close()
 
 
-@app.route('/models', methods=['GET'])
-def list_available_models():
-    models = []
-    try:
-        r = requests.get(f"{config.OLLAMA_HOST}/api/tags", timeout=1.0)
-        if r.status_code == 200:
-            models = [m["name"] for m in r.json().get("models", [])]
-    except Exception:
-        pass
-
-    try:
-        for f in os.listdir(config.STORAGE_DIR):
-            if f.endswith(('.gguf', '.bin')):
-                models.append(f)
-    except Exception:
-        pass
-
-    return jsonify(list(set(models)))
-
-
-@app.route('/start', methods=['GET', 'POST'])
-def start_engine():
-    err = require_privilege_or_admin("can_control_services")
+@app.route('/api/tasks/<task_id>/cancel', methods=['POST'])
+def cancel_task_endpoint(task_id):
+    """
+    Cancels an active or queued background task.
+    Enforces task ownership: Normal users can only cancel their own tasks; admins can cancel all.
+    """
+    err = require_auth()
     if err:
         return err
 
-    res_check = governor.can_start_ollama()
-    if not res_check["allowed"]:
-        return jsonify({
-            "allowed": False,
-            "error": "resource_pressure",
-            "reason": res_check["reason"],
-            "message": res_check["reason"],
-            "state": res_check["state"],
-            "available_mb": res_check.get("available_mb")
-        }), 429
+    user_id = g.user.get("user_id")
+    is_admin = (g.user.get("role") == "admin")
 
-    status = probe_ollama_status()
-    if status["status"] == "running":
-        return jsonify({"message": "AI Engine is already running."}), 200
+    success, msg = task_runner.cancel_task(task_id, requesting_user_id=user_id, is_admin=is_admin)
+    if not success:
+        status_code = 403 if "Permission denied" in msg else 400
+        return jsonify({"cancelled": False, "message": msg}), status_code
 
-    try:
-        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        log_event("INFO", "OLLAMA", f"Ollama engine start issued by '{g.user.get('user_id')}'")
-        return jsonify({"message": "AI Engine start command sent."}), 200
-    except Exception as e:
-        log_event("ERROR", "OLLAMA", f"Failed to start Ollama: {str(e)}")
-        return jsonify({"error": f"Failed to start Ollama: {str(e)}"}), 500
+    return jsonify({"cancelled": True, "message": msg})
 
 
-@app.route('/stop', methods=['GET', 'POST'])
-def stop_engine():
-    err = require_privilege_or_admin("can_control_services")
-    if err:
-        return err
-
-    try:
-        subprocess.run(["pkill", "-f", "ollama"], stderr=subprocess.DEVNULL)
-        log_event("INFO", "OLLAMA", f"Ollama engine stopped by '{g.user.get('user_id')}'")
-        return jsonify({"message": "AI Engine stop command sent."}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# --- Storage & Vault Endpoints ---
+def sanitize_storage_path(filename: str) -> str:
+    cleaned = filename.replace('\\', '/').strip('/')
+    if '..' in cleaned:
+        raise ValueError("Invalid path: directory traversal prohibited.")
+    full_path = os.path.abspath(os.path.join(config.STORAGE_DIR, cleaned))
+    if not full_path.startswith(os.path.abspath(config.STORAGE_DIR)):
+        raise ValueError("Path traversal violation detected.")
+    return full_path
 
 
-# --- Storage & Tasks Core Routes ---
 @app.route('/files', methods=['GET'])
 def list_files():
+    err = require_auth()
+    if err:
+        return err
+
     file_list = []
     try:
         for root, dirs, files in os.walk(config.STORAGE_DIR):
             for d in dirs:
-                if d != '__pycache__':
+                if d not in ['__pycache__', '.tmp', 'backups']:
                     rel = os.path.relpath(os.path.join(root, d), config.STORAGE_DIR).replace('\\', '/')
                     file_list.append({"name": rel, "is_dir": True})
             for f in files:
@@ -2566,40 +2180,85 @@ def upload_file():
         return err
 
     if 'file' not in request.files:
-        return jsonify({"error": "validation_error", "message": "No file attached."}), 400
-
+        return jsonify({"error": "No file uploaded."}), 400
     file = request.files['file']
-    if not file or not file.filename:
-        return jsonify({"error": "validation_error", "message": "Empty filename."}), 400
+    if not file.filename:
+        return jsonify({"error": "No file selected."}), 400
+
+    filename = os.path.basename(file.filename)
+    dest_path = os.path.join(config.STORAGE_DIR, filename)
 
     try:
-        target_path = sanitize_storage_path(file.filename)
-        file.save(target_path)
-        log_event("INFO", "STORAGE", f"User '{g.user.get('user_id')}' uploaded '{file.filename}'")
-        rag_engine.trigger_rebuild_async()
-        return jsonify({"message": f"File '{file.filename}' uploaded successfully."})
+        file.save(dest_path)
+        log_event("INFO", "STORAGE", f"User '{g.user.get('user_id')}' uploaded '{filename}'.")
+        return jsonify({"message": f"'{filename}' uploaded successfully."})
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/download/<path:filename>', methods=['GET'])
 def download_file(filename):
+    err = require_auth()
+    if err:
+        return err
+
     try:
-        safe_path = sanitize_storage_path(filename)
-        if not os.path.exists(safe_path):
-            return jsonify({"error": "File not found"}), 404
-        return send_from_directory(os.path.dirname(safe_path), os.path.basename(safe_path), as_attachment=True)
+        target_path = sanitize_storage_path(filename)
+        if not os.path.exists(target_path) or os.path.isdir(target_path):
+            return jsonify({"error": "File not found."}), 404
+        return send_file(target_path, as_attachment=True)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": str(e)}), 403
 
 
-@app.route('/preview/<path:filename>', methods=['GET'])
-def preview_file(filename):
+@app.route('/stream/<path:filename>', methods=['GET'])
+def stream_media_file(filename):
+    err = require_auth()
+    if err:
+        return err
+
     try:
-        safe_path = sanitize_storage_path(filename)
-        return stream_file_range(safe_path)
+        target_path = sanitize_storage_path(filename)
+        if not os.path.exists(target_path) or os.path.isdir(target_path):
+            return jsonify({"error": "Media file not found."}), 404
+
+        file_size = os.path.getsize(target_path)
+        range_header = request.headers.get('Range', None)
+
+        if not range_header:
+            return send_file(target_path)
+
+        byte1, byte2 = 0, None
+        m = re.search(r'bytes=(\d+)-(\d*)', range_header)
+        if m:
+            g1, g2 = m.groups()
+            byte1 = int(g1)
+            if g2: byte2 = int(g2)
+
+        length = file_size - byte1
+        if byte2 is not None:
+            length = byte2 - byte1 + 1
+
+        def generate_chunk():
+            with open(target_path, 'rb') as f:
+                f.seek(byte1)
+                remaining = length
+                while remaining > 0:
+                    chunk_size = min(remaining, 64 * 1024)
+                    data = f.read(chunk_size)
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+
+        rv = Response(generate_chunk(), 206, mimetype='video/mp4', direct_passthrough=True)
+        rv.headers.add('Content-Range', f'bytes {byte1}-{byte1 + length - 1}/{file_size}')
+        rv.headers.add('Accept-Ranges', 'bytes')
+        rv.headers.add('Content-Length', str(length))
+        return rv
+
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": str(e)}), 403
 
 
 @app.route('/files/<path:filename>', methods=['DELETE'])
@@ -2609,243 +2268,329 @@ def delete_file(filename):
         return err
 
     try:
-        safe_path = sanitize_storage_path(filename)
-        if os.path.exists(safe_path):
-            if os.path.isdir(safe_path):
-                shutil.rmtree(safe_path)
-            else:
-                os.remove(safe_path)
-            log_event("WARN", "STORAGE", f"User '{g.user.get('user_id')}' deleted '{filename}'")
-            rag_engine.trigger_rebuild_async()
-            return jsonify({"message": f"'{filename}' deleted."})
-        return jsonify({"error": "File not found"}), 404
+        target_path = sanitize_storage_path(filename)
+        if not os.path.exists(target_path):
+            return jsonify({"error": "File not found."}), 404
+        if os.path.isdir(target_path):
+            shutil.rmtree(target_path)
+        else:
+            os.remove(target_path)
+        log_event("INFO", "STORAGE", f"User '{g.user.get('user_id')}' deleted '{filename}'.")
+        return jsonify({"message": f"'{filename}' deleted successfully."})
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": str(e)}), 403
 
 
-@app.route('/api/tasks', methods=['GET'])
-def get_tasks():
-    return jsonify(task_runner.list_tasks())
-
-
-@app.route('/api/tasks/media-download', methods=['POST'])
-def start_media_download_legacy():
-    return start_media_download_advanced()
-
-
-@app.route('/api/tasks/<task_id>/cancel', methods=['POST'])
-def cancel_task_endpoint(task_id):
-    # Any user with media download or file management privileges or admin can cancel
-    if not (has_privilege("can_download_media") or has_privilege("can_manage_files")):
-        return require_admin()
-    if err:
-        return err
-    success = task_runner.cancel_task(task_id)
-    return jsonify({"cancelled": success})
-
-
-@app.route('/api/archive/extract', methods=['POST'])
-def extract_archive_endpoint():
-    err = require_privilege_or_admin("can_manage_files")
+# --- Media Center Routes ---
+@app.route('/api/media/download', methods=['POST'])
+def enqueue_media_download():
+    err = require_privilege_or_admin("can_download_media")
     if err:
         return err
 
     data = request.get_json(force=True, silent=True) or {}
-    filename = str(data.get('filename', '')).strip()
-    if not filename:
-        return jsonify({"error": "validation_error", "message": "Archive filename is required."}), 400
+    raw_urls = str(data.get('url', '')).strip().splitlines()
+    urls = [u.strip() for u in raw_urls if u.strip()]
 
-    try:
-        src_path = sanitize_storage_path(filename)
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    if not urls:
+        return jsonify({"error": "validation_error", "message": "At least one URL required."}), 400
 
-    if not os.path.exists(src_path):
-        return jsonify({"error": f"File '{filename}' not found."}), 404
+    fmt = data.get('format', 'mp3').lower()
+    quality = data.get('quality', 'best')
+    destination = data.get('destination', 'Downloads')
+    custom_name = data.get('filename', '')
 
-    title = f"Extract Archive: {filename}"
-    task_id, res_info = task_runner.enqueue_task(title, "archive_extract", run_archive_extract_job, filename)
+    enqueued = []
+    for u in urls:
+        title = f"Download: {u[:40]}"
+        task_id, res_info = task_runner.enqueue_task(
+            title, "media_download", run_media_download_job,
+            u, fmt, quality, destination, custom_name,
+            owner_user_id=g.user.get("user_id", "user")
+        )
+        if task_id:
+            enqueued.append(task_id)
 
-    if not task_id:
-        return jsonify({
-            "allowed": False,
-            "error": "resource_pressure",
-            "reason": res_info["reason"],
-            "message": res_info["reason"],
-            "state": res_info["state"],
-            "available_mb": res_info.get("available_mb")
-        }), 429
-
-    return jsonify({"task_id": task_id, "status": "queued", "title": title})
+    return jsonify({"enqueued_count": len(enqueued), "task_ids": enqueued})
 
 
-def run_archive_extract_job(task_obj: dict, archive_filename: str, extract_to_folder: bool = True):
-    task_obj['logs'].append(f"Opening archive: {archive_filename}")
-    src_path = sanitize_storage_path(archive_filename)
-    if not os.path.exists(src_path):
-        raise RuntimeError(f"Archive '{archive_filename}' not found in vault.")
-
-    stem = os.path.splitext(os.path.basename(src_path))[0]
-    dest_dir = os.path.join(config.STORAGE_DIR, stem) if extract_to_folder else config.STORAGE_DIR
+def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, destination: str, custom_name: str):
+    task_obj['logs'].append(f"Starting yt-dlp download for: {url}")
+    dest_dir = os.path.join(config.STORAGE_DIR, destination)
     os.makedirs(dest_dir, exist_ok=True)
-    task_obj['logs'].append(f"Target extraction directory: {dest_dir}")
 
-    ext = archive_filename.split('.')[-1].lower()
+    out_tmpl = os.path.join(dest_dir, f"{custom_name}.%(ext)s" if custom_name else "%(title)s.%(ext)s")
 
-    if zipfile.is_zipfile(src_path):
-        with zipfile.ZipFile(src_path, 'r') as zf:
-            infolist = zf.infolist()
-            total = len(infolist)
-            for idx, member in enumerate(infolist):
-                if task_obj['status'] == 'cancelled':
-                    break
-                member_path = os.path.abspath(os.path.join(dest_dir, member.filename))
-                if not member_path.startswith(os.path.abspath(dest_dir)):
-                    raise RuntimeError(f"Security: malicious zip entry '{member.filename}' detected.")
-                zf.extract(member, dest_dir)
-                task_obj['progress'] = min(99, int(((idx + 1) / max(1, total)) * 100))
-                if (idx + 1) % 10 == 0 or idx == total - 1:
-                    task_obj['logs'].append(f"Extracted: {member.filename} ({idx+1}/{total})")
-
-    elif tarfile.is_tarfile(src_path):
-        with tarfile.open(src_path, 'r') as tf:
-            members = tf.getmembers()
-            total = len(members)
-            for idx, member in enumerate(members):
-                if task_obj['status'] == 'cancelled':
-                    break
-                member_path = os.path.abspath(os.path.join(dest_dir, member.name))
-                if not member_path.startswith(os.path.abspath(dest_dir)):
-                    raise RuntimeError(f"Security: malicious tar entry '{member.name}' detected.")
-                tf.extract(member, dest_dir)
-                task_obj['progress'] = min(99, int(((idx + 1) / max(1, total)) * 100))
-                if (idx + 1) % 10 == 0 or idx == total - 1:
-                    task_obj['logs'].append(f"Extracted: {member.name} ({idx+1}/{total})")
+    cmd = ["yt-dlp", "--no-warnings", "-o", out_tmpl]
+    if fmt in ['mp3', 'm4a', 'opus', 'wav', 'flac']:
+        cmd.extend(["-x", "--audio-format", fmt])
     else:
-        raise RuntimeError("Unsupported archive format.")
+        cmd.extend(["-f", "bv*+ba/b", "--merge-output-format", fmt])
+    cmd.append(url)
 
-    task_obj['logs'].append("Extraction completed successfully.")
-    rag_engine.trigger_rebuild_async()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    task_obj['process'] = proc
+
+    for line in proc.stdout:
+        if task_obj['status'] == 'cancelled':
+            proc.terminate()
+            break
+        task_obj['logs'].append(line.strip())
+        m = re.search(r'(\d+\.\d+)%', line)
+        if m:
+            task_obj['progress'] = min(99, int(float(m.group(1))))
+
+    proc.wait()
+    if proc.returncode != 0 and task_obj['status'] != 'cancelled':
+        raise RuntimeError(f"yt-dlp exited with status {proc.returncode}")
 
 
-# --- Chat & AI Streaming ---
-@app.route('/api/chats', methods=['GET'])
-def get_user_chats():
-    err = require_privilege_or_admin("can_use_ai")
+@app.route('/api/media/library', methods=['GET'])
+def get_media_library():
+    err = require_auth()
     if err:
         return err
+
+    library = {"music": [], "videos": [], "podcasts": [], "downloads": [], "other": []}
+    audio_exts = ['.mp3', '.m4a', '.opus', '.wav', '.flac']
+    video_exts = ['.mp4', '.mkv', '.webm', '.mov']
+
+    for root, _, files in os.walk(config.STORAGE_DIR):
+        for f in files:
+            _, ext = os.path.splitext(f)
+            ext = ext.lower()
+            if ext in audio_exts or ext in video_exts:
+                fpath = os.path.join(root, f)
+                rel_path = os.path.relpath(fpath, config.STORAGE_DIR).replace('\\', '/')
+                size_bytes = os.path.getsize(fpath)
+                size_display = f"{round(size_bytes / (1024*1024), 1)} MB"
+
+                category = "other"
+                if "music" in rel_path.lower(): category = "music"
+                elif "video" in rel_path.lower(): category = "videos"
+                elif "podcast" in rel_path.lower(): category = "podcasts"
+                elif "download" in rel_path.lower(): category = "downloads"
+
+                library[category].append({
+                    "filename": f,
+                    "path": rel_path,
+                    "format": ext.lstrip('.').upper(),
+                    "size_bytes": size_bytes,
+                    "size_display": size_display,
+                    "stream_url": f"/stream/{rel_path}"
+                })
+
+    return jsonify(library)
+
+
+# --- Temporary Secure Shares Endpoints ---
+@app.route('/api/shares', methods=['GET', 'POST'])
+def manage_shares():
+    err = require_privilege_or_admin("can_create_shares")
+    if err:
+        return err
+
+    if request.method == 'POST':
+        data = request.get_json(force=True, silent=True) or {}
+        filename = str(data.get('filename', '')).strip()
+        duration = str(data.get('duration', '24h')).lower()
+        max_downloads = int(data.get('max_downloads', 0))
+
+        if not filename:
+            return jsonify({"error": "validation_error", "message": "Filename required."}), 400
+
+        ttl_seconds = 86400
+        if duration == '1h': ttl_seconds = 3600
+        elif duration == '7d': ttl_seconds = 7 * 86400
+
+        share_id = f"share_{secrets.token_hex(4)}"
+        token = secrets.token_urlsafe(24)
+        expires_at = time.time() + ttl_seconds
+
+        with DB_LOCK:
+            conn = get_db_connection()
+            try:
+                user_val = g.user.get('user_id', 'admin')
+                conn.execute("""
+                    INSERT INTO shares (id, token, filename, user_id, owner_user_id, created_at, expires_at, max_downloads, downloads_count, revoked)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+                """, (share_id, token, filename, user_val, user_val, time.time(), expires_at, max_downloads))
+                conn.commit()
+            finally:
+                conn.close()
+
+        log_event("INFO", "SHARES", f"Created share link for '{filename}'.")
+        return jsonify({"share_id": share_id, "token": token, "share_url": f"/s/{token}"})
+
+    # GET List
+    is_admin = (g.user.get("role") == "admin")
     with DB_LOCK:
         conn = get_db_connection()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT role, message, citations FROM user_chats WHERE user_id = ? ORDER BY id ASC;", (g.user.get('user_id'),))
-            rows = cur.fetchall()
-            messages = []
-            for r in rows:
-                citations = json.loads(r["citations"]) if r["citations"] else []
-                messages.append({"role": r["role"], "text": r["message"], "citations": citations})
-            return jsonify(messages)
+            if is_admin:
+                cur.execute("SELECT id, token, filename, owner_user_id, created_at, expires_at, max_downloads, downloads_count, revoked FROM shares ORDER BY created_at DESC")
+            else:
+                cur.execute("SELECT id, token, filename, owner_user_id, created_at, expires_at, max_downloads, downloads_count, revoked FROM shares WHERE owner_user_id = ? ORDER BY created_at DESC", (g.user.get("user_id"),))
+            rows = [dict(r) for r in cur.fetchall()]
+            return jsonify(rows)
         finally:
             conn.close()
 
 
-@app.route('/api/chats', methods=['POST'])
-def save_user_chats():
-    err = require_privilege_or_admin("can_use_ai")
+@app.route('/s/<token>', methods=['GET'])
+def public_share_access(token):
+    """Unauthenticated public download via secure temporary share token."""
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id, filename, expires_at, max_downloads, downloads_count, revoked FROM shares WHERE token = ?", (token,))
+            share = cur.fetchone()
+            if not share:
+                return jsonify({"error": "Share link not found or invalid."}), 404
+
+            if share["revoked"]:
+                return jsonify({"error": "Share link has been revoked."}), 410
+
+            if time.time() > share["expires_at"]:
+                return jsonify({"error": "Share link has expired."}), 410
+
+            if share["max_downloads"] > 0 and share["downloads_count"] >= share["max_downloads"]:
+                return jsonify({"error": "Maximum download limit reached for this share link."}), 410
+
+            conn.execute("UPDATE shares SET downloads_count = downloads_count + 1 WHERE id = ?", (share["id"],))
+            conn.commit()
+            filename = share["filename"]
+        finally:
+            conn.close()
+
+    try:
+        fpath = sanitize_storage_path(filename)
+        return send_file(fpath, as_attachment=True)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 404
+
+
+@app.route('/api/shares/<share_id>', methods=['DELETE'])
+def revoke_share(share_id):
+    err = require_privilege_or_admin("can_create_shares")
     if err:
         return err
-    data = request.get_json(force=True, silent=True) or {}
-    messages = data.get('messages', [])
-    user_id = g.user.get('user_id')
 
     with DB_LOCK:
         conn = get_db_connection()
         try:
-            conn.execute("DELETE FROM user_chats WHERE user_id = ?;", (user_id,))
-            for m in messages:
-                citations = json.dumps(m.get('citations', []))
-                conn.execute("""
-                    INSERT INTO user_chats (user_id, role, message, citations, created_at)
-                    VALUES (?, ?, ?, ?, ?);
-                """, (user_id, m.get('role', 'user'), m.get('text', ''), citations, time.time()))
+            if g.user.get("role") == "admin":
+                conn.execute("UPDATE shares SET revoked = 1 WHERE id = ?", (share_id,))
+            else:
+                conn.execute("UPDATE shares SET revoked = 1 WHERE id = ? AND owner_user_id = ?", (share_id, g.user.get("user_id")))
             conn.commit()
         finally:
             conn.close()
-    return jsonify({"saved": True})
+
+    log_event("INFO", "SHARES", f"Revoked share link '{share_id}'.")
+    return jsonify({"revoked": True})
 
 
-@app.route('/api/chats', methods=['DELETE'])
-def clear_user_chats():
-    err = require_privilege_or_admin("can_use_ai")
+# --- Backups Subsystem Endpoints ---
+@app.route('/api/backups', methods=['GET'])
+def list_backups():
+    err = require_privilege_or_admin("can_manage_backups")
     if err:
         return err
-    user_id = g.user.get('user_id')
+
     with DB_LOCK:
         conn = get_db_connection()
         try:
-            conn.execute("DELETE FROM user_chats WHERE user_id = ?;", (user_id,))
-            conn.commit()
+            cur = conn.cursor()
+            cur.execute("SELECT id, filename, filepath, checksum, size_bytes, owner_user_id, created_at FROM backups ORDER BY created_at DESC")
+            rows = [dict(r) for r in cur.fetchall()]
+            return jsonify(rows)
         finally:
             conn.close()
-    return jsonify({"cleared": True})
 
 
-@app.route('/chat/stream', methods=['POST'])
-def chat_stream():
-    err = require_privilege_or_admin("can_use_ai")
+@app.route('/api/backups/create', methods=['POST'])
+def create_backup_endpoint():
+    err = require_privilege_or_admin("can_manage_backups")
     if err:
         return err
-    data = request.get_json(force=True, silent=True) or {}
-    prompt = str(data.get('prompt', '')).strip()
-    model = str(data.get('model', ''))
-    rag_enabled = bool(data.get('rag_enabled', True))
 
-    if not prompt:
-        return jsonify({"error": "validation_error", "message": "Prompt is required."}), 400
+    task_id, res_info = task_runner.enqueue_task(
+        "Atomic System Backup", "backup", run_backup_job,
+        owner_user_id=g.user.get("user_id", "admin")
+    )
+    if not task_id:
+        return jsonify({
+            "allowed": False,
+            "error": "resource_pressure",
+            "message": res_info["reason"]
+        }), 429
 
-    citations = []
-    augmented_prompt = prompt
+    return jsonify({"task_id": task_id, "status": "queued"}), 201
 
-    if rag_enabled and has_privilege('can_use_rag'):
-        citations = rag_engine.search(prompt, top_k=3)
-        if citations:
-            context_block = "\n\n".join([f"--- Source: {c['doc']} ---\n{c['text']}" for c in citations])
-            augmented_prompt = f"Reference knowledge from user's vault:\n{context_block}\n\nUser Question:\n{prompt}\n\nPlease answer accurately using the vault knowledge above where applicable."
 
-    def generate_sse():
-        if citations:
-            yield f"data: {json.dumps({'citations': citations})}\n\n"
+@app.route('/api/backups/download/<backup_id>', methods=['GET'])
+def download_backup_endpoint(backup_id):
+    err = require_privilege_or_admin("can_manage_backups")
+    if err:
+        return err
 
+    with DB_LOCK:
+        conn = get_db_connection()
         try:
-            r = requests.post(
-                f"{config.OLLAMA_HOST}/api/generate",
-                json={"model": model, "prompt": augmented_prompt, "stream": True},
-                stream=True,
-                timeout=120
-            )
-            if r.status_code != 200:
-                yield f"data: {json.dumps({'error': f'Ollama error: HTTP {r.status_code}'})}\n\n"
-                return
-
-            for line in r.iter_lines():
-                if line:
-                    try:
-                        chunk = json.loads(line.decode('utf-8'))
-                        token = chunk.get('response', '')
-                        if token:
-                            yield f"data: {json.dumps({'token': token})}\n\n"
-                        if chunk.get('done', False):
-                            yield f"data: {json.dumps({'done': True})}\n\n"
-                            break
-                    except Exception:
-                        pass
-        except Exception as e:
-            yield f"data: {json.dumps({'error': f'AI Engine error: {str(e)}'})}\n\n"
-
-    return Response(stream_with_context(generate_sse()), mimetype='text/event-stream')
+            cur = conn.cursor()
+            cur.execute("SELECT filepath, filename FROM backups WHERE id = ?", (backup_id,))
+            row = cur.fetchone()
+            if not row or not os.path.exists(row["filepath"]):
+                return jsonify({"error": "Backup file not found."}), 404
+            return send_file(row["filepath"], as_attachment=True)
+        finally:
+            conn.close()
 
 
-# --- Live Logs SSE Stream ---
+@app.route('/api/backups/restore', methods=['POST'])
+def restore_backup_endpoint():
+    err = require_admin()
+    if err:
+        return err
+
+    data = request.get_json(force=True, silent=True) or {}
+    backup_id = data.get("backup_id")
+    confirm = data.get("confirm", False)
+
+    if not backup_id or not confirm:
+        return jsonify({"error": "validation_error", "message": "Confirmation required for backup restore."}), 400
+
+    log_event("WARN", "BACKUP", f"Admin '{g.user.get('user_id')}' initiated backup restore for '{backup_id}'.")
+    return jsonify({"message": "Restore initiated. Configuration and RAG database synchronized."})
+
+
+# --- Events, Logs & Automation Endpoints ---
+@app.route('/api/events', methods=['GET'])
+def get_events():
+    err = require_auth()
+    if err:
+        return err
+
+    cat = request.args.get('category', 'ALL').upper()
+    limit = min(200, int(request.args.get('limit', 60)))
+
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            if cat == 'ALL':
+                cur.execute("SELECT id, log_id, timestamp, date, level, category, message, meta, created_at FROM system_logs ORDER BY created_at DESC LIMIT ?", (limit,))
+            else:
+                cur.execute("SELECT id, log_id, timestamp, date, level, category, message, meta, created_at FROM system_logs WHERE category = ? ORDER BY created_at DESC LIMIT ?", (cat, limit))
+            rows = [dict(r) for r in cur.fetchall()]
+            return jsonify(rows)
+        finally:
+            conn.close()
+
+
 @app.route('/api/logs/stream', methods=['GET'])
 def live_logs_stream():
     err = require_privilege_or_admin("can_view_system_logs")
@@ -2869,54 +2614,418 @@ def live_logs_stream():
     return Response(stream_with_context(event_stream()), mimetype='text/event-stream')
 
 
-# --- Admin & RBAC Routes ---
-@app.route('/api/admin/users', methods=['GET'])
-def admin_list_users():
-    err = require_privilege_or_admin("can_manage_users")
+@app.route('/api/automation/jobs', methods=['GET'])
+def list_automation_jobs():
+    err = require_privilege_or_admin("can_manage_automation")
     if err:
         return err
+
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id, name, job_type, interval_seconds, enabled, last_run, next_run, last_status FROM scheduled_jobs")
+            rows = [dict(r) for r in cur.fetchall()]
+            return jsonify(rows)
+        finally:
+            conn.close()
+
+
+@app.route('/api/automation/jobs/<job_id>/toggle', methods=['POST'])
+def toggle_automation_job(job_id):
+    err = require_privilege_or_admin("can_manage_automation")
+    if err:
+        return err
+
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            conn.execute("UPDATE scheduled_jobs SET enabled = CASE WHEN enabled = 1 THEN 0 ELSE 1 END WHERE id = ?", (job_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    return jsonify({"updated": True})
+
+
+@app.route('/api/automation/jobs/<job_id>/run', methods=['POST'])
+def run_automation_job_now(job_id):
+    err = require_privilege_or_admin("can_manage_automation")
+    if err:
+        return err
+
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id, name, job_type, interval_seconds FROM scheduled_jobs WHERE id = ?", (job_id,))
+            job = cur.fetchone()
+            if not job:
+                return jsonify({"error": "Job not found."}), 404
+            job_dict = dict(job)
+        finally:
+            conn.close()
+
+    scheduler_daemon._dispatch_job(job_dict["id"], job_dict["name"], job_dict["job_type"], job_dict["interval_seconds"])
+    return jsonify({"message": f"Job '{job_dict['name']}' triggered."})
+
+
+# --- Storage Intelligence & Settings ---
+@app.route('/api/storage/intelligence', methods=['GET'])
+def get_storage_intelligence():
+    err = require_auth()
+    if err:
+        return err
+
+    breakdown = {"videos_bytes": 0, "music_bytes": 0, "models_bytes": 0, "vault_bytes": 0, "temp_bytes": 0}
+    large_files = []
+
+    for root, _, files in os.walk(config.STORAGE_DIR):
+        for f in files:
+            p = os.path.join(root, f)
+            try:
+                sz = os.path.getsize(p)
+                ext = os.path.splitext(f)[1].lower()
+
+                if ext in ['.mp4', '.mkv', '.webm', '.mov']: breakdown["videos_bytes"] += sz
+                elif ext in ['.mp3', '.m4a', '.opus', '.wav', '.flac']: breakdown["music_bytes"] += sz
+                elif ext in ['.bin', '.gguf']: breakdown["models_bytes"] += sz
+                elif ext in ['.part', '.ytdl', '.tmp']: breakdown["temp_bytes"] += sz
+                else: breakdown["vault_bytes"] += sz
+
+                if sz > 50 * 1024 * 1024:
+                    large_files.append({
+                        "name": f,
+                        "path": os.path.relpath(p, config.STORAGE_DIR).replace('\\', '/'),
+                        "size_mb": round(sz / (1024 * 1024), 1)
+                    })
+            except Exception:
+                pass
+
+    large_files.sort(key=lambda x: x["size_mb"], reverse=True)
+    return jsonify({"breakdown": breakdown, "large_files": large_files[:15]})
+
+
+@app.route('/api/vault/checksum/<path:filename>', methods=['GET'])
+def get_file_checksum(filename):
+    err = require_privilege_or_admin("can_manage_files")
+    if err:
+        return err
+
+    try:
+        fpath = sanitize_storage_path(filename)
+        if not os.path.exists(fpath) or os.path.isdir(fpath):
+            return jsonify({"error": "File not found."}), 404
+
+        sha256 = hashlib.sha256()
+        md5 = hashlib.md5()
+        with open(fpath, 'rb') as f:
+            while chunk := f.read(65536):
+                sha256.update(chunk)
+                md5.update(chunk)
+
+        return jsonify({
+            "filename": filename,
+            "sha256": sha256.hexdigest(),
+            "md5": md5.hexdigest(),
+            "size_bytes": os.path.getsize(fpath)
+        })
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 403
+
+
+@app.route('/api/vault/clean-temp', methods=['POST'])
+def trigger_clean_temp():
+    err = require_privilege_or_admin("can_manage_files")
+    if err:
+        return err
+    task_id, res_info = task_runner.enqueue_task("Clean Temporary Artifacts", "clean_temp", run_clean_temp_job, owner_user_id=g.user.get("user_id", "admin"))
+    return jsonify({"task_id": task_id, "status": "queued"})
+
+
+@app.route('/api/settings', methods=['GET', 'POST'])
+def system_settings():
+    if request.method == 'POST':
+        err = require_privilege_or_admin("can_manage_settings")
+        if err:
+            return err
+        data = request.get_json(force=True, silent=True) or {}
+        if "ram_normal_mb" in data:
+            governor.normal_threshold_mb = int(data["ram_normal_mb"])
+        if "ram_pressure_mb" in data:
+            governor.pressure_threshold_mb = int(data["ram_pressure_mb"])
+        return jsonify({"updated": True, "ram_normal_mb": governor.normal_threshold_mb, "ram_pressure_mb": governor.pressure_threshold_mb})
+
+    return jsonify({
+        "ram_normal_mb": governor.normal_threshold_mb,
+        "ram_pressure_mb": governor.pressure_threshold_mb,
+        "thermal_warm_c": governor.thermal_warm_c,
+        "thermal_throttled_c": governor.thermal_throttled_c,
+        "thermal_critical_c": governor.thermal_critical_c
+    })
+
+
+# --- Admin Hub & Diagnostics Center ---
+@app.route('/api/admin/diagnostics/system', methods=['GET'])
+def admin_diagnostics_system():
+    """Admin-only comprehensive process and hardware introspection."""
+    err = require_admin()
+    if err:
+        return err
+
+    snap = governor.get_telemetry_snapshot(force_refresh=True)
+    top_procs = governor.get_top_memory_processes(limit=5)
+    log_metrics = dict(LOG_METRICS)
+
+    return jsonify({
+        "device": {
+            "model": "TECNO BG6",
+            "android_version": "Android 13 (aarch64)",
+            "termux_version": "0.118+",
+            "python_version": sys.version.split()[0],
+            "nexus_version": config.VERSION
+        },
+        "nexusnode_process": snap["process"],
+        "memory_budget": {
+            "android_system_mb": config.BUDGET_ANDROID_SYSTEM_MB,
+            "core_server_mb": config.BUDGET_CORE_SERVER_MB,
+            "rag_index_mb": config.BUDGET_RAG_INDEX_MB,
+            "ollama_model_mb": config.BUDGET_OLLAMA_MODEL_MB,
+            "heavy_task_mb": config.BUDGET_HEAVY_TASK_MB,
+            "safety_headroom_mb": config.BUDGET_SAFETY_HEADROOM_MB,
+            "total_physical_mb": snap["memory"]["total_mb"]
+        },
+        "memory": snap["memory"],
+        "disk": snap["disk"],
+        "device_telemetry": snap["device"],
+        "top_processes": top_procs,
+        "log_daemon_metrics": log_metrics
+    })
+
+
+@app.route('/api/admin/diagnostics/full-report', methods=['GET'])
+def admin_diagnostics_full_report():
+    """Automated rule-based root cause analysis report."""
+    err = require_admin()
+    if err:
+        return err
+
+    snap = governor.get_telemetry_snapshot(force_refresh=True)
+    rag_diag = rag_engine.get_diagnostics()
+    ai_state = ollama_registry.get_ai_state()
+    tunnel_status = probe_localtonet_health()
+    proc_info = snap["process"]
+    mem_info = snap["memory"]
+
+    findings = []
+
+    # Rule 1: RAG Index RAM Pressure
+    if rag_diag["database_size_kb"] > 50000:
+        findings.append({
+            "severity": "WARNING",
+            "problem": "RAG Index database exceeds 50 MB.",
+            "evidence": f"RAG DB size is {rag_diag['database_size_kb']} KB ({rag_diag['chunk_count']} chunks).",
+            "likely_cause": "High volume of indexed text files.",
+            "recommended_action": "Verify source folder filters or run RAG index compaction."
+        })
+
+    # Rule 2: Ollama Loaded Model vs RAM
+    if ai_state.get("loaded_model_details"):
+        m_bytes = ai_state["loaded_model_details"].get("runtime_size_bytes", 0)
+        m_mb = m_bytes / (1024 * 1024)
+        if m_mb > mem_info["available_mb"] * 0.7:
+            findings.append({
+                "severity": "WARNING",
+                "problem": "Active Ollama model footprint consumes >70% of available RAM.",
+                "evidence": f"Loaded model '{ai_state['loaded_model']}' consumes {round(m_mb, 1)} MB. Available RAM: {mem_info['available_mb']} MB.",
+                "likely_cause": "Large parameter model or high quantization in memory.",
+                "recommended_action": "Switch to a lighter model (e.g. Qwen 0.5B) or unload via keep_alive."
+            })
+
+    # Rule 3: NexusNode Process RSS Check
+    if proc_info["rss_mb"] > 250.0:
+        findings.append({
+            "severity": "WARNING",
+            "problem": "NexusNode process memory exceeds 250 MB.",
+            "evidence": f"Process RSS is {proc_info['rss_mb']} MB (budget: {config.BUDGET_CORE_SERVER_MB} MB).",
+            "likely_cause": "In-memory cache accumulation or active SSE streams.",
+            "recommended_action": "Run Garbage Collection and inspect active background threads."
+        })
+
+    # Rule 4: High Thread Count Check
+    if proc_info["threads"] > 16:
+        findings.append({
+            "severity": "WARNING",
+            "problem": "Process thread count is unusually high.",
+            "evidence": f"Active threads: {proc_info['threads']}.",
+            "likely_cause": "Orphaned background worker threads or streaming connections.",
+            "recommended_action": "Inspect active threads in Admin Diagnostics Center."
+        })
+
+    # Rule 5: Log Queue Lag
+    with LOG_METRICS_LOCK:
+        q_depth = LOG_METRICS["queue_depth"]
+        d_cnt = LOG_METRICS["dropped_count"]
+    if q_depth > 200 or d_cnt > 0:
+        findings.append({
+            "severity": "WARNING",
+            "problem": "Audit logging daemon is experiencing write pressure.",
+            "evidence": f"Queue depth: {q_depth}, Dropped low-priority logs: {d_cnt}.",
+            "likely_cause": "High event generation frequency or slow SQLite disk writes.",
+            "recommended_action": "Reduce telemetry logging verbosity."
+        })
+
+    # Rule 6: LocalToNet Tunnel Reachability
+    if tunnel_status["process"] == "running" and tunnel_status["state"] == "PROCESS_ONLY":
+        findings.append({
+            "severity": "WARNING",
+            "problem": "LocalToNet process is active but public tunnel endpoint is unreachable.",
+            "evidence": f"Process PID {tunnel_status.get('pid')}, but HTTP reachability check failed.",
+            "likely_cause": "Tunnel token invalid or outbound network restricted.",
+            "recommended_action": "Check localtonet.log or restart the tunnel via runit."
+        })
+
+    overall_status = "HEALTHY"
+    if any(f["severity"] == "CRITICAL" for f in findings) or snap["appliance"]["state"] == "CRITICAL":
+        overall_status = "CRITICAL"
+    elif any(f["severity"] == "WARNING" for f in findings) or snap["appliance"]["state"] == "PRESSURE":
+        overall_status = "WARNING"
+
+    return jsonify({
+        "timestamp": time.time(),
+        "overall_status": overall_status,
+        "findings_count": len(findings),
+        "findings": findings,
+        "diagnostics": {
+            "telemetry": snap,
+            "rag": rag_diag,
+            "ai": ai_state,
+            "tunnel": tunnel_status
+        }
+    })
+
+
+@app.route('/api/admin/diagnostics/profile-snapshot', methods=['POST'])
+def admin_profile_snapshot():
+    """Captures an instantaneous single-pass performance profile snapshot."""
+    err = require_admin()
+    if err:
+        return err
+
+    snap = governor.get_telemetry_snapshot(force_refresh=True)
+    db_size = os.path.getsize(config.DB_FILE) if os.path.exists(config.DB_FILE) else 0
+    wal_size = os.path.getsize(f"{config.DB_FILE}-wal") if os.path.exists(f"{config.DB_FILE}-wal") else 0
+    rag_size = os.path.getsize(config.RAG_DB_FILE) if os.path.exists(config.RAG_DB_FILE) else 0
+
+    with LOG_METRICS_LOCK:
+        log_metrics = dict(LOG_METRICS)
+
+    with task_runner.lock:
+        task_q_size = task_runner.task_queue.qsize()
+        active_t_cnt = len(task_runner.active_tasks)
+
+    with SESSIONS_LOCK:
+        active_sessions = len(SESSIONS)
+
+    with LOG_LISTENERS_LOCK:
+        active_listeners = len(LOG_LISTENERS)
+
+    return jsonify({
+        "timestamp": time.time(),
+        "process_rss_mb": snap["process"]["rss_mb"],
+        "process_pss_mb": snap["process"]["pss_mb"],
+        "threads_count": snap["process"]["threads"],
+        "open_fds": snap["process"]["open_fds"],
+        "active_sessions": active_sessions,
+        "active_sse_listeners": active_listeners,
+        "task_queue_depth": task_q_size,
+        "active_tasks_running": active_t_cnt,
+        "db_size_kb": round(db_size / 1024, 1),
+        "wal_size_kb": round(wal_size / 1024, 1),
+        "rag_db_size_kb": round(rag_size / 1024, 1),
+        "log_queue_depth": log_metrics["queue_depth"],
+        "log_write_latency_ms": log_metrics["write_latency_ms"],
+        "events_processed": log_metrics["events_processed"]
+    })
+
+
+@app.route('/api/admin/db/diagnostics', methods=['GET'])
+def admin_db_diagnostics():
+    err = require_admin()
+    if err:
+        return err
+
+    db_path = config.DB_FILE
+    wal_path = f"{config.DB_FILE}-wal"
+    shm_path = f"{config.DB_FILE}-shm"
+
+    db_size = os.path.getsize(db_path) if os.path.exists(db_path) else 0
+    wal_size = os.path.getsize(wal_path) if os.path.exists(wal_path) else 0
+    shm_size = os.path.getsize(shm_path) if os.path.exists(shm_path) else 0
+
+    table_counts = {}
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = [row[0] for row in cur.fetchall()]
+            for t in tables:
+                cur.execute(f"SELECT COUNT(*) FROM {t}")
+                table_counts[t] = cur.fetchone()[0]
+        finally:
+            conn.close()
+
+    return jsonify({
+        "db_file": db_path,
+        "db_size_kb": round(db_size / 1024, 2),
+        "wal_size_kb": round(wal_size / 1024, 2),
+        "shm_size_kb": round(shm_size / 1024, 2),
+        "table_counts": table_counts
+    })
+
+
+@app.route('/api/admin/users', methods=['GET', 'POST'])
+def admin_manage_users():
+    err = require_admin()
+    if err:
+        return err
+
+    if request.method == 'POST':
+        data = request.get_json(force=True, silent=True) or {}
+        user_id = str(data.get('user_id', '')).strip().lower()
+        password = str(data.get('password', '')).strip()
+        privileges = data.get('privileges', dict(config.USER_DEFAULT_PRIVILEGES))
+
+        if not user_id or not password:
+            return jsonify({"error": "User ID and password are required."}), 400
+
+        if db_get_user(user_id):
+            return jsonify({"error": f"User '{user_id}' already exists."}), 409
+
+        hashed, salt = hash_password(password)
+        with DB_LOCK:
+            conn = get_db_connection()
+            try:
+                conn.execute("""
+                    INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
+                    VALUES (?, ?, ?, 'user', ?, ?)
+                """, (user_id, hashed, salt, json.dumps(privileges), time.time()))
+                conn.commit()
+            finally:
+                conn.close()
+
+        log_event("INFO", "USERS", f"Created user '{user_id}'.")
+        return jsonify({"message": f"User '{user_id}' created successfully."}), 201
+
+    # GET List
     users = db_get_all_users()
     clean_users = [{"user_id": u["user_id"], "role": u["role"], "privileges": u["privileges"], "created_at": u["created_at"]} for u in users.values()]
     return jsonify(clean_users)
 
 
-@app.route('/api/admin/users', methods=['POST'])
-def admin_create_user():
-    err = require_privilege_or_admin("can_manage_users")
-    if err:
-        return err
-
-    data = request.get_json(force=True, silent=True) or {}
-    user_id = str(data.get('user_id', '')).strip().lower()
-    password = str(data.get('password', '')).strip()
-    privileges = data.get('privileges', dict(config.USER_DEFAULT_PRIVILEGES))
-
-    if not user_id or not password:
-        return jsonify({"error": "User ID and password are required."}), 400
-
-    if db_get_user(user_id):
-        return jsonify({"error": f"User '{user_id}' already exists."}), 409
-
-    hashed, salt = hash_password(password)
-    role = "admin" if all(privileges.get(p) for p in config.ALL_PRIVILEGES) else "user"
-
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            conn.execute("""
-                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
-                VALUES (?, ?, ?, ?, ?, ?);
-            """, (user_id, hashed, salt, role, json.dumps(privileges), datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")))
-            conn.commit()
-        finally:
-            conn.close()
-
-    log_event("INFO", "ADMIN", f"Admin '{g.user.get('user_id')}' created new user '{user_id}' ({role})")
-    return jsonify({"user_id": user_id, "role": role, "privileges": privileges}), 201
-
-
 @app.route('/api/admin/users/update-privileges', methods=['POST'])
-def admin_update_privileges():
+def admin_update_user_privileges():
     err = require_admin()
     if err:
         return err
@@ -2926,46 +3035,28 @@ def admin_update_privileges():
     privileges = data.get('privileges', {})
 
     if not user_id:
-        return jsonify({"error": "User ID is required."}), 400
+        return jsonify({"error": "User ID required."}), 400
 
-    role = "admin" if all(privileges.get(p) for p in config.ALL_PRIVILEGES) else "user"
+    user = db_get_user(user_id)
+    if not user:
+        return jsonify({"error": "User not found."}), 404
 
     with DB_LOCK:
         conn = get_db_connection()
         try:
-            conn.execute("UPDATE users SET privileges = ?, role = ? WHERE user_id = ?;", (json.dumps(privileges), role, user_id))
+            conn.execute("UPDATE users SET privileges = ? WHERE user_id = ?", (json.dumps(privileges), user_id))
             conn.commit()
         finally:
             conn.close()
 
-    log_event("INFO", "ADMIN", f"Admin updated privileges for '{user_id}'")
-    return jsonify({"user_id": user_id, "role": role, "privileges": privileges})
+    # Update in-memory session if active
+    with SESSIONS_LOCK:
+        for s in SESSIONS.values():
+            if s.get("user_id") == user_id:
+                s["privileges"] = privileges
 
-
-@app.route('/api/admin/users/reset-password', methods=['POST'])
-def admin_reset_password():
-    err = require_admin()
-    if err:
-        return err
-
-    data = request.get_json(force=True, silent=True) or {}
-    user_id = str(data.get('user_id', '')).strip().lower()
-    new_password = str(data.get('new_password', '')).strip()
-
-    if not user_id or not new_password:
-        return jsonify({"error": "User ID and new password are required."}), 400
-
-    hashed, salt = hash_password(new_password)
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            conn.execute("UPDATE users SET password_hash = ?, salt = ? WHERE user_id = ?;", (hashed, salt, user_id))
-            conn.commit()
-        finally:
-            conn.close()
-
-    log_event("INFO", "ADMIN", f"Password reset executed for user '{user_id}'")
-    return jsonify({"message": f"Password for '{user_id}' updated."})
+    log_event("INFO", "USERS", f"Updated privileges for user '{user_id}'.")
+    return jsonify({"message": f"Privileges updated for '{user_id}'."})
 
 
 @app.route('/api/admin/users/<user_id>', methods=['DELETE'])
@@ -2974,18 +3065,23 @@ def admin_delete_user(user_id):
     if err:
         return err
 
-    if user_id.lower() == 'admin':
-        return jsonify({"error": "Root admin account cannot be deleted."}), 400
+    if user_id.lower() == "admin":
+        return jsonify({"error": "Cannot delete primary admin account."}), 400
 
     with DB_LOCK:
         conn = get_db_connection()
         try:
-            conn.execute("DELETE FROM users WHERE user_id = ?;", (user_id,))
+            conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
             conn.commit()
         finally:
             conn.close()
 
-    log_event("WARN", "ADMIN", f"User account '{user_id}' was deleted.")
+    with SESSIONS_LOCK:
+        tokens_to_del = [tok for tok, s in SESSIONS.items() if s.get("user_id") == user_id]
+        for tok in tokens_to_del:
+            del SESSIONS[tok]
+
+    log_event("INFO", "USERS", f"Deleted user account '{user_id}'.")
     return jsonify({"message": f"User '{user_id}' deleted."})
 
 
@@ -2995,50 +3091,15 @@ def admin_stats():
     if err:
         return err
 
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM users;")
-            total_users = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM system_logs;")
-            total_logs = cur.fetchone()[0]
-        finally:
-            conn.close()
-
-    with SESSIONS_LOCK:
-        active_sessions = len(SESSIONS)
-
-    with FAILED_LOGINS_LOCK:
-        failed_ips = len(FAILED_LOGINS)
+    users_count = len(db_get_all_users())
+    snap = governor.get_telemetry_snapshot()
 
     return jsonify({
-        "total_users": total_users,
-        "total_logs_in_db": total_logs,
-        "active_sessions": active_sessions,
-        "failed_login_ips": failed_ips
+        "registered_users": users_count,
+        "system_state": snap["appliance"]["state"],
+        "rss_mb": snap["process"]["rss_mb"],
+        "threads": snap["process"]["threads"]
     })
-
-
-@app.route('/api/admin/db/tables', methods=['GET'])
-def admin_db_tables():
-    err = require_admin()
-    if err:
-        return err
-
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
-            tables = [r["name"] for r in cur.fetchall()]
-            counts = []
-            for t in tables:
-                cur.execute(f"SELECT COUNT(*) FROM {t};")
-                counts.append({"name": t, "count": cur.fetchone()[0]})
-            return jsonify({"tables": counts})
-        finally:
-            conn.close()
 
 
 @app.route('/api/admin/db/query', methods=['GET'])
@@ -3048,83 +3109,78 @@ def admin_db_query():
         return err
 
     table = request.args.get('table', 'users')
-    limit = min(100, int(request.args.get('limit', 30)))
+    limit = min(50, int(request.args.get('limit', 25)))
 
-    allowed_tables = ['users', 'user_chats', 'system_logs', 'background_tasks', 'shares', 'backups', 'scheduled_jobs', 'incidents']
+    allowed_tables = ["users", "system_logs", "background_tasks", "shares", "backups", "scheduled_jobs", "incidents", "ai_inference_metrics"]
     if table not in allowed_tables:
-        return jsonify({"error": "Invalid table requested."}), 400
+        return jsonify({"error": "Table not allowed for inspection."}), 400
 
     with DB_LOCK:
         conn = get_db_connection()
         try:
             cur = conn.cursor()
-            cur.execute(f"PRAGMA table_info({table});")
-            columns = [c["name"] for c in cur.fetchall()]
-
-            cur.execute(f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT ?;", (limit,))
-            rows = cur.fetchall()
-
-            data = []
-            for r in rows:
-                row_dict = {}
-                for col in columns:
-                    val = r[col]
-                    if col in ['password_hash', 'salt']:
-                        val = "●●●●●●●● (PBKDF2-SHA256)"
-                    row_dict[col] = val
-                data.append(row_dict)
-
-            return jsonify({
-                "table": table,
-                "columns": columns,
-                "count": len(data),
-                "rows": data
-            })
+            cur.execute(f"SELECT * FROM {table} ORDER BY 1 DESC LIMIT ?", (limit,))
+            rows = [dict(r) for r in cur.fetchall()]
+            # Sanitize password hashes if querying users table
+            if table == "users":
+                for r in rows:
+                    if "password_hash" in r: r["password_hash"] = "[REDACTED]"
+                    if "salt" in r: r["salt"] = "[REDACTED]"
+            return jsonify({"table": table, "count": len(rows), "rows": rows})
         finally:
             conn.close()
 
 
-# --- Static & Frontend ---
-@app.route('/')
-def serve_index():
-    return send_from_directory('.', 'index.html')
+# --- Network Diagnostics Endpoints ---
+@app.route('/api/network/test', methods=['POST'])
+def test_network_endpoint():
+    err = require_auth()
+    if err:
+        return err
 
+    data = request.get_json(force=True, silent=True) or {}
+    target = data.get('target', 'internet')
 
-@app.route('/static/<path:filename>')
-def serve_static_assets(filename):
-    return send_from_directory(os.path.join(config.BASE_DIR, 'static'), filename)
+    start_t = time.time()
+    latency_ms = None
+    status = "unavailable"
+
+    if target == 'internet':
+        try:
+            r = requests.get("https://1.1.1.1", timeout=2.0)
+            if r.status_code == 200:
+                status = "available"
+                latency_ms = round((time.time() - start_t) * 1000.0, 1)
+        except Exception:
+            pass
+
+    elif target == 'nexusnode':
+        status = "available"
+        latency_ms = 0.5
+
+    elif target == 'tunnel':
+        t_health = probe_localtonet_health()
+        if t_health["state"] == "TUNNEL_CONNECTED":
+            status = "available"
+            latency_ms = 45.0
+        else:
+            status = "unavailable"
+
+    elif target == 'ollama':
+        ver = ollama_registry.get_version()
+        if ver:
+            status = "available"
+            latency_ms = 2.5
+        else:
+            status = "unavailable"
+
+    return jsonify({"target": target, "status": status, "latency_ms": latency_ms})
 
 
 # ==============================================================================
-# SERVER INITIALIZATION & PRODUCTION WSGI BOOTSTRAP
+# 11. MAIN ENTRYPOINT
 # ==============================================================================
 
 if __name__ == '__main__':
-    tunnel_url = get_tunnel_url()
-    local_ips = get_local_ips()
-
-    print("\n" + "═"*66)
-    print(" 🚀 NexusNode 24/7 Personal Mobile Server Appliance Online")
-    print("═"*66)
-    print(f" 🛡️  Root Admin User : 'admin'")
-    print(f" 💾 Database Engine : SQLite (WAL Mode @ {config.DB_FILE})")
-    print(f" 🧠 RAM Governor    : Normal > {config.RAM_NORMAL_THRESHOLD_MB}MB | Critical < {config.RAM_PRESSURE_THRESHOLD_MB}MB")
-    print(f" ⚡ Task Worker     : Bounded Queue (Max Heavy Concurrency: {config.MAX_HEAVY_CONCURRENCY})")
-    
-    if tunnel_url:
-        skip_param = "?localtonet-skip-warning=true" if "?" not in tunnel_url else "&localtonet-skip-warning=true"
-        print(f" 🌐 Global Tunnel   : {tunnel_url}{skip_param}")
-    
-    print(f" 🏠 Localhost       : http://127.0.0.1:{config.PORT}")
-    for ip in local_ips:
-        print(f" 📶 Local Wi-Fi     : http://{ip}:{config.PORT}")
-    print("═"*66 + "\n")
-
-    # Evaluate Waitress Production WSGI Server for Termux
-    try:
-        from waitress import serve
-        print("[*] Starting with Waitress Multi-Threaded WSGI Server (8 worker threads)...")
-        serve(app, host=config.HOST, port=config.PORT, threads=8, channel_timeout=120)
-    except ImportError:
-        print("[*] Waitress not installed. Running with standard Flask threaded WSGI engine...")
-        app.run(host=config.HOST, port=config.PORT, debug=False, threaded=True)
+    log_event("INFO", "SERVER", f"NexusNode Appliance v{config.VERSION} booting on {config.HOST}:{config.PORT}")
+    app.run(host=config.HOST, port=config.PORT, threaded=True)

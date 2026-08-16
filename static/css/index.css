@@ -1203,6 +1203,78 @@ body {
   padding: 1.5rem 0;
 }
 
+/* Admin Diagnostics Center & Root-Cause Findings */
+.diag-findings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.finding-card {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border-left-width: 4px;
+}
+
+.finding-card.severity-WARNING {
+  border-left-color: var(--accent-amber);
+}
+
+.finding-card.severity-CRITICAL {
+  border-left-color: var(--accent-rose);
+  background: rgba(244, 63, 94, 0.05);
+}
+
+.finding-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.finding-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.finding-pill {
+  font-size: 0.64rem;
+  font-weight: 800;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-xs);
+  text-transform: uppercase;
+}
+
+.finding-pill.WARNING {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--accent-amber);
+}
+
+.finding-pill.CRITICAL {
+  background: rgba(244, 63, 94, 0.2);
+  color: var(--accent-rose);
+}
+
+.finding-detail-row {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.finding-action-row {
+  font-size: 0.78rem;
+  color: var(--accent-cyan);
+  background: var(--bg-surface-3);
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-xs);
+  margin-top: 0.2rem;
+}
+
 /* Responsive Media Breakpoints */
 @media (max-width: 900px) {
   .desktop-nav-tabs { display: none; }
@@ -1222,3 +1294,4 @@ body {
   .more-sheet-grid { grid-template-columns: repeat(2, 1fr); }
   .privileges-checkbox-grid { grid-template-columns: 1fr; }
 }
+
