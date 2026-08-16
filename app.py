@@ -73,6 +73,53 @@ def get_db_connection(db_file: str = None) -> sqlite3.Connection:
     return conn
 
 
+# --- PBKDF2 Password Helpers (must be defined before init_unified_db seeding) ---
+
+def hash_password(password: str, salt: str = None) -> tuple[str, str]:
+    """
+    Generates a secure password hash using standard-library PBKDF2-HMAC-SHA256.
+    Format: pbkdf2_sha256$<iterations>$<salt>$<digest>
+    """
+    if not salt:
+        salt = secrets.token_hex(16)
+    iterations = config.PASSWORD_KDF_ITERATIONS
+    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations)
+    digest = derived.hex()
+    formatted = f"pbkdf2_sha256${iterations}${salt}${digest}"
+    return formatted, salt
+
+
+def verify_password(password: str, stored_hash: str, salt: str = "") -> tuple[bool, bool]:
+    """
+    Verifies password against stored hash with constant-time comparison.
+    Supports PBKDF2-HMAC-SHA256 and transparently handles legacy SHA-256 with salt.
+    Returns: (is_valid: bool, needs_upgrade: bool)
+    """
+    if not password or not stored_hash:
+        return False, False
+
+    try:
+        if stored_hash.startswith("pbkdf2_sha256$"):
+            parts = stored_hash.split("$")
+            if len(parts) != 4:
+                return False, False
+            _, iters_str, salt_part, expected_digest = parts
+            iters = int(iters_str)
+            computed = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_part.encode("utf-8"), iters).hex()
+            is_valid = secrets.compare_digest(computed, expected_digest)
+            needs_upgrade = (iters < config.PASSWORD_KDF_ITERATIONS)
+            return is_valid, needs_upgrade
+        else:
+            # Legacy SHA-256 verification
+            expected = stored_hash
+            computed = hashlib.sha256((password + (salt or "")).encode("utf-8")).hexdigest()
+            if secrets.compare_digest(computed, expected):
+                return True, True  # Valid legacy password -> triggers upgrade
+            return False, False
+    except Exception:
+        return False, False
+
+
 def init_unified_db():
     with DB_LOCK:
         conn = get_db_connection()
@@ -742,49 +789,8 @@ def verify_playback_token(token: str, target_file_path: str) -> tuple[bool, str]
         return True, "Valid"
 
 
-def hash_password(password: str, salt: str = None) -> tuple[str, str]:
-    """
-    Generates a secure password hash using standard-library PBKDF2-HMAC-SHA256.
-    Format: pbkdf2_sha256$<iterations>$<salt>$<digest>
-    """
-    if not salt:
-        salt = secrets.token_hex(16)
-    iterations = config.PASSWORD_KDF_ITERATIONS
-    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations)
-    digest = derived.hex()
-    formatted = f"pbkdf2_sha256${iterations}${salt}${digest}"
-    return formatted, salt
-
-
-def verify_password(password: str, stored_hash: str, salt: str = "") -> tuple[bool, bool]:
-    """
-    Verifies password against stored hash with constant-time comparison.
-    Supports PBKDF2-HMAC-SHA256 and transparently handles legacy SHA-256 with salt.
-    Returns: (is_valid: bool, needs_upgrade: bool)
-    """
-    if not password or not stored_hash:
-        return False, False
-
-    try:
-        if stored_hash.startswith("pbkdf2_sha256$"):
-            parts = stored_hash.split("$")
-            if len(parts) != 4:
-                return False, False
-            _, iters_str, salt_part, expected_digest = parts
-            iters = int(iters_str)
-            computed = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_part.encode("utf-8"), iters).hex()
-            is_valid = secrets.compare_digest(computed, expected_digest)
-            needs_upgrade = (iters < config.PASSWORD_KDF_ITERATIONS)
-            return is_valid, needs_upgrade
-        else:
-            # Legacy SHA-256 verification
-            expected = stored_hash
-            computed = hashlib.sha256((password + (salt or "")).encode("utf-8")).hexdigest()
-            if secrets.compare_digest(computed, expected):
-                return True, True  # Valid legacy password -> triggers upgrade
-            return False, False
-    except Exception:
-        return False, False
+# hash_password() and verify_password() are defined above init_unified_db()
+# to satisfy startup boot order (admin seeding requires PBKDF2 at import time).
 
 
 def db_get_user(user_id: str) -> dict | None:
