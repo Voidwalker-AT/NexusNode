@@ -1643,6 +1643,90 @@ def index():
     return render_template('index.html', version=config.VERSION)
 
 
+def create_user_session(user_dict: dict) -> str:
+    """Creates a server session token and registers in SESSIONS dict."""
+    token = secrets.token_hex(32)
+    session_data = {
+        "user_id": user_dict["user_id"],
+        "role": user_dict["role"],
+        "privileges": user_dict.get("privileges", {}),
+        "created_at": time.time(),
+        "expires_at": time.time() + config.SESSION_EXPIRY_SECONDS
+    }
+    with SESSIONS_LOCK:
+        SESSIONS[token] = session_data
+    return token
+
+
+def revoke_user_session(token: str) -> bool:
+    """Revokes a session token from SESSIONS dict."""
+    with SESSIONS_LOCK:
+        if token in SESSIONS:
+            del SESSIONS[token]
+            return True
+    return False
+
+
+def get_active_sessions() -> list[dict]:
+    """Returns safe metadata list of currently active sessions (excluding raw tokens by default)."""
+    now = time.time()
+    active = []
+    with SESSIONS_LOCK:
+        expired = [tok for tok, s in SESSIONS.items() if now > s.get("expires_at", 0)]
+        for tok in expired:
+            del SESSIONS[tok]
+
+        for tok, s in SESSIONS.items():
+            active.append({
+                "user_id": s.get("user_id"),
+                "role": s.get("role"),
+                "created_at": s.get("created_at"),
+                "expires_at": s.get("expires_at"),
+                "status": "active"
+            })
+    return active
+
+
+def authenticate_user_credentials(user_id: str, password: str, client_ip: str = "127.0.0.1") -> tuple[bool, str, dict | None, int | None]:
+    """
+    Authoritative single source of truth for user authentication and lockout enforcement.
+    Used by both web /api/auth/login and local CLI login.
+    Returns: (success: bool, message: str, user_dict_or_None, lockout_seconds_or_None)
+    """
+    user_id = str(user_id or "").strip().lower()
+    password = str(password or "").strip()
+
+    if not user_id or not password:
+        return False, "User ID and password are required.", None, None
+
+    with FAILED_LOGINS_LOCK:
+        fail_record = FAILED_LOGINS.get(client_ip, {"count": 0, "locked_until": 0.0})
+        if time.time() < fail_record["locked_until"]:
+            remaining = max(1, int(fail_record["locked_until"] - time.time()))
+            return False, f"Account locked. Try again in {remaining} seconds.", None, remaining
+
+    user = db_get_user(user_id)
+    if not user or not verify_password(password, user["password_hash"], user["salt"]):
+        with FAILED_LOGINS_LOCK:
+            fail_record["count"] += 1
+            if fail_record["count"] >= config.LOCKOUT_THRESHOLD:
+                fail_record["locked_until"] = time.time() + config.LOCKOUT_DURATION_SECONDS
+                log_event("WARN", "AUTH", f"IP/Identity '{client_ip}' locked out due to repeated failed logins.")
+                FAILED_LOGINS[client_ip] = fail_record
+                remaining = int(config.LOCKOUT_DURATION_SECONDS)
+                return False, f"Account locked. Try again in {remaining} seconds.", None, remaining
+            FAILED_LOGINS[client_ip] = fail_record
+
+        log_event("WARN", "AUTH", f"Failed login attempt for user '{user_id}' from {client_ip}")
+        return False, "Authentication failed.", None, None
+
+    with FAILED_LOGINS_LOCK:
+        if client_ip in FAILED_LOGINS:
+            del FAILED_LOGINS[client_ip]
+
+    return True, "Authentication successful.", user, None
+
+
 def clear_account_lockout(user_id: str = None, ip_address: str = None):
     """Clears failed login and lockout tracking for emergency recovery or password resets."""
     with FAILED_LOGINS_LOCK:
@@ -1656,66 +1740,30 @@ def clear_account_lockout(user_id: str = None, ip_address: str = None):
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
     client_ip = request.remote_addr or "127.0.0.1"
-
-    with FAILED_LOGINS_LOCK:
-        fail_record = FAILED_LOGINS.get(client_ip, {"count": 0, "locked_until": 0.0})
-        if time.time() < fail_record["locked_until"]:
-            remaining = max(1, int(fail_record["locked_until"] - time.time()))
-            return jsonify({
-                "error": "locked_out",
-                "message": f"Account Locked. Try again in {remaining}s.",
-                "lockout_seconds": remaining,
-                "retry_after": remaining
-            }), 429
-
     data = request.get_json(force=True, silent=True) or {}
     user_id = str(data.get("user_id") or data.get("username") or "").strip().lower()
     password = str(data.get("password", "")).strip()
 
-    if not user_id or not password:
-        return jsonify({"error": "validation_error", "message": "User ID and password are required."}), 400
+    success, msg, user, lockout_secs = authenticate_user_credentials(user_id, password, client_ip)
+    if not success:
+        if lockout_secs:
+            return jsonify({
+                "error": "locked_out",
+                "message": f"Account Locked. Try again in {lockout_secs}s.",
+                "lockout_seconds": lockout_secs,
+                "retry_after": lockout_secs
+            }), 429
+        if not user_id or not password:
+            return jsonify({"error": "validation_error", "message": msg}), 400
+        return jsonify({"error": "invalid_credentials", "message": msg}), 401
 
-    user = db_get_user(user_id)
-    if not user or not verify_password(password, user["password_hash"], user["salt"]):
-        with FAILED_LOGINS_LOCK:
-            fail_record["count"] += 1
-            if fail_record["count"] >= config.LOCKOUT_THRESHOLD:
-                fail_record["locked_until"] = time.time() + config.LOCKOUT_DURATION_SECONDS
-                log_event("WARN", "AUTH", f"IP '{client_ip}' locked out due to repeated failed logins.")
-                FAILED_LOGINS[client_ip] = fail_record
-                remaining = int(config.LOCKOUT_DURATION_SECONDS)
-                return jsonify({
-                    "error": "locked_out",
-                    "message": f"Account Locked. Try again in {remaining}s.",
-                    "lockout_seconds": remaining,
-                    "retry_after": remaining
-                }), 429
-            FAILED_LOGINS[client_ip] = fail_record
-
-        log_event("WARN", "AUTH", f"Failed login attempt for user '{user_id}' from {client_ip}")
-        return jsonify({"error": "invalid_credentials", "message": "Invalid user ID or password."}), 401
-
-    with FAILED_LOGINS_LOCK:
-        if client_ip in FAILED_LOGINS:
-            del FAILED_LOGINS[client_ip]
-
-    token = secrets.token_hex(32)
-    session_data = {
-        "user_id": user["user_id"],
-        "role": user["role"],
-        "privileges": user["privileges"],
-        "created_at": time.time(),
-        "expires_at": time.time() + config.SESSION_EXPIRY_SECONDS
-    }
-
-    with SESSIONS_LOCK:
-        SESSIONS[token] = session_data
-
+    token = create_user_session(user)
     log_event("INFO", "AUTH", f"User '{user_id}' signed in successfully.")
     return jsonify({
         "token": token,
         "user": {
             "user_id": user["user_id"],
+            "username": user["user_id"],
             "role": user["role"],
             "privileges": user["privileges"]
         }
@@ -3110,6 +3158,65 @@ def admin_db_diagnostics():
     })
 
 
+def db_create_user(user_id: str, password: str, role: str = "user", privileges: dict = None) -> tuple[bool, str]:
+    """Creates a user with proper password hashing and RBAC privileges."""
+    user_id = str(user_id or "").strip().lower()
+    if not user_id:
+        return False, "User ID cannot be empty."
+    if not password:
+        return False, "Password cannot be empty."
+    if db_get_user(user_id):
+        return False, f"User '{user_id}' already exists."
+
+    role = role.lower() if role else "user"
+    if role not in ["admin", "user"]:
+        return False, f"Invalid role '{role}'. Must be 'admin' or 'user'."
+
+    if privileges is None:
+        privileges = dict(config.ADMIN_DEFAULT_PRIVILEGES if role == "admin" else config.USER_DEFAULT_PRIVILEGES)
+
+    hashed, salt = hash_password(password)
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            conn.execute("""
+                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, hashed, salt, role, json.dumps(privileges), time.time()))
+            conn.commit()
+        finally:
+            conn.close()
+
+    log_event("INFO", "USERS", f"Created user '{user_id}' with role '{role}'.")
+    return True, f"User '{user_id}' created successfully."
+
+
+def db_delete_user(user_id: str) -> tuple[bool, str]:
+    """Deletes a user, purges their sessions, and clears lockout state."""
+    user_id = str(user_id or "").strip().lower()
+    if user_id == "admin":
+        return False, "Cannot delete primary admin account."
+    if not db_get_user(user_id):
+        return False, f"User '{user_id}' does not exist."
+
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    with SESSIONS_LOCK:
+        tokens_to_del = [tok for tok, s in SESSIONS.items() if s.get("user_id") == user_id]
+        for tok in tokens_to_del:
+            del SESSIONS[tok]
+
+    clear_account_lockout(user_id=user_id)
+    log_event("INFO", "USERS", f"Deleted user account '{user_id}'.")
+    return True, f"User '{user_id}' deleted successfully."
+
+
 @app.route('/api/admin/users', methods=['GET', 'POST'])
 def admin_manage_users():
     err = require_admin()
@@ -3120,28 +3227,16 @@ def admin_manage_users():
         data = request.get_json(force=True, silent=True) or {}
         user_id = str(data.get('user_id', '')).strip().lower()
         password = str(data.get('password', '')).strip()
-        privileges = data.get('privileges', dict(config.USER_DEFAULT_PRIVILEGES))
+        role = str(data.get('role', 'user')).strip().lower()
+        privileges = data.get('privileges', None)
 
-        if not user_id or not password:
-            return jsonify({"error": "User ID and password are required."}), 400
+        success, msg = db_create_user(user_id, password, role=role, privileges=privileges)
+        if not success:
+            if "already exists" in msg:
+                return jsonify({"error": msg}), 409
+            return jsonify({"error": msg}), 400
 
-        if db_get_user(user_id):
-            return jsonify({"error": f"User '{user_id}' already exists."}), 409
-
-        hashed, salt = hash_password(password)
-        with DB_LOCK:
-            conn = get_db_connection()
-            try:
-                conn.execute("""
-                    INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
-                    VALUES (?, ?, ?, 'user', ?, ?)
-                """, (user_id, hashed, salt, json.dumps(privileges), time.time()))
-                conn.commit()
-            finally:
-                conn.close()
-
-        log_event("INFO", "USERS", f"Created user '{user_id}'.")
-        return jsonify({"message": f"User '{user_id}' created successfully."}), 201
+        return jsonify({"message": msg}), 201
 
     # GET List
     users = db_get_all_users()
@@ -3190,24 +3285,13 @@ def admin_delete_user(user_id):
     if err:
         return err
 
-    if user_id.lower() == "admin":
-        return jsonify({"error": "Cannot delete primary admin account."}), 400
+    success, msg = db_delete_user(user_id)
+    if not success:
+        if "Cannot delete" in msg:
+            return jsonify({"error": msg}), 400
+        return jsonify({"error": msg}), 404
 
-    with DB_LOCK:
-        conn = get_db_connection()
-        try:
-            conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
-            conn.commit()
-        finally:
-            conn.close()
-
-    with SESSIONS_LOCK:
-        tokens_to_del = [tok for tok, s in SESSIONS.items() if s.get("user_id") == user_id]
-        for tok in tokens_to_del:
-            del SESSIONS[tok]
-
-    log_event("INFO", "USERS", f"Deleted user account '{user_id}'.")
-    return jsonify({"message": f"User '{user_id}' deleted."})
+    return jsonify({"message": msg})
 
 
 @app.route('/api/admin/stats', methods=['GET'])

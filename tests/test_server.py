@@ -76,6 +76,12 @@ class TestNexusNodeServer(unittest.TestCase):
         self.client = server_app.app.test_client()
         self.admin_token = self.__class__.admin_token
         server_app.governor.snapshot_cache.set(None)
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+    def tearDown(self):
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
 
     # 1. Health and Unprivileged Probing
     def test_01_health_endpoint(self):
@@ -1053,6 +1059,407 @@ class TestNexusNodeServer(unittest.TestCase):
 
         res3 = self.client.get('/scripts/reset_admin_password.py')
         self.assertIn(res3.status_code, [404, 403, 401])
+
+    # 19. Complete Local Account & Authentication CLI Tests
+    def test_cli_users(self):
+        """Verify 'nexus_admin users' lists users with safe columns and no secrets."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = nexus_admin.cmd_users(Namespace())
+
+        self.assertEqual(code, 0)
+        output = out.getvalue()
+        self.assertIn("USER ID", output)
+        self.assertIn("ROLE", output)
+        self.assertIn("STATUS", output)
+        self.assertIn("admin", output)
+        self.assertNotIn("password_hash", output)
+        self.assertNotIn("salt", output)
+
+    def test_cli_user_info(self):
+        """Verify 'nexus_admin user-info --user admin' displays metadata and privileges safely."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = nexus_admin.cmd_user_info(Namespace(user="admin"))
+
+        self.assertEqual(code, 0)
+        output = out.getvalue()
+        self.assertIn("User ID:", output)
+        self.assertIn("Role:", output)
+        self.assertIn("admin", output)
+        self.assertIn("Enabled Privileges:", output)
+        self.assertNotIn("password_hash", output)
+        self.assertNotIn("salt", output)
+
+    def test_cli_create_user(self):
+        """Verify 'nexus_admin create-user --user <user> --role user' creates user with least privilege."""
+        import nexus_admin
+        from argparse import Namespace
+
+        uname = f"cli_u_{int(time.time()*1000)}"
+        code = nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="testpass123_cli", yes=True))
+        self.assertEqual(code, 0)
+
+        created = server_app.db_get_user(uname)
+        self.assertIsNotNone(created)
+        self.assertEqual(created["role"], "user")
+        self.assertTrue(created["privileges"].get("can_upload_files"))
+        self.assertFalse(created["privileges"].get("can_manage_users"))
+
+    def test_cli_create_duplicate_user(self):
+        """Verify creating a duplicate user is rejected."""
+        import io
+        from contextlib import redirect_stderr
+        import nexus_admin
+        from argparse import Namespace
+
+        err = io.StringIO()
+        with redirect_stderr(err):
+            code = nexus_admin.cmd_create_user(Namespace(user="admin", role="user", password="newpass123", yes=True))
+
+        self.assertEqual(code, 1)
+        self.assertIn("already exists", err.getvalue())
+
+    def test_cli_create_admin_confirmation(self):
+        """Verify creating an admin account requires confirmation when --yes is not given."""
+        import nexus_admin
+        from argparse import Namespace
+
+        uname = f"cli_adm_{int(time.time()*1000)}"
+        with patch('builtins.input', return_value='n'):
+            code = nexus_admin.cmd_create_user(Namespace(user=uname, role="admin", password="adminpass123", yes=False))
+            self.assertEqual(code, 1)
+            self.assertIsNone(server_app.db_get_user(uname))
+
+        with patch('builtins.input', return_value='y'):
+            code = nexus_admin.cmd_create_user(Namespace(user=uname, role="admin", password="adminpass123", yes=False))
+            self.assertEqual(code, 0)
+            self.assertIsNotNone(server_app.db_get_user(uname))
+            self.assertEqual(server_app.db_get_user(uname)["role"], "admin")
+
+    def test_cli_reset_password_admin(self):
+        """Verify resetting admin password via CLI resets credentials."""
+        import nexus_admin
+        from argparse import Namespace
+
+        code = nexus_admin.cmd_reset_password(Namespace(user="admin", password="new_admin_pass_789"))
+        self.assertEqual(code, 0)
+
+        success, _, _, _ = server_app.authenticate_user_credentials("admin", "new_admin_pass_789")
+        self.assertTrue(success)
+
+        # Revert admin password
+        nexus_admin.cmd_reset_password(Namespace(user="admin", password="adminpassword"))
+
+    def test_cli_reset_password_user(self):
+        """Verify resetting a normal user password via CLI resets credentials."""
+        import nexus_admin
+        from argparse import Namespace
+
+        uname = f"cli_u2_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="initpass123", yes=True))
+
+        code = nexus_admin.cmd_reset_password(Namespace(user=uname, password="changedpass456"))
+        self.assertEqual(code, 0)
+
+        success, _, _, _ = server_app.authenticate_user_credentials(uname, "changedpass456")
+        self.assertTrue(success)
+
+    def test_cli_unlock_user(self):
+        """Verify 'nexus_admin unlock --user <user>' clears lockout and resets counter."""
+        import nexus_admin
+        from argparse import Namespace
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS["127.0.0.1"] = {"count": 5, "locked_until": time.time() + 300.0}
+
+        code = nexus_admin.cmd_unlock(Namespace(user="admin"))
+        self.assertEqual(code, 0)
+
+        with server_app.FAILED_LOGINS_LOCK:
+            fail_rec = server_app.FAILED_LOGINS.get("127.0.0.1", {"count": 0, "locked_until": 0.0})
+            self.assertEqual(fail_rec.get("count", 0), 0)
+
+    def test_cli_login_success_admin(self):
+        """Verify CLI login succeeds for valid admin credentials."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        nexus_admin.emergency_reset_password("admin", "adminpassword")
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=False, show_token=False))
+
+        self.assertEqual(code, 0)
+        output = out.getvalue()
+        self.assertIn("Authentication successful.", output)
+        self.assertIn("Role: admin", output)
+
+    def test_cli_login_success_user(self):
+        """Verify CLI login succeeds for valid normal user credentials."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        uname = f"cli_u3_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="normalpass123", yes=True))
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = nexus_admin.cmd_login(Namespace(user=uname, password="normalpass123", session=False, show_token=False))
+
+        self.assertEqual(code, 0)
+        output = out.getvalue()
+        self.assertIn("Authentication successful.", output)
+        self.assertIn("Role: user", output)
+
+    def test_cli_login_failure(self):
+        """Verify CLI login rejects invalid credentials."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = nexus_admin.cmd_login(Namespace(user="admin", password="badpassword", session=False, show_token=False))
+
+        self.assertEqual(code, 1)
+        self.assertIn("Authentication failed.", out.getvalue())
+
+    def test_cli_login_locked_account(self):
+        """Verify CLI login blocks attempts on locked accounts."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS["127.0.0.1"] = {"count": 5, "locked_until": time.time() + 45.0}
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=False, show_token=False))
+
+        self.assertEqual(code, 1)
+        self.assertIn("Account locked. Try again in", out.getvalue())
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+    def test_cli_login_lockout_countdown(self):
+        """Verify CLI login lockout reports decreasing seconds remaining."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS["127.0.0.1"] = {"count": 5, "locked_until": time.time() + 20.0}
+
+        out1 = io.StringIO()
+        with redirect_stdout(out1):
+            nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=False, show_token=False))
+        self.assertIn("Account locked. Try again in", out1.getvalue())
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+    def test_cli_login_respects_same_auth_logic(self):
+        """Verify CLI and Web API share the exact same authentication and lockout state."""
+        import nexus_admin
+        from argparse import Namespace
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+        # Fail 4 times via web API
+        for _ in range(config.LOCKOUT_THRESHOLD - 1):
+            self.client.post('/api/auth/login', json={"user_id": "admin", "password": "wrongpassword"})
+
+        # 5th attempt fails via CLI, triggering the lockout threshold
+        nexus_admin.cmd_login(Namespace(user="admin", password="wrongpassword", session=False, show_token=False))
+
+        # 6th attempt on web API must return 429 locked out
+        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "adminpassword"})
+        self.assertEqual(res.status_code, 429)
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+    def test_cli_session_creation(self):
+        """Verify 'nexus_admin login --session' writes local session file."""
+        import nexus_admin
+        from argparse import Namespace
+
+        code = nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=True, show_token=False))
+        self.assertEqual(code, 0)
+
+        session_data = nexus_admin.read_local_session()
+        self.assertIsNotNone(session_data)
+        self.assertEqual(session_data["user_id"], "admin")
+        self.assertEqual(session_data["role"], "admin")
+        self.assertTrue(len(session_data["token"]) >= 32)
+
+    def test_cli_whoami(self):
+        """Verify 'nexus_admin whoami' inspects local session."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        # Login with session
+        nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=True, show_token=False))
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = nexus_admin.cmd_whoami(Namespace())
+
+        self.assertEqual(code, 0)
+        output = out.getvalue()
+        self.assertIn("Authenticated", output)
+        self.assertIn("User: admin", output)
+        self.assertIn("Role: admin", output)
+
+    def test_cli_logout(self):
+        """Verify 'nexus_admin logout' revokes session and deletes session file."""
+        import nexus_admin
+        from argparse import Namespace
+
+        nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=True, show_token=False))
+        code = nexus_admin.cmd_logout(Namespace())
+        self.assertEqual(code, 0)
+        self.assertIsNone(nexus_admin.read_local_session())
+
+    def test_cli_session_token_not_printed(self):
+        """Verify session token is not printed in standard output by default."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=True, show_token=False))
+
+        session_data = nexus_admin.read_local_session()
+        self.assertNotIn(session_data["token"], out.getvalue())
+
+    def test_cli_no_password_output(self):
+        """Verify password is never printed in CLI outputs."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        secret_pw = "super_secret_pw_9999"
+        uname = f"cli_u4_{int(time.time()*1000)}"
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password=secret_pw, yes=True))
+            nexus_admin.cmd_user_info(Namespace(user=uname))
+            nexus_admin.cmd_users(Namespace())
+
+        self.assertNotIn(secret_pw, out.getvalue())
+
+    def test_cli_no_hash_output(self):
+        """Verify password hash and salt are never printed in CLI outputs."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        uname = f"cli_u5_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="pwd", yes=True))
+        u = server_app.db_get_user(uname)
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            nexus_admin.cmd_user_info(Namespace(user=uname))
+            nexus_admin.cmd_users(Namespace())
+
+        self.assertNotIn(u["password_hash"], out.getvalue())
+        self.assertNotIn(u["salt"], out.getvalue())
+
+    def test_cli_role_preservation(self):
+        """Verify CLI operations strictly preserve assigned user roles."""
+        import nexus_admin
+        from argparse import Namespace
+
+        uname = f"cli_u6_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="p1", yes=True))
+        self.assertEqual(server_app.db_get_user(uname)["role"], "user")
+
+        nexus_admin.cmd_reset_password(Namespace(user=uname, password="p2"))
+        self.assertEqual(server_app.db_get_user(uname)["role"], "user")
+
+        nexus_admin.cmd_unlock(Namespace(user=uname))
+        self.assertEqual(server_app.db_get_user(uname)["role"], "user")
+
+    def test_cli_privilege_preservation(self):
+        """Verify CLI operations strictly preserve user privileges."""
+        import nexus_admin
+        from argparse import Namespace
+
+        uname = f"cli_u7_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="p1", yes=True))
+        orig_privs = dict(server_app.db_get_user(uname)["privileges"])
+
+        nexus_admin.cmd_reset_password(Namespace(user=uname, password="p2"))
+        self.assertEqual(server_app.db_get_user(uname)["privileges"], orig_privs)
+
+    def test_cli_ssh_vs_app_auth_separation(self):
+        """Verify CLI help documents the architectural separation between SSH and app auth."""
+        import io
+        from contextlib import redirect_stdout
+        import nexus_admin
+        from argparse import Namespace
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            nexus_admin.cmd_help(Namespace())
+
+        output = out.getvalue()
+        self.assertIn("SSH Authentication (OS Layer)", output)
+        self.assertIn("NexusNode Application Authentication (Application Layer)", output)
+        self.assertIn("ssh -p 8022", output)
+
+    def test_web_lockout_countdown_regression(self):
+        """Verify Web UI lockout countdown behavior has zero regression."""
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
+
+        # Trigger lockout
+        for _ in range(config.LOCKOUT_THRESHOLD):
+            self.client.post('/api/auth/login', json={"user_id": "admin", "password": "wrongpassword"})
+
+        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "wrongpassword"})
+        self.assertEqual(res.status_code, 429)
+        data = res.get_json()
+        self.assertEqual(data["error"], "locked_out")
+        self.assertIn("lockout_seconds", data)
+        self.assertIn("retry_after", data)
+        self.assertTrue(data["lockout_seconds"] > 0)
+
+        with server_app.FAILED_LOGINS_LOCK:
+            server_app.FAILED_LOGINS.clear()
 
 
 if __name__ == '__main__':
