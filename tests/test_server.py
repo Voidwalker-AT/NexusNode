@@ -2413,10 +2413,10 @@ class TestNexusNodeServer(unittest.TestCase):
             t['output_path'] = 'Downloads/state_mach.mp4'
             t['progress'] = 100
             t['stage'] = 'COMPLETED'
+            recorded_stages.append(t['stage'])
             t['status'] = 'COMPLETED'
             t['completed_at'] = time.time()
             server_app.task_runner._save_task_to_db(t)
-            recorded_stages.append(t['stage'])
 
         tid, _ = server_app.task_runner.enqueue_task(
             "Download: State Machine Test", "media_download", mock_media_run,

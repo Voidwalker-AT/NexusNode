@@ -192,12 +192,35 @@ def create_parser() -> NexusArgumentParser:
     p_db.add_argument("table", nargs="?", default="users", help="Table name to inspect")
     p_db.add_argument("--limit", type=int, default=25, help="Max rows to retrieve")
 
+    # --- setup ---
+    p_setup = subparsers.add_parser("setup", help="Environment & Windows PATH auto-configuration", parents=[common_parser])
+    p_setup.add_argument("setup_action", nargs="?", default="status", choices=["status", "path", "fix"], help="Setup action")
+
     return parser
 
 
+def setup_path_cli() -> int:
+    """Entry point for nexus-setup console script."""
+    from .windows import main as windows_setup_main
+    return windows_setup_main()
+
+
 def main(argv=None) -> int:
+    # 0. Automatic Windows PATH self-healing on startup
+    if sys.platform == "win32":
+        try:
+            from .windows import ensure_windows_path
+            ensure_windows_path(silent=True)
+        except Exception:
+            pass
+
     parser = create_parser()
     args = parser.parse_args(argv)
+
+    # Handle setup command before resolving server URL
+    if args.command == "setup":
+        from .windows import main as windows_setup_main
+        return windows_setup_main()
 
     # 1. Resolve target server URL with explicit precedence rule:
     # Explicit positional 'url' on connect wins over global '--server'.

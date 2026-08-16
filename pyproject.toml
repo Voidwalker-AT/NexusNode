@@ -31,6 +31,7 @@ classifiers = [
 
 [project.scripts]
 nexus = "nexus.__main__:main"
+nexus-setup = "nexus.__main__:setup_path_cli"
 
 [project.urls]
 Homepage = "https://github.com/Voidwalker-AT/NexusNode"

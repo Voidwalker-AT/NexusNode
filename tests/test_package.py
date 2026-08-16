@@ -141,7 +141,8 @@ class TestCommandModules(unittest.TestCase):
 
     def test_core_modules_importable(self):
         for mod_name in ['nexus.client', 'nexus.auth', 'nexus.config',
-                         'nexus.output', 'nexus.shell', 'nexus.normalize']:
+                         'nexus.output', 'nexus.shell', 'nexus.normalize',
+                         'nexus.windows']:
             with self.subTest(module=mod_name):
                 mod = importlib.import_module(mod_name)
                 self.assertIsNotNone(mod)
