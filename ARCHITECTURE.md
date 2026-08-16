@@ -134,3 +134,35 @@ runit / termux-services (sv / runsvdir)
 - **Tokens & Surfaces**: Pitch Black (`#000000`), Graphite (`#121212`, `#1c1b1b`), 1px structural borders (`#2C2C2C`), Primary Cyan (`#00daf3`), Neural Purple (`#dab9ff`).
 - **Responsive Layout**: 12-column desktop grid with sticky top status strip; mobile viewport reflow (375x667, 390x844, 412x915) with fixed bottom dock (`[Dash]`, `[Vault]`, `[Media]`, `[Tasks]`, `[AI]`, `[More]`), slide-up utilities sheet, and $\ge 44\text{px}$ touch targets.
 - **Telemetry Precision**: Strict labeling for `MEASURED` (e.g. RSS/PSS, storage), `ESTIMATED` (model memory), and `UNAVAILABLE` (unrooted thermal sensors).
+
+---
+
+## 6. Dual-Frontend Architecture (Web GUI & Universal Remote CLI)
+
+NexusNode exposes two first-class user frontends communicating over encrypted HTTPS:
+
+```
+Internet (LocalToNet Encrypted HTTPS / LAN HTTPS :5000)
+                              │
+               ┌──────────────┴──────────────┐
+               ▼                             ▼
+       Frontend 1: Web GUI           Frontend 2: Universal CLI
+    (Desktop & Android Browser)    (Windows / Linux / macOS / Termux)
+               │                             │
+               └──────────────┬──────────────┘
+                              ▼
+                NexusNode Authoritative API (:5000)
+       ┌──────────────────────────────────────────────┐
+       │ • Shared Auth & Session Tokens (/api/auth)  │
+       │ • Authoritative RBAC & Object Ownership      │
+       │ • Resource Governor & Task Engine (N=1)      │
+       │ • Vault / Media / AI / RAG / Diagnostics     │
+       └──────────────────────────────────────────────┘
+```
+
+### 6.1. Separation of Concerns
+- **Application Users**: Access NexusNode solely via HTTPS using application credentials. No SSH keys, Linux OS accounts, or Termux shell access required.
+- **Operator Maintenance Path**: Host Termux administration remains preserved strictly via private OpenSSH (`ssh -p 8022 u0_a208@PHONE_IP`).
+- **Zero Client Dependencies**: The `nexus` CLI package utilizes exclusively Python standard library modules (`urllib.request`, `json`, `ssl`, `cmd`, `getpass`), running out of the box on Windows, Linux, macOS, and Termux.
+- **Full Parity**: Interactive application shell (`nexus> `), direct scriptable command mode (`nexus <command> --json`), token streaming, media downloads, RAG search, and admin diagnostics all interface with the same authoritative backend REST endpoints.
+
