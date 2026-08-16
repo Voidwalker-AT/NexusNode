@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Task Queue - NexusNode System Controller</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#e5e2e1",
+                        "on-primary-fixed-variant": "#004f58",
+                        "surface-container-high": "#2a2a2a",
+                        "on-surface-variant": "#bac9cc",
+                        "primary-fixed-dim": "#00daf3",
+                        "graphite-surface": "#121212",
+                        "on-tertiary-fixed": "#1b1b1c",
+                        "background": "#131313",
+                        "inverse-on-surface": "#313030",
+                        "surface-dim": "#131313",
+                        "secondary-fixed": "#f4d9ff",
+                        "on-tertiary": "#303030",
+                        "border-subtle": "#333333",
+                        "surface-container-lowest": "#0e0e0e",
+                        "secondary-container": "#ab08ff",
+                        "on-secondary-container": "#fef0ff",
+                        "primary-container": "#00e5ff",
+                        "graphite-raised": "#1E1E1E",
+                        "tertiary": "#efeceb",
+                        "oled-black": "#000000",
+                        "on-secondary-fixed-variant": "#6f00a9",
+                        "on-tertiary-container": "#5a5959",
+                        "surface-container": "#201f1f",
+                        "on-error": "#690005",
+                        "on-secondary": "#4e0078",
+                        "tertiary-container": "#d2d0cf",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "surface-bright": "#393939",
+                        "primary": "#c3f5ff",
+                        "primary-fixed": "#9cf0ff",
+                        "surface-container-low": "#1c1b1b",
+                        "status-healthy": "#00C853",
+                        "surface": "#131313",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "error-container": "#93000a",
+                        "on-primary-container": "#00626e",
+                        "on-primary": "#00363d",
+                        "on-secondary-fixed": "#2f004b",
+                        "surface-tint": "#00daf3",
+                        "status-critical": "#D50000",
+                        "outline-variant": "#3b494c",
+                        "surface-variant": "#353534",
+                        "secondary-fixed-dim": "#e4b5ff",
+                        "inverse-primary": "#006875",
+                        "inverse-surface": "#e5e2e1",
+                        "tertiary-fixed": "#e5e2e1",
+                        "surface-container-highest": "#353534",
+                        "error": "#ffb4ab",
+                        "on-error-container": "#ffdad6",
+                        "secondary": "#e4b5ff",
+                        "on-primary-fixed": "#001f24",
+                        "on-background": "#e5e2e1",
+                        "status-warning": "#FFD600",
+                        "outline": "#849396"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "margin-mobile": "16px",
+                        "touch-target": "44px",
+                        "margin-desktop": "24px",
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "stack-gap": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "data-md": ["JetBrains Mono"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "data-lg": ["JetBrains Mono"],
+                        "data-sm": ["JetBrains Mono"],
+                        "headline-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700" }],
+                        "data-md": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-lg": ["16px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "data-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: theme('colors.oled-black'); color: theme('colors.on-surface'); }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .icon-fill { font-variation-settings: 'FILL' 1; }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+<!-- TopNavBar -->
+<nav class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-margin-desktop h-12 bg-background border-b border-border-subtle hidden md:flex">
+<div class="flex items-center gap-6">
+<div class="font-headline-lg text-headline-lg font-bold text-primary-fixed-dim tracking-tight cursor-pointer">NexusNode</div>
+<!-- Search Bar Left -->
+<div class="relative w-64 hidden lg:block">
+<span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="w-full h-8 pl-8 pr-3 bg-graphite-surface border border-border-subtle rounded-DEFAULT text-body-sm font-body-sm text-on-surface focus:outline-none focus:border-primary-fixed-dim transition-colors placeholder:text-on-surface-variant" placeholder="Search tasks..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-6 h-full">
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-2 h-full flex items-center" href="#">Dashboard</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-2 h-full flex items-center" href="#">Vault</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-2 h-full flex items-center" href="#">Media</a>
+<a class="text-primary-fixed-dim border-b-2 border-primary-fixed-dim pb-1 font-body-md text-body-md hover:bg-surface-container-low transition-colors px-2 h-full flex items-center" href="#">Tasks</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-2 h-full flex items-center" href="#">AI Studio</a>
+</div>
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors text-lg" data-icon="sensors">sensors</span>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors text-lg" data-icon="dns">dns</span>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors text-lg" data-icon="notifications">notifications</span>
+<button class="text-body-sm font-body-sm text-on-surface-variant border border-border-subtle rounded px-3 py-1 hover:bg-surface-container-low transition-colors ml-2">More</button>
+</div>
+</nav>
+<!-- SideNavBar (Hidden on Mobile) -->
+<aside class="fixed inset-y-0 left-0 z-40 hidden md:flex flex-col w-64 bg-graphite-surface border-r border-border-subtle pt-12">
+<div class="p-6 pb-4 border-b border-border-subtle">
+<h2 class="font-headline-md text-headline-md text-on-surface mb-1">NexusNode</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">System Controller</p>
+<div class="flex items-center mt-4 gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest border border-border-subtle flex items-center justify-center overflow-hidden">
+<span class="material-symbols-outlined text-on-surface-variant text-sm">person</span>
+</div>
+<span class="font-data-sm text-data-sm text-on-surface-variant uppercase tracking-wider">System Administrator</span>
+</div>
+</div>
+<nav class="flex-1 overflow-y-auto py-4 flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="lan">lan</span> Network
+             </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="event_note">event_note</span> Events
+             </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="hard_drive">hard_drive</span> Storage
+             </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT bg-surface-container-high text-primary-fixed-dim border-l-2 border-primary-fixed-dim transition-all duration-150 ease-in-out font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px] icon-fill" data-icon="backup">backup</span> Backups
+             </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="settings_input_component">settings_input_component</span> Automation
+             </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="terminal">terminal</span> Diagnostics
+             </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="settings">settings</span> Settings
+             </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-DEFAULT text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="admin_panel_settings">admin_panel_settings</span> Admin
+             </a>
+</nav>
+<div class="p-4 border-t border-border-subtle">
+<button class="w-full flex items-center justify-center gap-2 py-2 border border-border-subtle rounded-DEFAULT text-on-surface hover:bg-surface-container-low transition-colors font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[18px]">logout</span> Log Out
+             </button>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 pt-12 md:pl-64 p-margin-mobile md:p-margin-desktop overflow-x-hidden">
+<!-- Header Section -->
+<header class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+<div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface mb-1">Task Queue</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">Monitoring 4 active processes across the cluster.</p>
+</div>
+<div class="flex gap-2">
+<button class="px-4 py-2 bg-graphite-surface border border-border-subtle rounded-DEFAULT font-body-sm text-body-sm text-on-surface hover:bg-surface-container-low transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">filter_list</span> Filter
+                </button>
+<button class="px-4 py-2 bg-surface-container-lowest border border-primary-fixed-dim rounded-DEFAULT font-body-sm text-body-sm text-primary-fixed-dim hover:bg-primary-fixed-dim hover:text-oled-black transition-colors flex items-center gap-2 shadow-[0_0_8px_rgba(0,218,243,0.1)]">
+<span class="material-symbols-outlined text-[16px]">add</span> New Task
+                </button>
+</div>
+</header>
+<!-- Active Heavy Task Feature -->
+<section class="mb-8 p-6 bg-graphite-surface border border-primary-fixed-dim rounded-lg shadow-[0_0_15px_rgba(0,218,243,0.05)] relative overflow-hidden">
+<!-- Decorative tech background hint -->
+<div class="absolute inset-0 opacity-10 pointer-events-none" style="background-image: radial-gradient(circle at right center, #00daf3 0%, transparent 40%);"></div>
+<div class="relative z-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+<div class="flex-1 w-full">
+<div class="flex items-center gap-3 mb-2">
+<span class="px-2 py-0.5 bg-graphite-surface border border-primary-fixed-dim text-primary-fixed-dim font-label-caps text-label-caps rounded-DEFAULT animate-pulse">RUNNING</span>
+<h3 class="font-data-lg text-data-lg text-on-surface">SYS_BKP_DELTA_Q3</h3>
+<span class="font-data-sm text-data-sm text-on-surface-variant px-1.5 py-0.5 bg-surface-container-highest rounded">ID: 889A-4C</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-4">Performing full delta backup of secondary storage array to remote vault. Deduplication active.</p>
+<div class="w-full">
+<div class="flex justify-between font-data-sm text-data-sm text-on-surface-variant mb-1">
+<span>Processing Volume 3 of 8</span>
+<span class="text-primary-fixed-dim">68%</span>
+</div>
+<div class="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden border border-border-subtle">
+<div class="h-full bg-primary-fixed-dim rounded-full relative" style="width: 68%;">
+<div class="absolute top-0 bottom-0 left-0 right-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)] animate-[shimmer_2s_infinite]"></div>
+</div>
+</div>
+<div class="flex justify-between font-data-sm text-data-sm text-on-surface-variant mt-1">
+<span>ETA: 14m 22s</span>
+<span>Speed: 450 MB/s</span>
+</div>
+</div>
+</div>
+<div class="flex flex-row lg:flex-col gap-2 shrink-0 border-t lg:border-t-0 lg:border-l border-border-subtle pt-4 lg:pt-0 lg:pl-6 w-full lg:w-auto justify-end">
+<button class="px-3 py-1.5 border border-status-warning text-status-warning hover:bg-status-warning hover:text-oled-black transition-colors rounded-DEFAULT font-label-caps text-label-caps flex items-center gap-1 justify-center">
+<span class="material-symbols-outlined text-[14px]">pause</span> PAUSE
+                    </button>
+<button class="px-3 py-1.5 border border-status-critical text-status-critical hover:bg-status-critical hover:text-oled-black transition-colors rounded-DEFAULT font-label-caps text-label-caps flex items-center gap-1 justify-center">
+<span class="material-symbols-outlined text-[14px]">stop</span> TERMINATE
+                    </button>
+<button class="px-3 py-1.5 border border-border-subtle text-on-surface hover:bg-surface-container-low transition-colors rounded-DEFAULT font-label-caps text-label-caps flex items-center gap-1 justify-center mt-auto">
+<span class="material-symbols-outlined text-[14px]">terminal</span> LOGS
+                    </button>
+</div>
+</div>
+</section>
+<!-- Queue Tabs & Table Container -->
+<section class="bg-graphite-surface border border-border-subtle rounded-lg flex flex-col">
+<!-- Tabs -->
+<div class="flex border-b border-border-subtle overflow-x-auto hide-scrollbar px-2 pt-2">
+<button class="px-4 py-2 font-data-sm text-data-sm uppercase tracking-wider text-primary-fixed-dim border-b-2 border-primary-fixed-dim whitespace-nowrap">ALL TASKS</button>
+<button class="px-4 py-2 font-data-sm text-data-sm uppercase tracking-wider text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors whitespace-nowrap border-b-2 border-transparent">RUNNING (3)</button>
+<button class="px-4 py-2 font-data-sm text-data-sm uppercase tracking-wider text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors whitespace-nowrap border-b-2 border-transparent">COMPLETED</button>
+<button class="px-4 py-2 font-data-sm text-data-sm uppercase tracking-wider text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors whitespace-nowrap border-b-2 border-transparent">FAILED (1)</button>
+</div>
+<!-- Table -->
+<div class="overflow-x-auto w-full">
+<table class="w-full text-left border-collapse min-w-[800px]">
+<thead>
+<tr class="border-b border-border-subtle bg-surface-container-lowest">
+<th class="p-3 font-data-sm text-data-sm text-on-surface-variant uppercase w-24">Status</th>
+<th class="p-3 font-data-sm text-data-sm text-on-surface-variant uppercase">Name / ID</th>
+<th class="p-3 font-data-sm text-data-sm text-on-surface-variant uppercase w-32">Type</th>
+<th class="p-3 font-data-sm text-data-sm text-on-surface-variant uppercase w-48">Progress / ETA</th>
+<th class="p-3 font-data-sm text-data-sm text-on-surface-variant uppercase w-32 text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-border-subtle font-data-md text-data-md">
+<!-- Row 1: Running -->
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="p-3">
+<span class="px-2 py-0.5 border border-primary-fixed-dim text-primary-fixed-dim font-label-caps text-label-caps rounded-DEFAULT inline-flex items-center gap-1">
+<span class="w-1.5 h-1.5 bg-primary-fixed-dim rounded-full animate-pulse"></span> RUNNING
+                                </span>
+</td>
+<td class="p-3">
+<div class="text-on-surface font-semibold">ML_TRAIN_EPOCH_12</div>
+<div class="text-data-sm text-on-surface-variant">ID: 442B-9F</div>
+</td>
+<td class="p-3 text-on-surface-variant">ML Model</td>
+<td class="p-3">
+<div class="flex items-center gap-2 mb-1">
+<div class="flex-1 h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary-fixed-dim w-[45%]"></div>
+</div>
+<span class="text-data-sm text-on-surface w-8 text-right">45%</span>
+</div>
+<div class="text-data-sm text-on-surface-variant">ETA: 2h 15m</div>
+</td>
+<td class="p-3 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-status-critical transition-colors" title="Terminate"><span class="material-symbols-outlined text-[18px]">stop_circle</span></button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" title="View Details"><span class="material-symbols-outlined text-[18px]">open_in_new</span></button>
+</div>
+</td>
+</tr>
+<!-- Row 2: Queued -->
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="p-3">
+<span class="px-2 py-0.5 border border-border-subtle text-on-surface-variant font-label-caps text-label-caps rounded-DEFAULT">QUEUED</span>
+</td>
+<td class="p-3">
+<div class="text-on-surface font-semibold">RAG_INDEX_UPDATE_WKLY</div>
+<div class="text-data-sm text-on-surface-variant">ID: 991C-2A</div>
+</td>
+<td class="p-3 text-on-surface-variant">RAG Index</td>
+<td class="p-3">
+<div class="text-data-sm text-on-surface-variant">Pending compute resources...</div>
+<div class="text-data-sm text-on-surface-variant">Est. start: 10m</div>
+</td>
+<td class="p-3 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-status-warning transition-colors" title="Cancel"><span class="material-symbols-outlined text-[18px]">cancel</span></button>
+<button class="text-on-surface-variant hover:text-primary-fixed-dim transition-colors" title="Promote"><span class="material-symbols-outlined text-[18px]">vertical_align_top</span></button>
+</div>
+</td>
+</tr>
+<!-- Row 3: Completed -->
+<tr class="hover:bg-surface-container-lowest transition-colors group opacity-70">
+<td class="p-3">
+<span class="px-2 py-0.5 border border-status-healthy text-status-healthy font-label-caps text-label-caps rounded-DEFAULT">COMPLETED</span>
+</td>
+<td class="p-3">
+<div class="text-on-surface font-semibold">DB_MIGRATE_V2.1</div>
+<div class="text-data-sm text-on-surface-variant">ID: 110X-88</div>
+</td>
+<td class="p-3 text-on-surface-variant">Database</td>
+<td class="p-3">
+<div class="flex items-center gap-2 mb-1">
+<div class="flex-1 h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-status-healthy w-full"></div>
+</div>
+<span class="text-data-sm text-status-healthy w-8 text-right">100%</span>
+</div>
+<div class="text-data-sm text-on-surface-variant">Took 14m 02s</div>
+</td>
+<td class="p-3 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" title="View Logs"><span class="material-symbols-outlined text-[18px]">receipt_long</span></button>
+</div>
+</td>
+</tr>
+<!-- Row 4: Failed -->
+<tr class="hover:bg-surface-container-lowest transition-colors group bg-[rgba(213,0,0,0.02)] border-l-2 border-status-critical">
+<td class="p-3 pl-2">
+<span class="px-2 py-0.5 border border-status-critical text-status-critical font-label-caps text-label-caps rounded-DEFAULT">FAILED</span>
+</td>
+<td class="p-3">
+<div class="text-status-critical font-semibold">API_SYNC_EXTERNAL_04</div>
+<div class="text-data-sm text-on-surface-variant">ID: 554E-1D</div>
+</td>
+<td class="p-3 text-on-surface-variant">Network sync</td>
+<td class="p-3">
+<div class="text-data-sm text-status-critical mb-1">ERR_CONNECTION_TIMEOUT</div>
+<div class="text-data-sm text-on-surface-variant">Failed at 14:02 UTC</div>
+</td>
+<td class="p-3 text-right">
+<div class="flex items-center justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+<button class="text-status-critical hover:text-on-surface transition-colors" title="Retry"><span class="material-symbols-outlined text-[18px]">replay</span></button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" title="View Logs"><span class="material-symbols-outlined text-[18px]">receipt_long</span></button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer Pagination -->
+<div class="p-3 border-t border-border-subtle flex items-center justify-between text-body-sm font-body-sm text-on-surface-variant bg-surface-container-lowest">
+<span>Showing 1-4 of 128 tasks</span>
+<div class="flex gap-1">
+<button class="px-2 py-1 rounded hover:bg-surface-container-high transition-colors disabled:opacity-50" disabled=""><span class="material-symbols-outlined text-[16px]">chevron_left</span></button>
+<button class="px-2 py-1 rounded bg-graphite-raised border border-border-subtle text-on-surface">1</button>
+<button class="px-2 py-1 rounded hover:bg-surface-container-high transition-colors">2</button>
+<button class="px-2 py-1 rounded hover:bg-surface-container-high transition-colors">3</button>
+<span class="px-2 py-1">...</span>
+<button class="px-2 py-1 rounded hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-[16px]">chevron_right</span></button>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-touch-target px-margin-mobile bg-surface-container-lowest border-t border-border-subtle md:hidden touch-none select-none">
+<a class="flex flex-col items-center justify-center text-on-surface-variant w-16 active:scale-95 transition-transform active:bg-surface-container-high rounded h-full" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="dashboard">dashboard</span>
+<span class="font-label-caps text-label-caps mt-1">Dash</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant w-16 active:scale-95 transition-transform active:bg-surface-container-high rounded h-full" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="storage">storage</span>
+<span class="font-label-caps text-label-caps mt-1">Vault</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant w-16 active:scale-95 transition-transform active:bg-surface-container-high rounded h-full" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="movie">movie</span>
+<span class="font-label-caps text-label-caps mt-1">Media</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary-fixed-dim w-16 active:scale-95 transition-transform active:bg-surface-container-high rounded h-full" href="#">
+<span class="material-symbols-outlined text-[20px] icon-fill" data-icon="task_alt">task_alt</span>
+<span class="font-label-caps text-label-caps mt-1">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant w-16 active:scale-95 transition-transform active:bg-surface-container-high rounded h-full" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="psychology">psychology</span>
+<span class="font-label-caps text-label-caps mt-1">AI</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant w-16 active:scale-95 transition-transform active:bg-surface-container-high rounded h-full" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="menu">menu</span>
+<span class="font-label-caps text-label-caps mt-1">More</span>
+</a>
+</nav>
+<style>
+        /* Custom Shimmer Animation for Progress Bar */
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        /* Utility to hide scrollbar but keep functionality */
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</body></html>

@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode Media Manager</title>
+<!-- Fonts & Icons -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Theme Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-error": "#690005",
+                        "surface-tint": "#00daf3",
+                        "error": "#ffb4ab",
+                        "on-secondary-fixed": "#2a0053",
+                        "surface-variant": "#2e3638",
+                        "error-container": "#93000a",
+                        "surface-container-high": "#242b2d",
+                        "on-secondary": "#460283",
+                        "on-surface": "#dce4e5",
+                        "on-tertiary-container": "#6f5500",
+                        "on-secondary-fixed-variant": "#5e289b",
+                        "tertiary-fixed-dim": "#f3bf26",
+                        "on-tertiary": "#3e2e00",
+                        "on-background": "#dce4e5",
+                        "surface-bright": "#333a3c",
+                        "on-tertiary-fixed": "#251a00",
+                        "on-error-container": "#ffdad6",
+                        "inverse-on-surface": "#2a3233",
+                        "primary-fixed-dim": "#00daf3",
+                        "tertiary-fixed": "#ffdf96",
+                        "outline-variant": "#3b494c",
+                        "on-surface-variant": "#bac9cc",
+                        "surface-container-lowest": "#000000",
+                        "outline": "#849396",
+                        "inverse-primary": "#006875",
+                        "on-tertiary-fixed-variant": "#594400",
+                        "surface": "#000000",
+                        "on-primary-fixed-variant": "#004f58",
+                        "primary-fixed": "#9cf0ff",
+                        "on-secondary-container": "#cfa7ff",
+                        "on-primary-container": "#00626e",
+                        "on-primary-fixed": "#001f24",
+                        "primary": "#c3f5ff",
+                        "surface-container": "#111111",
+                        "tertiary": "#ffeac0",
+                        "surface-dim": "#000000",
+                        "background": "#000000",
+                        "surface-container-low": "#0a0a0a",
+                        "surface-container-highest": "#222222",
+                        "primary-container": "#00e5ff",
+                        "secondary": "#dab9ff",
+                        "inverse-surface": "#dce4e5",
+                        "tertiary-container": "#fec931",
+                        "on-primary": "#00363d",
+                        "secondary-fixed": "#eedbff",
+                        "secondary-container": "#602b9d",
+                        "secondary-fixed-dim": "#dab9ff"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    spacing: {
+                        "stack-gap": "8px",
+                        "container-padding": "16px",
+                        "element-gap": "4px",
+                        "section-margin": "24px",
+                        "unit": "4px"
+                    },
+                    fontFamily: {
+                        "body-sm": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "data-md": ["JetBrains Mono"],
+                        "data-lg": ["JetBrains Mono"],
+                        "headline-lg": ["Inter"],
+                        "data-sm": ["JetBrains Mono"],
+                        "body-md": ["Inter"]
+                    },
+                    fontSize: {
+                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "label-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700" }],
+                        "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "data-md": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "data-lg": ["16px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "data-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* Custom scrollbar for technical look */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #000000; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #222222; 
+            border-radius: 0px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3b494c; 
+        }
+        
+        .progress-stripe {
+            background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%, transparent 75%, transparent);
+            background-size: 1rem 1rem;
+            animation: progress-move 1s linear infinite;
+        }
+        @keyframes progress-move {
+            0% { background-position: 1rem 0; }
+            100% { background-position: 0 0; }
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface min-h-screen flex flex-col font-body-md overflow-hidden selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar (Web) -->
+<header class="bg-surface hidden md:flex justify-between items-center px-container-padding h-16 w-full max-w-none border-b border-outline-variant sticky top-0 z-50">
+<div class="flex items-center gap-6">
+<span class="font-headline-lg text-headline-lg font-bold text-primary tracking-tighter">NexusNode</span>
+<nav class="flex gap-4 h-full items-end pb-[14px]">
+<a class="font-headline-md text-headline-md text-on-surface-variant hover:text-primary transition-colors" href="#">Dashboard</a>
+<a class="font-headline-md text-headline-md text-on-surface-variant hover:text-primary transition-colors" href="#">Vault</a>
+<a class="font-headline-md text-headline-md text-primary border-b-2 border-primary pb-1" href="#">Media</a>
+<a class="font-headline-md text-headline-md text-on-surface-variant hover:text-primary transition-colors" href="#">Tasks</a>
+<a class="font-headline-md text-headline-md text-on-surface-variant hover:text-primary transition-colors" href="#">AI Studio</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-100"><span class="material-symbols-outlined">sensors</span></button>
+<button class="text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-100"><span class="material-symbols-outlined">notifications</span></button>
+<button class="text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-100"><span class="material-symbols-outlined">account_circle</span></button>
+<button class="font-headline-md text-headline-md text-on-surface-variant hover:text-primary transition-colors border border-outline-variant px-3 py-1 rounded-DEFAULT ml-2">More</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto pb-32 md:pb-24">
+<div class="max-w-7xl mx-auto p-container-padding flex flex-col gap-section-margin h-full">
+<!-- Split Layout: Downloader & Queue -->
+<div class="flex flex-col lg:flex-row gap-section-margin">
+<!-- Left Column: Download Media -->
+<div class="w-full lg:w-[400px] flex-shrink-0 flex flex-col gap-stack-gap">
+<div class="flex items-center justify-between pb-2 border-b border-outline-variant">
+<h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">download_for_offline</span>
+                                Download Media
+                            </h2>
+</div>
+<div class="bg-surface-container border border-outline-variant p-4 rounded-lg flex flex-col gap-4">
+<!-- URL Input -->
+<div class="flex flex-col gap-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant" for="url-input">URL / BATCH URL</label>
+<textarea class="bg-surface border border-outline-variant rounded-sm px-3 py-2 text-data-md font-data-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary w-full h-20 placeholder:text-on-surface-variant/50 resize-none" id="url-input" placeholder="https://youtube.com/watch?v=..."></textarea>
+</div>
+<!-- Format & Quality -->
+<div class="flex gap-4">
+<div class="flex flex-col gap-1 flex-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant" for="format-select">FORMAT</label>
+<select class="bg-surface border border-outline-variant rounded-sm px-3 py-1.5 text-body-md font-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary w-full" id="format-select">
+<option>MP4 (Video)</option>
+<option>MKV (Video)</option>
+<option>MP3 (Audio)</option>
+<option>FLAC (Audio)</option>
+</select>
+</div>
+<div class="flex flex-col gap-1 flex-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant" for="quality-select">QUALITY</label>
+<select class="bg-surface border border-outline-variant rounded-sm px-3 py-1.5 text-body-md font-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary w-full" id="quality-select">
+<option>Best Available</option>
+<option>2160p (4K)</option>
+<option>1080p</option>
+<option>720p</option>
+<option>Audio Only (320k)</option>
+</select>
+</div>
+</div>
+<!-- Destination & Custom Filename -->
+<div class="flex flex-col gap-4 border-t border-outline-variant pt-4 mt-2">
+<div class="flex flex-col gap-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant" for="dest-select">DESTINATION FOLDER</label>
+<select class="bg-surface border border-outline-variant rounded-sm px-3 py-1.5 text-body-md font-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary w-full" id="dest-select">
+<option>/mnt/media/Videos</option>
+<option>/mnt/media/Music</option>
+<option>/mnt/media/Podcasts</option>
+</select>
+</div>
+<div class="flex flex-col gap-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant" for="filename-input">CUSTOM FILENAME (OPTIONAL)</label>
+<input class="bg-surface border border-outline-variant rounded-sm px-3 py-1.5 text-data-md font-data-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary w-full placeholder:text-on-surface-variant/50" id="filename-input" placeholder="%(title)s.%(ext)s" type="text"/>
+</div>
+<div class="flex flex-col gap-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant" for="subtitle-select">SUBTITLES</label>
+<select class="bg-surface border border-outline-variant rounded-sm px-3 py-1.5 text-body-md font-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary w-full" id="subtitle-select">
+<option>None</option>
+<option>Auto-gen (English)</option>
+<option>All Available</option>
+</select>
+</div>
+</div>
+<!-- Options -->
+<div class="flex flex-col gap-2 border-t border-outline-variant pt-4 mt-2">
+<label class="flex items-center gap-2 cursor-pointer group">
+<input checked="" class="form-checkbox text-primary bg-surface border-outline-variant rounded-sm focus:ring-primary focus:ring-offset-surface" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-on-surface group-hover:text-primary transition-colors">Embed Metadata</span>
+</label>
+<label class="flex items-center gap-2 cursor-pointer group">
+<input checked="" class="form-checkbox text-primary bg-surface border-outline-variant rounded-sm focus:ring-primary focus:ring-offset-surface" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-on-surface group-hover:text-primary transition-colors">Embed Thumbnail</span>
+</label>
+<label class="flex items-center gap-2 cursor-pointer group">
+<input checked="" class="form-checkbox text-primary bg-surface border-outline-variant rounded-sm focus:ring-primary focus:ring-offset-surface" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-on-surface group-hover:text-primary transition-colors">Embed Chapters</span>
+</label>
+</div>
+<!-- Submit -->
+<button class="bg-primary text-on-primary font-headline-md text-headline-md py-2 px-4 rounded-DEFAULT hover:bg-primary-fixed transition-colors flex items-center justify-center gap-2 mt-2 w-full">
+<span class="material-symbols-outlined text-[20px]">queue</span>
+                                Add to Queue
+                            </button>
+</div>
+</div>
+<!-- Right Column: Download Queue -->
+<div class="flex-1 flex flex-col gap-stack-gap">
+<div class="flex items-center justify-between pb-2 border-b border-outline-variant">
+<h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">sync_alt</span>
+                                Download Queue
+                            </h2>
+<div class="flex gap-2">
+<span class="font-data-sm text-data-sm text-primary border border-primary px-1 rounded-DEFAULT bg-primary/10">1 Active</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant border border-outline-variant px-1 rounded-DEFAULT bg-surface-variant/50">2 Queued</span>
+</div>
+</div>
+<div class="flex flex-col gap-unit">
+<!-- Active Item -->
+<div class="bg-surface-container border border-primary p-3 rounded-lg flex flex-col gap-3 relative overflow-hidden group">
+<div class="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="flex justify-between items-start z-10">
+<div class="flex flex-col gap-1 min-w-0 pr-4">
+<span class="font-data-md text-data-md text-on-surface truncate" title="Building a Homelab: The Ultimate Guide">Building a Homelab: The Ultimate Guide</span>
+<div class="flex items-center gap-2 text-on-surface-variant font-data-sm text-data-sm">
+<span class="flex items-center gap-1 text-error"><span class="material-symbols-outlined text-[14px]">smart_display</span> YouTube</span>
+<span class="">•</span>
+<span class="font-label-caps text-label-caps bg-surface-variant px-1.5 py-0.5 rounded-sm">MP4</span>
+<span class="font-label-caps text-label-caps bg-surface-variant px-1.5 py-0.5 rounded-sm">1080p60</span>
+</div>
+</div>
+<button class="text-on-surface-variant hover:text-error transition-colors flex-shrink-0" title="Cancel Download">
+<span class="material-symbols-outlined text-[20px]">cancel</span>
+</button>
+</div>
+<div class="w-full bg-surface-highest h-1.5 rounded-DEFAULT overflow-hidden border border-outline-variant/30 z-10">
+<div class="bg-primary h-full w-[82%] progress-stripe"></div>
+</div>
+<div class="flex justify-between items-end z-10 font-data-sm text-data-sm">
+<div class="flex gap-4 text-on-surface-variant">
+<span class="">425 MB / 518 MB</span>
+<span class="">12.4 MB/s</span>
+</div>
+<span class="text-primary font-data-md">ETA: 00:14</span>
+</div>
+</div>
+<!-- Queued Items -->
+<div class="bg-surface-container border border-outline-variant p-2 px-3 rounded-lg flex items-center justify-between group hover:border-outline transition-colors">
+<div class="flex flex-col gap-1 min-w-0 pr-4">
+<span class="font-data-sm text-data-sm text-on-surface-variant truncate">Syntax Podcast Ep 654</span>
+<div class="flex items-center gap-2 text-on-surface-variant/70 font-label-caps text-label-caps">
+<span class="">MP3</span>
+<span class="">•</span>
+<span class="">320k</span>
+</div>
+</div>
+<div class="flex items-center gap-3 text-on-surface-variant">
+<span class="font-data-sm text-data-sm">Queued</span>
+<span class="material-symbols-outlined text-[18px]">pause</span>
+</div>
+</div>
+<div class="bg-surface-container border border-outline-variant p-2 px-3 rounded-lg flex items-center justify-between group hover:border-outline transition-colors">
+<div class="flex flex-col gap-1 min-w-0 pr-4">
+<span class="font-data-sm text-data-sm text-on-surface-variant truncate">Cyberpunk 2077 - Phantom Liberty Trailer</span>
+<div class="flex items-center gap-2 text-on-surface-variant/70 font-label-caps text-label-caps">
+<span class="">MKV</span>
+<span class="">•</span>
+<span class="">4K</span>
+</div>
+</div>
+<div class="flex items-center gap-3 text-on-surface-variant">
+<span class="font-data-sm text-data-sm">Queued</span>
+<span class="material-symbols-outlined text-[18px]">pause</span>
+</div>
+</div>
+<!-- Completed Item -->
+<div class="bg-surface-container border border-outline-variant border-l-2 border-l-primary/50 p-2 px-3 rounded-lg flex items-center justify-between group hover:bg-surface-highest transition-colors mt-2">
+<div class="flex flex-col gap-1 min-w-0 pr-4">
+<span class="font-data-sm text-data-sm text-on-surface truncate line-through opacity-70">Tech News Weekly 241</span>
+<span class="font-data-sm text-data-sm text-primary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> Completed
+                                </span>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors rounded hover:bg-surface" title="Open Folder"><span class="material-symbols-outlined text-[18px]">folder_open</span></button>
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors rounded hover:bg-surface" title="Play"><span class="material-symbols-outlined text-[18px]">play_arrow</span></button>
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors rounded hover:bg-surface" title="Share"><span class="material-symbols-outlined text-[18px]">share</span></button>
+<button class="p-1 text-on-surface-variant hover:text-error transition-colors rounded hover:bg-surface" title="Delete"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Area: Media Library (Table View) -->
+<section class="flex flex-col gap-stack-gap mt-8">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-outline-variant gap-4">
+<div class="flex items-center gap-6">
+<h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">folder</span>
+                                Indexed Library
+                            </h2>
+<!-- Tabs -->
+<nav class="hidden sm:flex gap-4 border-l border-outline-variant pl-6">
+<button class="font-body-md text-body-md text-primary border-b-2 border-primary pb-1">All</button>
+<button class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors pb-1">Videos</button>
+<button class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors pb-1">Music</button>
+<button class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors pb-1">Podcasts</button>
+<button class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors pb-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">download</span> Downloads
+                                </button>
+<button class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors pb-1">Other</button>
+</nav>
+</div>
+<div class="flex items-center gap-2 bg-surface-container border border-outline-variant rounded-DEFAULT p-1 w-full sm:w-auto">
+<span class="material-symbols-outlined text-on-surface-variant pl-2 text-[18px]">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-body-sm text-on-surface w-full sm:w-48 placeholder:text-on-surface-variant py-1 h-6" placeholder="Search library..." type="text"/>
+<button class="bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded-sm hover:text-primary transition-colors"><span class="material-symbols-outlined text-[16px]">filter_list</span></button>
+</div>
+</div>
+<!-- Table View -->
+<div class="bg-surface-container border border-outline-variant rounded-lg overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-outline-variant bg-surface-highest">
+<th class="font-label-caps text-label-caps text-on-surface-variant p-3 w-10"></th>
+<th class="font-label-caps text-label-caps text-on-surface-variant p-3">FILENAME</th>
+<th class="font-label-caps text-label-caps text-on-surface-variant p-3 hidden sm:table-cell">FORMAT</th>
+<th class="font-label-caps text-label-caps text-on-surface-variant p-3 hidden md:table-cell">SIZE</th>
+<th class="font-label-caps text-label-caps text-on-surface-variant p-3 hidden lg:table-cell">DATE</th>
+<th class="font-label-caps text-label-caps text-on-surface-variant p-3 text-right">ACTIONS</th>
+</tr>
+</thead>
+<tbody class="font-data-sm text-data-sm">
+<tr class="border-b border-outline-variant/50 hover:bg-surface-highest transition-colors group">
+<td class="p-3 text-center text-primary">
+<span class="material-symbols-outlined text-[20px]">movie</span>
+</td>
+<td class="p-3 text-on-surface font-data-md">NexusNode_System_Architecture_Overview.mp4</td>
+<td class="p-3 text-on-surface-variant hidden sm:table-cell">
+<span class="bg-surface border border-outline-variant px-1.5 py-0.5 rounded-sm">MKV / 4K</span>
+</td>
+<td class="p-3 text-on-surface-variant hidden md:table-cell">21.0 GB</td>
+<td class="p-3 text-on-surface-variant hidden lg:table-cell">2023-10-24</td>
+<td class="p-3 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors" title="Play"><span class="material-symbols-outlined text-[18px]">play_arrow</span></button>
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors" title="Share"><span class="material-symbols-outlined text-[18px]">share</span></button>
+<button class="p-1 text-on-surface-variant hover:text-error transition-colors" title="Delete"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+</div>
+</td>
+</tr>
+<tr class="border-b border-outline-variant/50 hover:bg-surface-highest transition-colors group">
+<td class="p-3 text-center text-primary">
+<span class="material-symbols-outlined text-[20px]">movie</span>
+</td>
+<td class="p-3 text-on-surface font-data-md">Blade.Runner.2049.1080p.x264.mkv</td>
+<td class="p-3 text-on-surface-variant hidden sm:table-cell">
+<span class="bg-surface border border-outline-variant px-1.5 py-0.5 rounded-sm">MKV / 1080p</span>
+</td>
+<td class="p-3 text-on-surface-variant hidden md:table-cell">14.2 GB</td>
+<td class="p-3 text-on-surface-variant hidden lg:table-cell">2023-09-12</td>
+<td class="p-3 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors" title="Play"><span class="material-symbols-outlined text-[18px]">play_arrow</span></button>
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors" title="Share"><span class="material-symbols-outlined text-[18px]">share</span></button>
+<button class="p-1 text-on-surface-variant hover:text-error transition-colors" title="Delete"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+</div>
+</td>
+</tr>
+<tr class="border-b border-outline-variant/50 hover:bg-surface-highest transition-colors group">
+<td class="p-3 text-center text-secondary">
+<span class="material-symbols-outlined text-[20px]">audio_file</span>
+</td>
+<td class="p-3 text-on-surface font-data-md">Syntax_Podcast_Ep_653.mp3</td>
+<td class="p-3 text-on-surface-variant hidden sm:table-cell">
+<span class="bg-surface border border-outline-variant px-1.5 py-0.5 rounded-sm">MP3 / 320k</span>
+</td>
+<td class="p-3 text-on-surface-variant hidden md:table-cell">145 MB</td>
+<td class="p-3 text-on-surface-variant hidden lg:table-cell">2023-10-26</td>
+<td class="p-3 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors" title="Play"><span class="material-symbols-outlined text-[18px]">play_arrow</span></button>
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors" title="Share"><span class="material-symbols-outlined text-[18px]">share</span></button>
+<button class="p-1 text-on-surface-variant hover:text-error transition-colors" title="Delete"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-surface-highest transition-colors group">
+<td class="p-3 text-center text-error">
+<span class="material-symbols-outlined text-[20px]">broken_image</span>
+</td>
+<td class="p-3 text-on-surface-variant font-data-md">NexusNode_Legacy_Backup_2022.tar.gz</td>
+<td class="p-3 text-on-surface-variant hidden sm:table-cell">
+<span class="bg-surface border border-outline-variant px-1.5 py-0.5 rounded-sm">MKV / ?</span>
+</td>
+<td class="p-3 text-on-surface-variant hidden md:table-cell">2.4 GB</td>
+<td class="p-3 text-on-surface-variant hidden lg:table-cell">2023-01-05</td>
+<td class="p-3 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors" title="Play"><span class="material-symbols-outlined text-[18px]">play_arrow</span></button>
+<button class="p-1 text-on-surface-variant hover:text-primary transition-colors" title="Share"><span class="material-symbols-outlined text-[18px]">share</span></button>
+<button class="p-1 text-on-surface-variant hover:text-error transition-colors" title="Delete"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+</main>
+<!-- Compact Contextual Player -->
+<div class="fixed bottom-16 md:bottom-0 left-0 w-full bg-surface-container-high border-t border-outline-variant h-[72px] z-40 flex items-center px-container-padding gap-4 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+<!-- Progress Bar -->
+<div class="absolute top-0 left-0 w-full h-[2px] bg-surface-highest">
+<div class="h-full bg-primary w-[35%] relative">
+<div class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-primary rounded-full shadow-[0_0_8px_#00daf3]"></div>
+</div>
+</div>
+<div class="w-12 h-12 bg-surface flex-shrink-0 border border-outline-variant rounded-sm overflow-hidden flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[24px]">movie</span>
+</div>
+<div class="flex flex-col flex-1 min-w-0">
+<span class="font-data-md text-data-md text-on-surface truncate">NexusNode_System_Architecture_Overview.mp4</span>
+<div class="flex items-center gap-2 font-data-sm text-data-sm text-on-surface-variant">
+<span class="text-primary">00:45:12</span>
+<span class="">/</span>
+<span class="">02:22:00</span>
+<span class="ml-2 font-label-caps bg-surface-variant px-1 rounded-sm hidden sm:inline-block text-on-surface-variant">DIRECT PLAY</span>
+</div>
+</div>
+<div class="flex items-center gap-1 sm:gap-3 text-on-surface">
+<button class="hover:text-primary transition-colors p-1 hidden sm:block"><span class="material-symbols-outlined text-[20px]">closed_caption</span></button>
+<button class="hover:text-primary transition-colors p-1"><span class="material-symbols-outlined text-[24px]">skip_previous</span></button>
+<button class="hover:text-primary transition-colors p-2 bg-surface rounded-full border border-outline-variant flex items-center justify-center"><span class="material-symbols-outlined text-[28px] fill">play_arrow</span></button>
+<button class="hover:text-primary transition-colors p-1"><span class="material-symbols-outlined text-[24px]">skip_next</span></button>
+<button class="hover:text-primary transition-colors p-1 hidden sm:block ml-2"><span class="material-symbols-outlined text-[20px]">volume_up</span></button>
+<button class="hover:text-primary transition-colors p-1 ml-2 border-l border-outline-variant pl-3"><span class="material-symbols-outlined text-[20px]">open_in_full</span></button>
+</div>
+</div>
+<!-- BottomNavBar (Mobile) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex md:hidden justify-around items-center h-16 px-2 border-t border-outline-variant bg-surface font-label-caps text-label-caps">
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-DEFAULT w-full h-full" href="#">
+<span class="material-symbols-outlined mb-1 text-[24px]">dashboard</span>
+            Dash
+        </a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-DEFAULT w-full h-full" href="#">
+<span class="material-symbols-outlined mb-1 text-[24px]">storage</span>
+            Vault
+        </a>
+<a class="flex flex-col items-center justify-center text-primary active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-DEFAULT w-full h-full" href="#">
+<span class="material-symbols-outlined mb-1 text-[24px] fill">perm_media</span>
+            Media
+        </a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-DEFAULT w-full h-full" href="#">
+<span class="material-symbols-outlined mb-1 text-[24px]">checklist</span>
+            Tasks
+        </a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-DEFAULT w-full h-full" href="#">
+<span class="material-symbols-outlined mb-1 text-[24px]">psychology</span>
+            AI
+        </a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-DEFAULT w-full h-full" href="#">
+<span class="material-symbols-outlined mb-1 text-[24px]">menu</span>
+            More
+        </a>
+</nav>
+</body></html>

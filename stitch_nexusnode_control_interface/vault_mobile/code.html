@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode Vault</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#e5e2e1",
+                        "on-primary-fixed-variant": "#004f58",
+                        "surface-container-high": "#2a2a2a",
+                        "on-surface-variant": "#bac9cc",
+                        "primary-fixed-dim": "#00daf3",
+                        "graphite-surface": "#121212",
+                        "on-tertiary-fixed": "#1b1b1c",
+                        "background": "#131313",
+                        "inverse-on-surface": "#313030",
+                        "surface-dim": "#131313",
+                        "secondary-fixed": "#f4d9ff",
+                        "on-tertiary": "#303030",
+                        "border-subtle": "#333333",
+                        "surface-container-lowest": "#0e0e0e",
+                        "secondary-container": "#ab08ff",
+                        "on-secondary-container": "#fef0ff",
+                        "primary-container": "#00e5ff",
+                        "graphite-raised": "#1E1E1E",
+                        "tertiary": "#efeceb",
+                        "oled-black": "#000000",
+                        "on-secondary-fixed-variant": "#6f00a9",
+                        "on-tertiary-container": "#5a5959",
+                        "surface-container": "#201f1f",
+                        "on-error": "#690005",
+                        "on-secondary": "#4e0078",
+                        "tertiary-container": "#d2d0cf",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "surface-bright": "#393939",
+                        "primary": "#c3f5ff",
+                        "primary-fixed": "#9cf0ff",
+                        "surface-container-low": "#1c1b1b",
+                        "status-healthy": "#00C853",
+                        "surface": "#131313",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "error-container": "#93000a",
+                        "on-primary-container": "#00626e",
+                        "on-primary": "#00363d",
+                        "on-secondary-fixed": "#2f004b",
+                        "surface-tint": "#00daf3",
+                        "status-critical": "#D50000",
+                        "outline-variant": "#3b494c",
+                        "surface-variant": "#353534",
+                        "secondary-fixed-dim": "#e4b5ff",
+                        "inverse-primary": "#006875",
+                        "inverse-surface": "#e5e2e1",
+                        "tertiary-fixed": "#e5e2e1",
+                        "surface-container-highest": "#353534",
+                        "error": "#ffb4ab",
+                        "on-error-container": "#ffdad6",
+                        "secondary": "#e4b5ff",
+                        "on-primary-fixed": "#001f24",
+                        "on-background": "#e5e2e1",
+                        "status-warning": "#FFD600",
+                        "outline": "#849396"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "margin-mobile": "16px",
+                        "touch-target": "44px",
+                        "margin-desktop": "24px",
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "stack-gap": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "data-md": ["JetBrains Mono"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "data-lg": ["JetBrains Mono"],
+                        "data-sm": ["JetBrains Mono"],
+                        "headline-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700" }],
+                        "data-md": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-lg": ["16px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "data-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
+        body { background-color: theme('colors.oled-black'); color: theme('colors.on-surface'); margin: 0; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0; }
+        .filled-icon { font-variation-settings: 'FILL' 1; }
+        
+        /* Hide scrollbar for clean aesthetic */
+        ::-webkit-scrollbar { display: none; }
+        * { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="flex flex-col h-[844px] w-[390px] mx-auto overflow-hidden border border-border-subtle relative bg-oled-black">
+<!-- Top App Bar / Search -->
+<header class="w-full flex flex-col px-margin-mobile pt-8 pb-4 bg-oled-black z-10 border-b border-border-subtle">
+<div class="flex items-center justify-between mb-4">
+<h1 class="font-headline-lg text-headline-lg text-on-surface">Vault</h1>
+<button class="h-touch-target w-touch-target flex items-center justify-center rounded bg-graphite-surface border border-border-subtle text-on-surface active:border-primary-fixed-dim transition-colors">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+</div>
+<div class="relative w-full h-[40px]">
+<span class="material-symbols-outlined absolute left-3 top-1/2 transform -translate-y-1/2 text-on-surface-variant text-[20px]" data-icon="search">search</span>
+<input class="w-full h-full bg-graphite-surface border border-border-subtle rounded-DEFAULT pl-10 pr-4 font-body-sm text-body-sm text-on-surface focus:border-primary-fixed-dim focus:outline-none transition-colors placeholder:text-on-surface-variant" placeholder="Search files..." type="text"/>
+</div>
+<!-- Quick Filters -->
+<div class="flex gap-2 mt-4 overflow-x-hidden">
+<button class="px-3 h-[28px] rounded border border-primary-fixed-dim bg-[#004f58] text-primary-fixed-dim font-label-caps text-label-caps flex items-center gap-1 shrink-0">
+<span class="material-symbols-outlined text-[14px]" data-icon="filter_list">filter_list</span> Type
+            </button>
+<button class="px-3 h-[28px] rounded border border-border-subtle bg-graphite-surface text-on-surface-variant font-label-caps text-label-caps flex items-center gap-1 shrink-0">
+                Date
+            </button>
+<button class="px-3 h-[28px] rounded border border-border-subtle bg-graphite-surface text-on-surface-variant font-label-caps text-label-caps flex items-center gap-1 shrink-0">
+                Size
+            </button>
+</div>
+</header>
+<!-- File List Container -->
+<main class="flex-1 overflow-y-auto px-margin-mobile py-4 flex flex-col gap-0 pb-[80px]">
+<!-- File Item -->
+<div class="flex items-center justify-between py-3 border-b border-border-subtle group hover:bg-graphite-surface active:bg-graphite-surface transition-colors cursor-pointer select-none">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-graphite-raised border border-border-subtle flex items-center justify-center text-primary-fixed-dim">
+<span class="material-symbols-outlined" data-icon="image">image</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface truncate w-[200px]">system_architecture_v2.png</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-data-sm text-data-sm text-on-surface-variant">PNG</span>
+<span class="w-1 h-1 rounded-full bg-border-subtle"></span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">2.4 MB</span>
+<span class="w-1 h-1 rounded-full bg-border-subtle"></span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">Oct 24</span>
+</div>
+</div>
+</div>
+<button class="w-[32px] h-[32px] flex items-center justify-center text-on-surface-variant hover:text-on-surface" onclick="toggleBottomSheet()">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+<!-- File Item -->
+<div class="flex items-center justify-between py-3 border-b border-border-subtle group hover:bg-graphite-surface active:bg-graphite-surface transition-colors cursor-pointer select-none">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-graphite-raised border border-border-subtle flex items-center justify-center text-secondary-fixed">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface truncate w-[200px]">Q3_Server_Logs_Archived.txt</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-data-sm text-data-sm text-on-surface-variant">TXT</span>
+<span class="w-1 h-1 rounded-full bg-border-subtle"></span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">14.2 MB</span>
+<span class="w-1 h-1 rounded-full bg-border-subtle"></span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">Oct 22</span>
+</div>
+</div>
+</div>
+<button class="w-[32px] h-[32px] flex items-center justify-center text-on-surface-variant hover:text-on-surface">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+<!-- File Item - Selected State -->
+<div class="flex items-center justify-between py-3 border-b border-primary-fixed-dim bg-[#004f58]/20 group transition-colors cursor-pointer select-none relative">
+<div class="absolute left-0 top-0 bottom-0 w-[2px] bg-primary-fixed-dim"></div>
+<div class="flex items-center gap-3 pl-2">
+<div class="w-10 h-10 rounded bg-graphite-raised border border-primary-fixed-dim flex items-center justify-center text-primary-fixed-dim relative">
+<span class="material-symbols-outlined filled-icon absolute top-[-6px] right-[-6px] bg-oled-black rounded-full text-[16px]" data-icon="check_circle">check_circle</span>
+<span class="material-symbols-outlined" data-icon="folder_zip">folder_zip</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-primary-fixed-dim truncate w-[200px]">Node_Backup_Core_Final.zip</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-data-sm text-data-sm text-primary-fixed-dim">ZIP</span>
+<span class="w-1 h-1 rounded-full bg-primary-fixed-dim/50"></span>
+<span class="font-data-sm text-data-sm text-primary-fixed-dim">845 MB</span>
+<span class="w-1 h-1 rounded-full bg-primary-fixed-dim/50"></span>
+<span class="font-data-sm text-data-sm text-primary-fixed-dim">Oct 20</span>
+</div>
+</div>
+</div>
+<button class="w-[32px] h-[32px] flex items-center justify-center text-primary-fixed-dim">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+<!-- File Item -->
+<div class="flex items-center justify-between py-3 border-b border-border-subtle group hover:bg-graphite-surface active:bg-graphite-surface transition-colors cursor-pointer select-none">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-graphite-raised border border-border-subtle flex items-center justify-center text-status-warning">
+<span class="material-symbols-outlined" data-icon="video_file">video_file</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface truncate w-[200px]">security_cam_04_clip.mp4</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-data-sm text-data-sm text-on-surface-variant">MP4</span>
+<span class="w-1 h-1 rounded-full bg-border-subtle"></span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">124 MB</span>
+<span class="w-1 h-1 rounded-full bg-border-subtle"></span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">Oct 18</span>
+</div>
+</div>
+</div>
+<button class="w-[32px] h-[32px] flex items-center justify-center text-on-surface-variant hover:text-on-surface">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+</main>
+<!-- Multi-select Action Bar (Docked when items selected) -->
+<div class="absolute bottom-[60px] left-margin-mobile right-margin-mobile bg-graphite-raised border border-primary-fixed-dim rounded-lg h-[48px] flex items-center justify-between px-4 z-40 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
+<span class="font-data-md text-data-md text-primary-fixed-dim">1 Selected</span>
+<div class="flex gap-4 text-on-surface">
+<button class="flex flex-col items-center justify-center active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[20px]" data-icon="share">share</span>
+</button>
+<button class="flex flex-col items-center justify-center active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[20px]" data-icon="download">download</span>
+</button>
+<button class="flex flex-col items-center justify-center text-status-critical active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[20px]" data-icon="delete">delete</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[20px]" data-icon="close">close</span>
+</button>
+</div>
+</div>
+<!-- Bottom Navigation Bar -->
+<nav class="fixed bottom-0 left-0 w-[390px] z-50 flex justify-around items-center h-[60px] px-margin-mobile bg-surface-container-lowest border-t border-border-subtle border-none">
+<a class="flex flex-col items-center justify-center text-on-surface-variant touch-none select-none active:scale-95 transition-transform w-[60px]" href="#">
+<span class="material-symbols-outlined mb-1 text-[24px]" data-icon="dashboard">dashboard</span>
+<span class="font-label-caps text-label-caps">Dash</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary-fixed-dim touch-none select-none active:scale-95 transition-transform w-[60px]" href="#">
+<span class="material-symbols-outlined mb-1 text-[24px] filled-icon" data-icon="storage">storage</span>
+<span class="font-label-caps text-label-caps">Vault</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant touch-none select-none active:scale-95 transition-transform w-[60px]" href="#">
+<span class="material-symbols-outlined mb-1 text-[24px]" data-icon="movie">movie</span>
+<span class="font-label-caps text-label-caps">Media</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant touch-none select-none active:scale-95 transition-transform w-[60px]" href="#">
+<span class="material-symbols-outlined mb-1 text-[24px]" data-icon="task_alt">task_alt</span>
+<span class="font-label-caps text-label-caps">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant touch-none select-none active:scale-95 transition-transform w-[60px]" href="#">
+<span class="material-symbols-outlined mb-1 text-[24px]" data-icon="menu">menu</span>
+<span class="font-label-caps text-label-caps">More</span>
+</a>
+</nav>
+<!-- Bottom Sheet Overlay (Hidden by default) -->
+<div class="absolute inset-0 bg-oled-black/80 z-50 flex flex-col justify-end hidden opacity-0 transition-opacity duration-200" id="bottomSheet">
+<div class="bg-graphite-surface w-full rounded-t-xl border-t border-border-subtle pb-[60px] transform translate-y-full transition-transform duration-300" id="bottomSheetContent">
+<div class="w-full flex justify-center py-3" onclick="toggleBottomSheet()">
+<div class="w-12 h-1 bg-border-subtle rounded-full"></div>
+</div>
+<div class="px-margin-mobile pb-4 border-b border-border-subtle">
+<span class="font-body-md text-body-md text-on-surface truncate block">system_architecture_v2.png</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">PNG • 2.4 MB</span>
+</div>
+<div class="flex flex-col py-2">
+<button class="flex items-center gap-4 px-margin-mobile py-3 text-on-surface hover:bg-surface-container-high active:bg-surface-container-high">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="info">info</span>
+<span class="font-body-md text-body-md">View Details</span>
+</button>
+<button class="flex items-center gap-4 px-margin-mobile py-3 text-on-surface hover:bg-surface-container-high active:bg-surface-container-high">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="share">share</span>
+<span class="font-body-md text-body-md">Share Link</span>
+</button>
+<button class="flex items-center gap-4 px-margin-mobile py-3 text-on-surface hover:bg-surface-container-high active:bg-surface-container-high">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="drive_file_rename_outline">drive_file_rename_outline</span>
+<span class="font-body-md text-body-md">Rename</span>
+</button>
+<button class="flex items-center gap-4 px-margin-mobile py-3 text-status-critical hover:bg-surface-container-high active:bg-surface-container-high">
+<span class="material-symbols-outlined text-status-critical" data-icon="delete">delete</span>
+<span class="font-body-md text-body-md">Delete File</span>
+</button>
+</div>
+</div>
+</div>
+<script>
+        function toggleBottomSheet() {
+            const sheet = document.getElementById('bottomSheet');
+            const content = document.getElementById('bottomSheetContent');
+            
+            if (sheet.classList.contains('hidden')) {
+                sheet.classList.remove('hidden');
+                // trigger reflow
+                void sheet.offsetWidth;
+                sheet.classList.remove('opacity-0');
+                content.classList.remove('translate-y-full');
+            } else {
+                sheet.classList.add('opacity-0');
+                content.classList.add('translate-y-full');
+                setTimeout(() => {
+                    sheet.classList.add('hidden');
+                }, 300);
+            }
+        }
+    </script>
+</body></html>

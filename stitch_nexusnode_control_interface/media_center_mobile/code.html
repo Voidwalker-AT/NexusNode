@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode - Media</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#e5e2e1",
+                        "on-primary-fixed-variant": "#004f58",
+                        "surface-container-high": "#2a2a2a",
+                        "on-surface-variant": "#bac9cc",
+                        "primary-fixed-dim": "#00daf3",
+                        "graphite-surface": "#121212",
+                        "on-tertiary-fixed": "#1b1b1c",
+                        "background": "#131313",
+                        "inverse-on-surface": "#313030",
+                        "surface-dim": "#131313",
+                        "secondary-fixed": "#f4d9ff",
+                        "on-tertiary": "#303030",
+                        "border-subtle": "#333333",
+                        "surface-container-lowest": "#0e0e0e",
+                        "secondary-container": "#ab08ff",
+                        "on-secondary-container": "#fef0ff",
+                        "primary-container": "#00e5ff",
+                        "graphite-raised": "#1E1E1E",
+                        "tertiary": "#efeceb",
+                        "oled-black": "#000000",
+                        "on-secondary-fixed-variant": "#6f00a9",
+                        "on-tertiary-container": "#5a5959",
+                        "surface-container": "#201f1f",
+                        "on-error": "#690005",
+                        "on-secondary": "#4e0078",
+                        "tertiary-container": "#d2d0cf",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "surface-bright": "#393939",
+                        "primary": "#c3f5ff",
+                        "primary-fixed": "#9cf0ff",
+                        "surface-container-low": "#1c1b1b",
+                        "status-healthy": "#00C853",
+                        "surface": "#131313",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "error-container": "#93000a",
+                        "on-primary-container": "#00626e",
+                        "on-primary": "#00363d",
+                        "on-secondary-fixed": "#2f004b",
+                        "surface-tint": "#00daf3",
+                        "status-critical": "#D50000",
+                        "outline-variant": "#3b494c",
+                        "surface-variant": "#353534",
+                        "secondary-fixed-dim": "#e4b5ff",
+                        "inverse-primary": "#006875",
+                        "inverse-surface": "#e5e2e1",
+                        "tertiary-fixed": "#e5e2e1",
+                        "surface-container-highest": "#353534",
+                        "error": "#ffb4ab",
+                        "on-error-container": "#ffdad6",
+                        "secondary": "#e4b5ff",
+                        "on-primary-fixed": "#001f24",
+                        "on-background": "#e5e2e1",
+                        "status-warning": "#FFD600",
+                        "outline": "#849396"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "margin-mobile": "16px",
+                        "touch-target": "44px",
+                        "margin-desktop": "24px",
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "stack-gap": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "data-md": ["JetBrains Mono"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "data-lg": ["JetBrains Mono"],
+                        "data-sm": ["JetBrains Mono"],
+                        "headline-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700" }],
+                        "data-md": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-lg": ["16px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "data-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #000000;
+            color: #e5e2e1;
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for horizontal scrolling areas */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-oled-black text-on-surface h-screen w-screen overflow-hidden flex flex-col antialiased selection:bg-primary-fixed-dim selection:text-oled-black">
+<!-- Top App Bar - Mobile Only (from Desktop spec adapted for mobile context) -->
+<header class="flex md:hidden items-center justify-between px-margin-mobile h-12 bg-background border-b border-border-subtle shrink-0">
+<div class="font-headline-lg text-headline-lg font-bold text-primary-fixed-dim tracking-tight">NexusNode</div>
+<div class="flex items-center gap-4 text-primary-fixed-dim">
+<span class="material-symbols-outlined cursor-pointer active:opacity-80">sensors</span>
+<span class="material-symbols-outlined cursor-pointer active:opacity-80">dns</span>
+<span class="material-symbols-outlined cursor-pointer active:opacity-80">notifications</span>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 overflow-y-auto pb-32"> <!-- Padding bottom for playback bar + bottom nav -->
+<!-- Download Section -->
+<section class="p-margin-mobile border-b border-border-subtle bg-graphite-surface">
+<div class="flex flex-col gap-stack-gap">
+<div class="flex items-center justify-between">
+<h2 class="font-headline-md text-headline-md text-on-surface">Fetch Media</h2>
+<button class="text-primary-fixed-dim flex items-center gap-1 active:opacity-80" onclick="document.getElementById('advanced-settings-sheet').classList.remove('translate-y-full')">
+<span class="material-symbols-outlined" style="font-size: 18px;">settings</span>
+<span class="font-body-sm text-body-sm">Options</span>
+</button>
+</div>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-on-surface-variant">link</span>
+<input class="w-full bg-graphite-raised border border-border-subtle rounded text-on-surface pl-10 pr-3 py-2 font-data-md text-data-md focus:outline-none focus:border-primary-fixed-dim focus:ring-1 focus:ring-primary-fixed-dim transition-colors placeholder:text-on-surface-variant" placeholder="Enter remote media URL..." type="url"/>
+</div>
+<div class="flex gap-2 mt-1">
+<button class="flex-1 bg-graphite-raised border border-border-subtle hover:bg-surface-container-low active:bg-surface-container-high rounded py-2 flex items-center justify-center gap-2 transition-colors">
+<span class="material-symbols-outlined text-primary-fixed-dim" style="font-size: 18px;">movie</span>
+<span class="font-label-caps text-label-caps">MP4 1080P</span>
+</button>
+<button class="flex-1 bg-graphite-raised border border-border-subtle hover:bg-surface-container-low active:bg-surface-container-high rounded py-2 flex items-center justify-center gap-2 transition-colors">
+<span class="material-symbols-outlined text-primary-fixed-dim" style="font-size: 18px;">audio_file</span>
+<span class="font-label-caps text-label-caps">MP3 320K</span>
+</button>
+<button class="w-12 bg-primary-fixed-dim text-oled-black rounded flex items-center justify-center active:opacity-80 transition-opacity">
+<span class="material-symbols-outlined" style="font-size: 20px;">download</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Active Queue -->
+<section class="py-margin-mobile border-b border-border-subtle">
+<div class="px-margin-mobile mb-stack-gap flex items-center justify-between">
+<h2 class="font-headline-md text-headline-md text-on-surface">Active Queue</h2>
+<span class="font-data-sm text-data-sm text-primary-fixed-dim">2 Items</span>
+</div>
+<!-- Horizontal Scrollable Queue -->
+<div class="flex overflow-x-auto hide-scrollbar px-margin-mobile gap-stack-gap snap-x snap-mandatory">
+<!-- Queue Item 1 -->
+<div class="snap-center shrink-0 w-72 bg-graphite-surface border border-border-subtle rounded p-3 flex flex-col gap-2">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2 overflow-hidden">
+<span class="material-symbols-outlined text-status-warning" style="font-size: 18px;">sync</span>
+<span class="font-data-md text-data-md truncate">ubuntu-24.04-desktop-amd64.iso</span>
+</div>
+<button class="text-on-surface-variant active:text-on-surface"><span class="material-symbols-outlined" style="font-size: 18px;">close</span></button>
+</div>
+<div class="flex items-end justify-between mt-2">
+<div class="flex flex-col">
+<span class="font-data-sm text-data-sm text-on-surface-variant">DOWNLOADING</span>
+<span class="font-data-md text-data-md text-primary-fixed-dim">45.2 MB/s</span>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-data-sm text-data-sm text-on-surface-variant">ETA</span>
+<span class="font-data-md text-data-md">02:14</span>
+</div>
+</div>
+<!-- Progress Bar -->
+<div class="w-full h-1 bg-border-subtle mt-1 rounded overflow-hidden">
+<div class="h-full bg-status-warning w-[65%]"></div>
+</div>
+</div>
+<!-- Queue Item 2 -->
+<div class="snap-center shrink-0 w-72 bg-graphite-surface border border-border-subtle rounded p-3 flex flex-col gap-2">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2 overflow-hidden">
+<span class="material-symbols-outlined text-primary-fixed-dim" style="font-size: 18px;">queue_play_next</span>
+<span class="font-data-md text-data-md truncate">Project_Apollo_Archive.zip</span>
+</div>
+<button class="text-on-surface-variant active:text-on-surface"><span class="material-symbols-outlined" style="font-size: 18px;">close</span></button>
+</div>
+<div class="flex items-end justify-between mt-2">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps bg-surface-container-high px-1 border border-border-subtle rounded text-on-surface-variant">QUEUED</span>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-data-sm text-data-sm text-on-surface-variant">SIZE</span>
+<span class="font-data-md text-data-md">1.2 GB</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Media Library -->
+<section class="p-margin-mobile">
+<h2 class="font-headline-md text-headline-md text-on-surface mb-stack-gap">Library</h2>
+<div class="grid grid-cols-2 gap-stack-gap">
+<!-- Media Item 1 -->
+<div class="bg-graphite-surface border border-border-subtle rounded flex flex-col group active:border-primary-fixed-dim transition-colors overflow-hidden">
+<div class="h-24 bg-surface-container-high flex items-center justify-center relative">
+<span class="material-symbols-outlined text-4xl text-on-surface-variant group-active:text-primary-fixed-dim transition-colors">movie</span>
+<div class="absolute bottom-1 right-1 bg-oled-black/80 px-1 rounded">
+<span class="font-data-sm text-data-sm">1:42:05</span>
+</div>
+</div>
+<div class="p-2 border-t border-border-subtle">
+<div class="font-body-sm text-body-sm truncate">Archival_Footage_01.mp4</div>
+<div class="font-data-sm text-data-sm text-on-surface-variant mt-1">1.4 GB • Local</div>
+</div>
+</div>
+<!-- Media Item 2 -->
+<div class="bg-graphite-surface border border-border-subtle rounded flex flex-col group active:border-primary-fixed-dim transition-colors overflow-hidden">
+<div class="h-24 bg-surface-container-high flex items-center justify-center">
+<span class="material-symbols-outlined text-4xl text-on-surface-variant group-active:text-primary-fixed-dim transition-colors">folder</span>
+</div>
+<div class="p-2 border-t border-border-subtle">
+<div class="font-body-sm text-body-sm truncate">System_Backups</div>
+<div class="font-data-sm text-data-sm text-on-surface-variant mt-1">12 Items • NAS</div>
+</div>
+</div>
+<!-- Media Item 3 -->
+<div class="bg-graphite-surface border border-border-subtle rounded flex flex-col group active:border-primary-fixed-dim transition-colors overflow-hidden">
+<div class="h-24 bg-surface-container-high flex items-center justify-center relative">
+<span class="material-symbols-outlined text-4xl text-on-surface-variant group-active:text-primary-fixed-dim transition-colors">audio_file</span>
+<div class="absolute bottom-1 right-1 bg-oled-black/80 px-1 rounded">
+<span class="font-data-sm text-data-sm">05:22</span>
+</div>
+</div>
+<div class="p-2 border-t border-border-subtle">
+<div class="font-body-sm text-body-sm truncate">Telemetry_Log_Audio.wav</div>
+<div class="font-data-sm text-data-sm text-on-surface-variant mt-1">45 MB • Local</div>
+</div>
+</div>
+<!-- Media Item 4 -->
+<div class="bg-graphite-surface border border-border-subtle rounded flex flex-col group active:border-primary-fixed-dim transition-colors overflow-hidden">
+<div class="h-24 bg-surface-container-high flex items-center justify-center">
+<span class="material-symbols-outlined text-4xl text-on-surface-variant group-active:text-primary-fixed-dim transition-colors">image</span>
+</div>
+<div class="p-2 border-t border-border-subtle">
+<div class="font-body-sm text-body-sm truncate">Server_Rack_Diagrams</div>
+<div class="font-data-sm text-data-sm text-on-surface-variant mt-1">24 Items • Ext_Drive</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Docked Playback Bar (Above Bottom Nav) -->
+<div class="fixed bottom-[env(safe-area-inset-bottom,44px)] left-0 w-full bg-graphite-raised border-t border-border-subtle px-margin-mobile py-2 flex items-center justify-between z-40 mb-[44px]">
+<div class="flex items-center gap-3 overflow-hidden flex-1">
+<div class="w-10 h-10 bg-surface-container-high border border-border-subtle rounded flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary-fixed-dim">play_circle</span>
+</div>
+<div class="flex flex-col truncate pr-2">
+<span class="font-body-sm text-body-sm truncate">Archival_Footage_01.mp4</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">00:14:22 / 01:42:05</span>
+</div>
+</div>
+<div class="flex items-center gap-4 text-on-surface shrink-0">
+<span class="material-symbols-outlined cursor-pointer active:text-primary-fixed-dim" style="font-size: 20px;">pause</span>
+<span class="material-symbols-outlined cursor-pointer active:text-primary-fixed-dim" style="font-size: 20px;">skip_next</span>
+</div>
+<!-- Mini progress bar -->
+<div class="absolute bottom-0 left-0 w-full h-[2px] bg-border-subtle">
+<div class="h-full bg-primary-fixed-dim w-[15%]"></div>
+</div>
+</div>
+<!-- BottomNavBar (Generated from JSON) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-touch-target px-margin-mobile bg-surface-container-lowest border-t border-border-subtle touch-none select-none">
+<!-- Dash -->
+<div class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform active:bg-surface-container-high w-full h-full">
+<span class="material-symbols-outlined" style="font-size: 20px;">dashboard</span>
+<span class="font-label-caps text-label-caps mt-[2px]">Dash</span>
+</div>
+<!-- Vault -->
+<div class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform active:bg-surface-container-high w-full h-full">
+<span class="material-symbols-outlined" style="font-size: 20px;">storage</span>
+<span class="font-label-caps text-label-caps mt-[2px]">Vault</span>
+</div>
+<!-- Media (ACTIVE) -->
+<div class="flex flex-col items-center justify-center text-primary-fixed-dim active:scale-95 transition-transform active:bg-surface-container-high w-full h-full relative">
+<!-- Active indicator glow line -->
+<div class="absolute top-0 w-8 h-[2px] bg-primary-fixed-dim rounded-b"></div>
+<span class="material-symbols-outlined" style="font-size: 20px; font-variation-settings: 'FILL' 1;">movie</span>
+<span class="font-label-caps text-label-caps mt-[2px]">Media</span>
+</div>
+<!-- Tasks -->
+<div class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform active:bg-surface-container-high w-full h-full">
+<span class="material-symbols-outlined" style="font-size: 20px;">task_alt</span>
+<span class="font-label-caps text-label-caps mt-[2px]">Tasks</span>
+</div>
+<!-- AI -->
+<div class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform active:bg-surface-container-high w-full h-full">
+<span class="material-symbols-outlined" style="font-size: 20px;">psychology</span>
+<span class="font-label-caps text-label-caps mt-[2px]">AI</span>
+</div>
+<!-- More -->
+<div class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform active:bg-surface-container-high w-full h-full">
+<span class="material-symbols-outlined" style="font-size: 20px;">menu</span>
+<span class="font-label-caps text-label-caps mt-[2px]">More</span>
+</div>
+</nav>
+<!-- Bottom Sheet: Advanced Settings -->
+<div class="fixed inset-0 z-[60] flex items-end justify-center pointer-events-none translate-y-full transition-transform duration-300 ease-out" id="advanced-settings-sheet">
+<!-- Backdrop -->
+<div class="absolute inset-0 bg-oled-black/50 pointer-events-auto backdrop-blur-sm" onclick="document.getElementById('advanced-settings-sheet').classList.add('translate-y-full')"></div>
+<!-- Sheet Content -->
+<div class="bg-graphite-raised w-full max-w-md rounded-t-xl border-t border-border-subtle pointer-events-auto flex flex-col pb-safe pt-2 px-margin-mobile">
+<!-- Drag Handle -->
+<div class="w-10 h-1 bg-border-subtle mx-auto rounded-full mb-4"></div>
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-headline-md text-headline-md text-on-surface">Fetch Options</h3>
+<button class="text-on-surface-variant active:text-on-surface" onclick="document.getElementById('advanced-settings-sheet').classList.add('translate-y-full')">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="flex flex-col gap-4 mb-8">
+<!-- Option 1 -->
+<div class="flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface">Target Directory</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">/mnt/storage/media/inbound</span>
+</div>
+<button class="text-primary-fixed-dim font-label-caps text-label-caps border border-border-subtle px-2 py-1 rounded">CHANGE</button>
+</div>
+<!-- Option 2 -->
+<div class="flex items-center justify-between border-t border-border-subtle pt-4">
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface">Concurrent Connections</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">Max 4 per host</span>
+</div>
+<div class="flex items-center bg-graphite-surface border border-border-subtle rounded">
+<button class="px-2 py-1 border-r border-border-subtle text-on-surface-variant">-</button>
+<span class="font-data-md text-data-md px-3">4</span>
+<button class="px-2 py-1 border-l border-border-subtle text-on-surface-variant">+</button>
+</div>
+</div>
+<!-- Option 3 (Toggle) -->
+<div class="flex items-center justify-between border-t border-border-subtle pt-4">
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface">Extract Archives</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">Auto-unzip on completion</span>
+</div>
+<!-- Custom Toggle (Checked state) -->
+<div class="w-10 h-6 bg-primary-fixed-dim rounded-full flex items-center p-1 cursor-pointer justify-end">
+<div class="w-4 h-4 bg-oled-black rounded-full shadow-sm"></div>
+</div>
+</div>
+</div>
+<button class="w-full bg-graphite-surface border border-primary-fixed-dim text-primary-fixed-dim font-data-md text-data-md py-3 rounded mb-4 active:bg-primary-fixed-dim active:text-oled-black transition-colors" onclick="document.getElementById('advanced-settings-sheet').classList.add('translate-y-full')">
+                APPLY SETTINGS
+            </button>
+</div>
+</div>
+</body></html>

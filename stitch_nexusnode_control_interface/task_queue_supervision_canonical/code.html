@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode Tasks - Task Queue Manager</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error": "#690005",
+                        "surface-tint": "#00daf3",
+                        "error": "#ffb4ab",
+                        "on-secondary-fixed": "#2a0053",
+                        "surface-variant": "#2e3638",
+                        "error-container": "#93000a",
+                        "surface-container-high": "#242b2d",
+                        "on-secondary": "#460283",
+                        "on-surface": "#dce4e5",
+                        "on-tertiary-container": "#6f5500",
+                        "on-secondary-fixed-variant": "#5e289b",
+                        "tertiary-fixed-dim": "#f3bf26",
+                        "on-tertiary": "#3e2e00",
+                        "on-background": "#dce4e5",
+                        "surface-bright": "#333a3c",
+                        "on-tertiary-fixed": "#251a00",
+                        "on-error-container": "#ffdad6",
+                        "inverse-on-surface": "#2a3233",
+                        "primary-fixed-dim": "#00daf3",
+                        "tertiary-fixed": "#ffdf96",
+                        "outline-variant": "#3b494c",
+                        "on-surface-variant": "#bac9cc",
+                        "surface-container-lowest": "#080f11",
+                        "outline": "#849396",
+                        "inverse-primary": "#006875",
+                        "on-tertiary-fixed-variant": "#594400",
+                        "surface": "#0d1516",
+                        "on-primary-fixed-variant": "#004f58",
+                        "primary-fixed": "#9cf0ff",
+                        "on-secondary-container": "#cfa7ff",
+                        "on-primary-container": "#00626e",
+                        "on-primary-fixed": "#001f24",
+                        "primary": "#c3f5ff",
+                        "surface-container": "#192122",
+                        "tertiary": "#ffeac0",
+                        "surface-dim": "#0d1516",
+                        "background": "#0d1516",
+                        "surface-container-low": "#151d1e",
+                        "surface-container-highest": "#2e3638",
+                        "primary-container": "#00e5ff",
+                        "secondary": "#dab9ff",
+                        "inverse-surface": "#dce4e5",
+                        "tertiary-container": "#fec931",
+                        "on-primary": "#00363d",
+                        "secondary-fixed": "#eedbff",
+                        "secondary-container": "#602b9d",
+                        "secondary-fixed-dim": "#dab9ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "stack-gap": "8px",
+                        "container-padding": "16px",
+                        "element-gap": "4px",
+                        "section-margin": "24px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "body-sm": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "data-md": ["JetBrains Mono"],
+                        "data-lg": ["JetBrains Mono"],
+                        "headline-lg": ["Inter"],
+                        "data-sm": ["JetBrains Mono"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "label-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700" }],
+                        "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "data-md": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "data-lg": ["16px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "data-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            background-color: #000000;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md antialiased selection:bg-primary selection:text-on-primary">
+<!-- TopAppBar -->
+<header class="bg-surface text-primary border-b border-outline-variant flat no shadows docked full-width top-0 hidden md:flex justify-between items-center px-container-padding h-16 w-full max-w-none">
+<div class="flex items-center gap-container-padding">
+<span class="font-headline-lg text-headline-lg font-bold text-primary tracking-tighter">NexusNode</span>
+<nav class="hidden md:flex gap-container-padding items-center ml-section-margin">
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center" href="#">Dashboard</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center" href="#">Vault</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center" href="#">Media</a>
+<a class="font-label-caps text-label-caps text-primary border-b-2 border-primary pb-1 hover:text-primary transition-colors scale-95 duration-100 flex items-center" href="#">Tasks</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center" href="#">AI Studio</a>
+</nav>
+</div>
+<div class="flex items-center gap-stack-gap">
+<button class="text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none focus:ring-2 focus:ring-primary">
+<span class="material-symbols-outlined text-[20px]">sensors</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none focus:ring-2 focus:ring-primary">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center justify-center w-8 h-8 rounded-full focus:outline-none focus:ring-2 focus:ring-primary">
+<span class="material-symbols-outlined text-[20px]">account_circle</span>
+</button>
+<div class="h-4 w-px bg-outline-variant mx-1"></div>
+<button class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center">More</button>
+</div>
+</header>
+<div class="flex-1 flex overflow-hidden">
+<!-- Main Content -->
+<main class="flex-1 overflow-y-auto p-container-padding pb-[80px] md:pb-container-padding">
+<div class="max-w-6xl mx-auto space-y-section-margin">
+<!-- Header Section -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-stack-gap">
+<div>
+<h1 class="font-headline-lg text-headline-lg text-on-background">Task Queue Manager</h1>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Monitor and manage background operations, backups, and data syncs.</p>
+</div>
+<div class="flex gap-stack-gap">
+<button class="bg-[#1C1C1C] border border-[#2C2C2C] text-on-background font-data-md text-data-md px-4 py-2 rounded flex items-center gap-2 hover:border-primary transition-colors focus:outline-none focus:ring-1 focus:ring-primary">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                            New Task
+                        </button>
+</div>
+</div>
+<!-- Tabs & Controls -->
+<div class="bg-[#121212] border border-[#2C2C2C] rounded-lg p-stack-gap flex flex-col md:flex-row md:items-center justify-between gap-stack-gap overflow-x-auto no-scrollbar">
+<div class="flex space-x-2 min-w-max">
+<button class="px-3 py-1.5 rounded bg-[#1C1C1C] border border-primary text-primary font-data-md text-data-md focus:outline-none">All</button>
+<button class="px-3 py-1.5 rounded hover:bg-[#1C1C1C] text-on-surface-variant hover:text-on-background border border-transparent font-data-md text-data-md transition-colors focus:outline-none">Running</button>
+<button class="px-3 py-1.5 rounded hover:bg-[#1C1C1C] text-on-surface-variant hover:text-on-background border border-transparent font-data-md text-data-md transition-colors focus:outline-none">Queued</button>
+<button class="px-3 py-1.5 rounded hover:bg-[#1C1C1C] text-on-surface-variant hover:text-on-background border border-transparent font-data-md text-data-md transition-colors focus:outline-none">Completed</button>
+<button class="px-3 py-1.5 rounded hover:bg-[#1C1C1C] text-on-surface-variant hover:text-on-background border border-transparent font-data-md text-data-md transition-colors focus:outline-none">Failed</button>
+<button class="px-3 py-1.5 rounded hover:bg-[#1C1C1C] text-on-surface-variant hover:text-on-background border border-transparent font-data-md text-data-md transition-colors focus:outline-none">Cancelled</button>
+<button class="px-3 py-1.5 rounded hover:bg-[#1C1C1C] text-on-surface-variant hover:text-on-background border border-transparent font-data-md text-data-md transition-colors focus:outline-none">Interrupted</button>
+</div>
+<div class="flex items-center gap-stack-gap min-w-max">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px]">search</span>
+<input class="bg-[#1C1C1C] border border-[#2C2C2C] text-on-background font-data-sm text-data-sm rounded pl-8 pr-3 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none w-48 placeholder-on-surface-variant/50" placeholder="Search tasks..." type="text"/>
+</div>
+<button class="p-1.5 rounded hover:bg-[#1C1C1C] text-on-surface-variant hover:text-on-background border border-transparent transition-colors focus:outline-none">
+<span class="material-symbols-outlined text-[18px]">filter_list</span>
+</button>
+</div>
+</div>
+<!-- Table Section -->
+<div class="bg-[#121212] border border-[#2C2C2C] rounded-lg overflow-hidden">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-[#2C2C2C] bg-[#1C1C1C]/50">
+<th class="py-2 px-4 font-label-caps text-label-caps text-on-surface-variant whitespace-nowrap">Status</th>
+<th class="py-2 px-4 font-label-caps text-label-caps text-on-surface-variant w-full min-w-[200px]">Task Name / ID</th>
+<th class="py-2 px-4 font-label-caps text-label-caps text-on-surface-variant whitespace-nowrap">Type</th>
+<th class="py-2 px-4 font-label-caps text-label-caps text-on-surface-variant whitespace-nowrap">Elapsed / ETA</th>
+<th class="py-2 px-4 font-label-caps text-label-caps text-on-surface-variant text-right whitespace-nowrap">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-[#2C2C2C] font-data-sm text-data-sm">
+<!-- Row 1: Running -->
+<tr class="bg-primary/5 hover:bg-primary/10 transition-colors group">
+<td class="py-3 px-4">
+<div class="flex items-center">
+<div class="h-2 w-2 rounded-full bg-primary-container mr-2 shadow-[0_0_8px_rgba(0,229,255,0.4)] animate-pulse"></div>
+<span class="text-primary-container font-data-sm tracking-wider">RUNNING</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<div class="flex flex-col">
+<span class="text-primary-container font-medium">Nightly Vector DB Rebuild</span>
+<span class="text-on-surface-variant text-[10px]">task_092a_vdb</span>
+</div>
+<div class="w-full h-1 bg-[#2C2C2C] mt-1.5 rounded-full overflow-hidden">
+<div class="h-full bg-primary-container w-[45%] shadow-[0_0_8px_rgba(0,229,255,0.4)]"></div>
+</div>
+</td>
+<td class="py-3 px-4 text-on-surface-variant">RAG Rebuild</td>
+<td class="py-3 px-4">
+<div class="flex flex-col">
+<span class="text-on-background">14m 22s</span>
+<span class="text-on-surface-variant text-[10px]">~18m rem</span>
+</div>
+</td>
+<td class="py-3 px-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-on-background" title="Pause"><span class="material-symbols-outlined text-[16px]">pause</span></button>
+<button class="text-on-surface-variant hover:text-error" title="Cancel"><span class="material-symbols-outlined text-[16px]">close</span></button>
+<button class="text-on-surface-variant hover:text-on-background ml-1" title="Logs"><span class="material-symbols-outlined text-[16px]">terminal</span></button>
+</div>
+</td>
+</tr>
+<!-- Row 2: Failed -->
+<tr class="hover:bg-[#1C1C1C]/30 transition-colors group">
+<td class="py-3 px-4">
+<div class="flex items-center">
+<div class="h-2 w-2 rounded-full bg-error mr-2"></div>
+<span class="text-error font-data-sm tracking-wider">FAILED</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<div class="flex flex-col">
+<span class="text-error font-medium">Cloudflare Tunnel Health Check</span>
+<span class="text-on-surface-variant text-[10px]">task_0929_tun</span>
+</div>
+</td>
+<td class="py-3 px-4 text-on-surface-variant">Tunnel Check</td>
+<td class="py-3 px-4">
+<span class="text-on-background">4s</span>
+</td>
+<td class="py-3 px-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-primary-container" title="Retry"><span class="material-symbols-outlined text-[16px]">refresh</span></button>
+<button class="text-on-surface-variant hover:text-on-background ml-1" title="Logs"><span class="material-symbols-outlined text-[16px]">terminal</span></button>
+</div>
+</td>
+</tr>
+<!-- Row 3: Completed -->
+<tr class="hover:bg-[#1C1C1C]/30 transition-colors group">
+<td class="py-3 px-4">
+<div class="flex items-center">
+<div class="h-2 w-2 rounded-full bg-[#4ADE80] mr-2"></div>
+<span class="text-[#4ADE80] font-data-sm tracking-wider">COMPLETED</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<div class="flex flex-col">
+<span class="text-on-background/70 font-medium line-through decoration-[#2C2C2C]">Daily PostgreSQL Snapshot</span>
+<span class="text-on-surface-variant text-[10px]">task_0928_bak</span>
+</div>
+</td>
+<td class="py-3 px-4 text-on-surface-variant">Backup</td>
+<td class="py-3 px-4">
+<span class="text-on-surface-variant">4m 12s</span>
+</td>
+<td class="py-3 px-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-on-background ml-1" title="Logs"><span class="material-symbols-outlined text-[16px]">terminal</span></button>
+</div>
+</td>
+</tr>
+<!-- Row 4: Queued -->
+<tr class="hover:bg-[#1C1C1C]/30 transition-colors group">
+<td class="py-3 px-4">
+<div class="flex items-center">
+<div class="h-2 w-2 rounded-full bg-tertiary-fixed-dim mr-2"></div>
+<span class="text-tertiary-fixed-dim font-data-sm tracking-wider">QUEUED</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<div class="flex flex-col">
+<span class="text-on-background font-medium">Ollama Llama 3 8B Pull</span>
+<span class="text-on-surface-variant text-[10px]">task_0930_mod</span>
+</div>
+</td>
+<td class="py-3 px-4 text-on-surface-variant">Model Pull</td>
+<td class="py-3 px-4">
+<span class="text-on-surface-variant">-</span>
+</td>
+<td class="py-3 px-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-error" title="Cancel"><span class="material-symbols-outlined text-[16px]">close</span></button>
+<button class="text-on-surface-variant hover:text-on-background ml-1" title="Edit"><span class="material-symbols-outlined text-[16px]">edit</span></button>
+</div>
+</td>
+</tr>
+<!-- Row 5: Cancelled -->
+<tr class="hover:bg-[#1C1C1C]/30 transition-colors group opacity-60 hover:opacity-100">
+<td class="py-3 px-4">
+<div class="flex items-center">
+<div class="h-2 w-2 rounded-full bg-[#6B7280] mr-2"></div>
+<span class="text-[#9CA3AF] font-data-sm tracking-wider">CANCELLED</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<div class="flex flex-col">
+<span class="text-on-background font-medium">Archival Tech Talks Playlist</span>
+<span class="text-on-surface-variant text-[10px]">task_0927_yt</span>
+</div>
+</td>
+<td class="py-3 px-4 text-on-surface-variant">YT-DLP Download</td>
+<td class="py-3 px-4">
+<span class="text-on-surface-variant">12s</span>
+</td>
+<td class="py-3 px-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-primary-container" title="Restart"><span class="material-symbols-outlined text-[16px]">play_arrow</span></button>
+<button class="text-on-surface-variant hover:text-on-background ml-1" title="Logs"><span class="material-symbols-outlined text-[16px]">terminal</span></button>
+</div>
+</td>
+</tr>
+<!-- Row 6: Interrupted -->
+<tr class="hover:bg-[#1C1C1C]/30 transition-colors group">
+<td class="py-3 px-4">
+<div class="flex items-center">
+<div class="h-2 w-2 rounded-full bg-[#F59E0B] mr-2"></div>
+<span class="text-[#F59E0B] font-data-sm tracking-wider">INTERRUPTED</span>
+</div>
+</td>
+<td class="py-3 px-4">
+<div class="flex flex-col">
+<span class="text-on-background font-medium">Whisper Transcription Job</span>
+<span class="text-on-surface-variant text-[10px]">task_0926_whi</span>
+</div>
+</td>
+<td class="py-3 px-4 text-on-surface-variant">AI Task</td>
+<td class="py-3 px-4">
+<span class="text-on-surface-variant">22m 14s</span>
+</td>
+<td class="py-3 px-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="text-on-surface-variant hover:text-primary-container" title="Resume"><span class="material-symbols-outlined text-[16px]">play_arrow</span></button>
+<button class="text-on-surface-variant hover:text-on-background ml-1" title="Logs"><span class="material-symbols-outlined text-[16px]">terminal</span></button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination -->
+<div class="bg-[#1C1C1C]/50 border-t border-[#2C2C2C] px-4 py-2 flex items-center justify-between font-data-sm text-data-sm text-on-surface-variant">
+<span>Showing 1-6 of 142 tasks</span>
+<div class="flex items-center gap-2">
+<button class="p-1 rounded hover:bg-[#2C2C2C] hover:text-on-background transition-colors disabled:opacity-50" disabled="">
+<span class="material-symbols-outlined text-[16px]">chevron_left</span>
+</button>
+<span>Page 1 / 29</span>
+<button class="p-1 rounded hover:bg-[#2C2C2C] hover:text-on-background transition-colors">
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- BottomNavBar (Mobile) -->
+<nav class="bg-surface text-primary border-t border-outline-variant flat no shadows docked full-width bottom-0 fixed bottom-0 left-0 w-full z-50 flex md:hidden justify-around items-center h-16 px-2">
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-lg w-full" href="#">
+<span class="material-symbols-outlined mb-1">dashboard</span>
+<span class="font-label-caps text-label-caps">Dash</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-lg w-full" href="#">
+<span class="material-symbols-outlined mb-1">storage</span>
+<span class="font-label-caps text-label-caps">Vault</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-lg w-full" href="#">
+<span class="material-symbols-outlined mb-1">perm_media</span>
+<span class="font-label-caps text-label-caps">Media</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-lg w-full" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">checklist</span>
+<span class="font-label-caps text-label-caps">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-lg w-full" href="#">
+<span class="material-symbols-outlined mb-1">psychology</span>
+<span class="font-label-caps text-label-caps">AI</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 p-2 rounded-lg w-full" href="#">
+<span class="material-symbols-outlined mb-1">menu</span>
+<span class="font-label-caps text-label-caps">More</span>
+</a>
+</nav>
+</body></html>

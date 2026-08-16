@@ -1,43 +1,13 @@
 /**
  * NexusNode — 24/7 Personal Mobile Server Appliance Controller & SSE Streamer
- * Architecture: Centralized authState, Strict Least-Privilege RBAC, Reactive UI, Range Stream Player, Media & Task Queue
+ * Canonical Design System: stitch_nexusnode_control_interface/nexusnode/DESIGN.md
+ * Target Hardware: TECNO BG6, Android 13, Termux, ~4 GB RAM, unrooted
+ * Architecture: Centralized authState, Strict Least-Privilege RBAC, Reactive UI, Telemetry Mapping
  */
 
 // ==============================================================================
 // 1. GLOBAL STATE & PRIVILEGES REGISTRY
 // ==============================================================================
-
-const ALL_PRIVILEGES_LIST = [
-  "can_upload_files",
-  "can_manage_files",
-  "can_create_shares",
-  "can_download_media",
-  "can_use_ai",
-  "can_use_rag",
-  "can_control_services",
-  "can_manage_models",
-  "can_view_system_logs",
-  "can_manage_users",
-  "can_manage_backups",
-  "can_manage_automation",
-  "can_manage_settings"
-];
-
-const USER_DEFAULT_PRIVILEGES = {
-  can_upload_files: true,
-  can_manage_files: true,
-  can_create_shares: false,
-  can_download_media: true,
-  can_use_ai: true,
-  can_use_rag: true,
-  can_control_services: false,
-  can_manage_models: false,
-  can_view_system_logs: false,
-  can_manage_users: false,
-  can_manage_backups: false,
-  can_manage_automation: false,
-  can_manage_settings: false
-};
 
 const authState = {
   token: null,
@@ -47,17 +17,18 @@ const authState = {
   isAuthenticated: false
 };
 
-let appState = {
+const appState = {
   activeTab: 'dashboard',
   systemStatusInterval: null,
   cachedFiles: [],
-  mediaLibrary: { music: [], videos: [], podcasts: [], downloads: [], other: [] },
-  activeMediaCat: 'all',
-  currentAudioVideo: null,
-  chatMessages: [],
-  allEvents: [],
-  activeEventCat: 'ALL',
-  logEventSource: null
+  activeVaultFilter: 'all',
+  activeVaultQuery: '',
+  mediaLibrary: [],
+  activeTaskId: null,
+  eventSource: null,
+  selectedModel: '',
+  loadedModel: '',
+  isStreamingChat: false
 };
 
 // ==============================================================================
@@ -81,11 +52,6 @@ function getAuthHeaders() {
   return headers;
 }
 
-/**
- * Central API fetch wrapper.
- * Intercepts HTTP 401 to clear local auth state and force login.
- * Intercepts HTTP 403 to notify user without destroying session.
- */
 async function apiFetch(url, options = {}) {
   const headers = {
     'localtonet-skip-warning': 'true',
@@ -99,1700 +65,1386 @@ async function apiFetch(url, options = {}) {
   }
   options.headers = headers;
 
-  const res = await fetch(url, options);
-
-  if (res.status === 401) {
-    showToast('Session expired or invalid. Please sign in.', 'error');
-    clearAuthState(true);
-    throw new Error('Unauthorized (HTTP 401)');
+  try {
+    const res = await fetch(url, options);
+    if (res.status === 401) {
+      if (authState.isAuthenticated) {
+        showToast('Session expired. Please log in again.', 'warning');
+        handleLogout(false);
+      }
+      return res;
+    }
+    if (res.status === 403) {
+      showToast('Access denied: insufficient operator privileges.', 'error');
+    }
+    return res;
+  } catch (err) {
+    console.error(`API Fetch failed for ${url}:`, err);
+    throw err;
   }
+}
 
-  if (res.status === 403) {
-    const clone = res.clone();
-    let msg = 'Permission denied (HTTP 403).';
+async function initAuth() {
+  const savedToken = localStorage.getItem('nexus_token');
+  if (savedToken) {
+    authState.token = savedToken;
     try {
-      const errData = await clone.json();
-      if (errData.message) msg = errData.message;
-    } catch (_) {}
-    showToast(msg, 'error');
+      const res = await apiFetch('/api/auth/me');
+      if (res.ok) {
+        const data = await res.json();
+        setAuthenticatedState(data.user, savedToken);
+        return;
+      }
+    } catch (err) {
+      console.warn('Saved token validation failed:', err);
+    }
   }
-
-  return res;
+  handleLogout(false);
 }
 
-function clearAuthState(showLogin = true) {
-  // 1. Sever background polling & SSE
-  if (appState.systemStatusInterval) {
-    clearInterval(appState.systemStatusInterval);
-    appState.systemStatusInterval = null;
-  }
-  if (appState.logEventSource) {
-    appState.logEventSource.close();
-    appState.logEventSource = null;
-  }
-
-  // 2. Clear client-side storage
-  sessionStorage.removeItem('nexus_auth_token');
-  sessionStorage.removeItem('nexus_user_profile');
-  localStorage.removeItem('nexus_auth_token');
-  localStorage.removeItem('nexus_user_profile');
-
-  // 3. Reset in-memory auth state
-  authState.token = null;
-  authState.user = null;
-  authState.role = 'user';
-  authState.privileges = {};
-  authState.isAuthenticated = false;
-
-  // 4. Clear cached sensitive application data
-  appState.cachedFiles = [];
-  appState.mediaLibrary = { music: [], videos: [], podcasts: [], downloads: [], other: [] };
-  appState.allEvents = [];
-  appState.chatMessages = [];
-
-  // 5. Clear sensitive DOM containers
-  const containersToClear = [
-    'adminUsersContainer',
-    'adminSharesContainer',
-    'dbRowsContainer',
-    'eventsTerminalContainer',
-    'backupsListContainer',
-    'automationJobsContainer',
-    'tasksListContainer',
-    'vaultFilesContainer'
-  ];
-  containersToClear.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = '<p class="empty-state-muted">Sign in to load data.</p>';
-  });
-
-  // 6. Reset UI and Navigation
-  document.getElementById('headerUsername').textContent = 'Guest';
-  const roleBadge = document.getElementById('headerRoleBadge');
-  roleBadge.textContent = 'GUEST';
-  roleBadge.className = 'role-badge user';
-  document.getElementById('headerUserAvatar').textContent = 'G';
-
-  // Strictly hide all privileged / admin UI
-  document.querySelectorAll('.admin-only').forEach(el => {
-    el.style.setProperty('display', 'none', 'important');
-  });
-  document.querySelectorAll('.perm-backups, .perm-automation, .perm-settings, .perm-services, .perm-rag, .perm-upload, .perm-files, .perm-download-media').forEach(el => {
-    el.style.setProperty('display', 'none', 'important');
-  });
-
-  // Reset tab to dashboard
-  switchTabDirect('dashboard');
-
-  // Clear login form
-  const uInput = document.getElementById('loginUserId');
-  const pInput = document.getElementById('loginPassword');
-  if (uInput) uInput.value = '';
-  if (pInput) pInput.value = '';
-  const errBox = document.getElementById('loginErrorMsg');
-  if (errBox) { errBox.textContent = ''; errBox.style.display = 'none'; }
-
-  closeAllMoreMenus();
-  closeModal('createUserModal');
-  closeModal('editPrivilegesModal');
-  closeModal('createShareModal');
-  closeModal('checksumModal');
-
-  if (showLogin) {
-    openModal('loginModal');
-  }
-}
-
-function updateAuthState(user, token) {
+function setAuthenticatedState(user, token) {
   authState.token = token;
   authState.user = user;
   authState.role = user.role || 'user';
   authState.privileges = user.privileges || {};
   authState.isAuthenticated = true;
 
-  sessionStorage.setItem('nexus_auth_token', token);
-  sessionStorage.setItem('nexus_user_profile', JSON.stringify(user));
-  localStorage.setItem('nexus_auth_token', token);
-  localStorage.setItem('nexus_user_profile', JSON.stringify(user));
+  localStorage.setItem('nexus_token', token);
 
-  // Update header badges
-  document.getElementById('headerUsername').textContent = user.user_id;
+  // Update Header UI
+  const headerUsername = document.getElementById('headerUsername');
+  if (headerUsername) headerUsername.textContent = user.username;
+
+  const headerAvatar = document.getElementById('headerUserAvatar');
+  if (headerAvatar) headerAvatar.textContent = (user.username || 'A')[0].toUpperCase();
+
   const roleBadge = document.getElementById('headerRoleBadge');
-  roleBadge.textContent = user.role.toUpperCase();
-  roleBadge.className = `role-badge ${user.role}`;
-  document.getElementById('headerUserAvatar').textContent = (user.user_id || 'U')[0].toUpperCase();
-
-  // Apply RBAC UI Rules
-  applyUserRoleUI();
-
-  // Close Login Modal
-  closeModal('loginModal');
-
-  // If user was on a forbidden tab, route to dashboard
-  if (appState.activeTab === 'admin' && user.role !== 'admin' && !hasPrivilege('can_manage_users')) {
-    switchTab('dashboard');
-  } else {
-    switchTab(appState.activeTab || 'dashboard');
-  }
-
-  // Start system polling and initialize dashboard
-  initDashboard();
-}
-
-function applyUserRoleUI() {
-  const isAdmin = (authState.role === 'admin');
-
-  // Admin-Only Elements
-  document.querySelectorAll('.admin-only').forEach(el => {
-    if (isAdmin || hasPrivilege('can_manage_users')) {
-      el.style.removeProperty('display');
+  if (roleBadge) {
+    roleBadge.textContent = authState.role.toUpperCase();
+    if (authState.role === 'admin') {
+      roleBadge.className = 'role-badge admin';
     } else {
-      el.style.setProperty('display', 'none', 'important');
+      roleBadge.className = 'role-badge';
     }
-  });
+  }
 
-  // Granular Permission Elements
-  document.querySelectorAll('.perm-backups').forEach(el => {
-    el.style.display = (isAdmin || hasPrivilege('can_manage_backups')) ? '' : 'none';
-  });
+  // Hide Login Modal
+  const loginScreen = document.getElementById('loginScreen');
+  if (loginScreen) loginScreen.style.display = 'none';
 
-  document.querySelectorAll('.perm-automation').forEach(el => {
-    el.style.display = (isAdmin || hasPrivilege('can_manage_automation')) ? '' : 'none';
-  });
+  applyRbacVisibility();
+  startPeriodicPolling();
+  connectLogStream();
 
-  document.querySelectorAll('.perm-settings').forEach(el => {
-    el.style.display = (isAdmin || hasPrivilege('can_manage_settings')) ? '' : 'none';
-  });
-
-  document.querySelectorAll('.perm-services').forEach(el => {
-    el.style.display = (isAdmin || hasPrivilege('can_control_services')) ? '' : 'none';
-  });
-
-  document.querySelectorAll('.perm-rag').forEach(el => {
-    el.style.display = (isAdmin || hasPrivilege('can_use_rag')) ? '' : 'none';
-  });
-
-  document.querySelectorAll('.perm-upload').forEach(el => {
-    el.style.display = (isAdmin || hasPrivilege('can_upload_files')) ? '' : 'none';
-  });
-
-  document.querySelectorAll('.perm-files').forEach(el => {
-    el.style.display = (isAdmin || hasPrivilege('can_manage_files')) ? '' : 'none';
-  });
-
-  document.querySelectorAll('.perm-download-media').forEach(el => {
-    el.style.display = (isAdmin || hasPrivilege('can_download_media')) ? '' : 'none';
-  });
+  // Load initial tab data
+  switchTab(appState.activeTab || 'dashboard');
 }
 
-// Battery Optimization: Pause polling when tab is backgrounded
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    if (appState.systemStatusInterval) {
-      clearInterval(appState.systemStatusInterval);
-      appState.systemStatusInterval = null;
-    }
-  } else {
-    if (authState.token) {
-      fetchSystemStatus();
-      initSystemPolling();
-    }
-  }
-});
+async function handleLoginSubmit(event) {
+  event.preventDefault();
+  const usernameInput = document.getElementById('loginUsername');
+  const passwordInput = document.getElementById('loginPassword');
+  const submitBtn = document.getElementById('loginSubmitBtn');
+  const lockoutAlert = document.getElementById('lockoutAlert');
 
-// App Bootstrap
-document.addEventListener('DOMContentLoaded', async () => {
-  renderPrivilegesCheckboxes('newPrivilegesGrid', USER_DEFAULT_PRIVILEGES);
+  if (!usernameInput || !passwordInput) return;
 
-  // Global click listener to close dropdowns when clicking outside
-  document.addEventListener('click', (e) => {
-    const moreWrapper = document.querySelector('.desktop-more-wrapper');
-    if (moreWrapper && !moreWrapper.contains(e.target)) {
-      const menu = document.getElementById('desktopMoreMenu');
-      if (menu) menu.classList.remove('open');
-    }
-  });
+  const username = usernameInput.value.trim();
+  const password = passwordInput.value;
 
-  // Global keydown for Escape key to close menus/modals
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      closeAllMoreMenus();
-      closeModal('createUserModal');
-      closeModal('editPrivilegesModal');
-      closeModal('createShareModal');
-      closeModal('checksumModal');
-    }
-  });
-
-  const storedToken = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
-  if (storedToken) {
-    try {
-      const res = await fetch('/api/auth/me', {
-        headers: {
-          'Authorization': `Bearer ${storedToken}`,
-          'localtonet-skip-warning': 'true'
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        updateAuthState(data.user, storedToken);
-        return;
-      }
-    } catch (_) {}
+  if (!username || !password) {
+    showToast('Please enter both operator ID and passphrase.', 'warning');
+    return;
   }
 
-  // Not authenticated
-  clearAuthState(true);
-});
-
-async function handleLoginSubmit(e) {
-  e.preventDefault();
-  const user_id = document.getElementById('loginUserId').value.trim();
-  const password = document.getElementById('loginPassword').value.trim();
-  const errBox = document.getElementById('loginErrorMsg');
+  if (submitBtn) submitBtn.disabled = true;
 
   try {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'localtonet-skip-warning': 'true' },
-      body: JSON.stringify({ user_id, password })
+      headers: {
+        'Content-Type': 'application/json',
+        'localtonet-skip-warning': 'true'
+      },
+      body: JSON.stringify({ user_id: username, username, password })
     });
+
     const data = await res.json();
-    if (res.ok && data.token) {
-      updateAuthState(data.user, data.token);
-      showToast(`Welcome back, ${data.user.user_id}!`, 'success');
+    if (res.ok && data.success) {
+      if (lockoutAlert) lockoutAlert.style.display = 'none';
+      setAuthenticatedState(data.user, data.token);
+      showToast(`Welcome back, ${data.user.username}`, 'success');
+      passwordInput.value = '';
     } else {
-      errBox.textContent = data.message || data.error || 'Authentication failed.';
-      errBox.style.display = 'block';
+      if (res.status === 429) {
+        if (lockoutAlert) {
+          lockoutAlert.style.display = 'flex';
+          const countdown = document.getElementById('lockoutCountdown');
+          if (countdown) countdown.textContent = data.retry_after || 60;
+        }
+      }
+      showToast(data.error || 'Authentication rejected.', 'error');
     }
   } catch (err) {
-    errBox.textContent = `Login connection error: ${err.message}`;
-    errBox.style.display = 'block';
+    showToast('Failed to connect to authentication gateway.', 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 }
 
-async function handleLogout() {
-  if (authState.token) {
+async function handleLogout(notifyServer = true) {
+  if (notifyServer && authState.token) {
     try {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: getAuthHeaders()
-      });
-    } catch (_) {}
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) {
+      console.warn('Server logout notification error:', e);
+    }
   }
-  clearAuthState(true);
-  showToast('You have been signed out.', 'info');
+
+  // Clear Session
+  authState.token = null;
+  authState.user = null;
+  authState.role = 'user';
+  authState.privileges = {};
+  authState.isAuthenticated = false;
+  localStorage.removeItem('nexus_token');
+
+  // Stop background polling & SSE
+  if (appState.systemStatusInterval) clearInterval(appState.systemStatusInterval);
+  if (appState.eventSource) {
+    appState.eventSource.close();
+    appState.eventSource = null;
+  }
+
+  // Clear Admin / Sensitive DOM state
+  document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+  const diagFindings = document.getElementById('diagFindingsContainer');
+  if (diagFindings) diagFindings.innerHTML = '';
+  const adminUsers = document.getElementById('adminUserTableBody');
+  if (adminUsers) adminUsers.innerHTML = '';
+
+  // Show Login Screen
+  const loginScreen = document.getElementById('loginScreen');
+  if (loginScreen) loginScreen.style.display = 'flex';
+
+  // Force active tab to dashboard
+  appState.activeTab = 'dashboard';
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  const dashPane = document.getElementById('tab-dashboard');
+  if (dashPane) dashPane.classList.add('active');
+}
+
+function applyRbacVisibility() {
+  const isAdmin = (authState.role === 'admin');
+
+  // Admin-only elements
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = isAdmin ? '' : 'none';
+  });
+
+  // Privilege specific elements
+  document.querySelectorAll('.perm-backups').forEach(el => {
+    el.style.display = (isAdmin || hasPrivilege('can_manage_backups')) ? '' : 'none';
+  });
+  document.querySelectorAll('.perm-automation').forEach(el => {
+    el.style.display = (isAdmin || hasPrivilege('can_manage_automation')) ? '' : 'none';
+  });
+  document.querySelectorAll('.perm-settings').forEach(el => {
+    el.style.display = (isAdmin || hasPrivilege('can_manage_settings')) ? '' : 'none';
+  });
 }
 
 // ==============================================================================
-// 3. NAVIGATION & VIEW SWITCHING
+// 3. NAVIGATION & DRAWER CONTROLS
 // ==============================================================================
 
 function switchTab(tabId) {
-  // Permission checks before tab switch
-  if (tabId === 'diagnostics' && authState.role !== 'admin') {
-    showToast('Permission denied: Administrator role required for diagnostics.', 'error');
-    return;
-  }
-  if (tabId === 'admin' && authState.role !== 'admin' && !hasPrivilege('can_manage_users')) {
-    showToast('Permission denied: Admin role required.', 'error');
-    return;
-  }
-  if (tabId === 'backups' && authState.role !== 'admin' && !hasPrivilege('can_manage_backups')) {
-    showToast('Permission denied: Backups management required.', 'error');
-    return;
-  }
-  if (tabId === 'automation' && authState.role !== 'admin' && !hasPrivilege('can_manage_automation')) {
-    showToast('Permission denied: Automation management required.', 'error');
-    return;
-  }
-  if (tabId === 'settings' && authState.role !== 'admin' && !hasPrivilege('can_manage_settings')) {
-    showToast('Permission denied: Settings management required.', 'error');
+  // Check Admin / Privilege guard
+  if ((tabId === 'admin' || tabId === 'diagnostics') && authState.role !== 'admin') {
+    showToast('Administrator privileges required.', 'warning');
     return;
   }
 
-  switchTabDirect(tabId);
-}
-
-function switchTabDirect(tabId) {
   appState.activeTab = tabId;
 
-  // Toggle Tab Panes
+  // Update Desktop Tab Buttons
+  document.querySelectorAll('.desktop-nav-tabs .nav-tab').forEach(tab => {
+    if (tab.getAttribute('data-tab') === tabId) {
+      tab.classList.add('active');
+    } else {
+      tab.classList.remove('active');
+    }
+  });
+
+  // Update Mobile Tab Buttons
+  document.querySelectorAll('.mobile-bottom-nav .mobile-nav-btn').forEach(btn => {
+    if (btn.getAttribute('data-tab') === tabId) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  // Show Active Pane
   document.querySelectorAll('.tab-pane').forEach(pane => {
-    pane.classList.remove('active');
-  });
-  const activePane = document.getElementById(`tab-${tabId}`);
-  if (activePane) {
-    activePane.classList.add('active');
-  }
-
-  // Update Desktop Navigation Tabs
-  document.querySelectorAll('.desktop-nav-tabs .nav-tab').forEach(btn => {
-    if (btn.getAttribute('data-tab') === tabId) {
-      btn.classList.add('active');
+    if (pane.id === `tab-${tabId}`) {
+      pane.classList.add('active');
+      pane.style.display = '';
     } else {
-      btn.classList.remove('active');
+      pane.classList.remove('active');
+      pane.style.display = 'none';
     }
   });
 
-  // Update Mobile Bottom Dock
-  document.querySelectorAll('.mobile-bottom-dock .dock-btn').forEach(btn => {
-    if (btn.getAttribute('data-tab') === tabId) {
-      btn.classList.add('active');
-    } else {
-      btn.classList.remove('active');
-    }
-  });
-
-  // Trigger Data Loads for Active Tab
-  if (authState.isAuthenticated) {
-    if (tabId === 'storage') fetchVaultFiles();
-    else if (tabId === 'media') fetchMediaLibrary();
-    else if (tabId === 'tasks') fetchTasks();
-    else if (tabId === 'ai-studio') initAIStudio();
-    else if (tabId === 'events') fetchEvents();
-    else if (tabId === 'storage-intel') fetchStorageIntelligence();
-    else if (tabId === 'backups') fetchBackupsList();
-    else if (tabId === 'automation') fetchAutomationJobs();
-    else if (tabId === 'settings') loadSettings();
-    else if (tabId === 'diagnostics') runFullDiagnosticReport();
-    else if (tabId === 'admin') { fetchAdminUsers(); fetchSharesList(); }
-    else if (tabId === 'network') runAllNetworkTests();
+  // Trigger tab data reload
+  switch (tabId) {
+    case 'dashboard':
+      pollSystemStatus();
+      break;
+    case 'storage':
+      loadVaultFiles();
+      break;
+    case 'media':
+      loadMediaLibrary();
+      pollMediaQueue();
+      break;
+    case 'tasks':
+      loadTasksList();
+      break;
+    case 'ai-studio':
+      loadAiState();
+      break;
+    case 'diagnostics':
+      loadDiagnosticsReport();
+      break;
+    case 'settings':
+      loadSettings();
+      break;
+    case 'automation':
+      loadAutomationJobs();
+      break;
+    case 'backups':
+      loadBackupsList();
+      break;
+    case 'storage-intel':
+      loadStorageIntel();
+      break;
+    case 'events':
+      loadEventsArchive();
+      break;
+    case 'admin':
+      loadAdminUsers();
+      break;
   }
 }
 
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function toggleDesktopMoreMenu(e) {
-  if (e) e.stopPropagation();
+function toggleDesktopMoreMenu(event) {
+  if (event) event.stopPropagation();
   const menu = document.getElementById('desktopMoreMenu');
-  if (menu) menu.classList.toggle('open');
-}
-
-function toggleMobileMoreSheet(open = null) {
-  const overlay = document.getElementById('moreSheetOverlay');
-  if (!overlay) return;
-  if (open === null) {
-    overlay.classList.toggle('open');
-  } else if (open) {
-    overlay.classList.add('open');
-  } else {
-    overlay.classList.remove('open');
-  }
+  if (menu) menu.classList.toggle('show');
 }
 
 function closeAllMoreMenus() {
-  const dMenu = document.getElementById('desktopMoreMenu');
-  if (dMenu) dMenu.classList.remove('open');
-  toggleMobileMoreSheet(false);
+  const menu = document.getElementById('desktopMoreMenu');
+  if (menu) menu.classList.remove('show');
+}
+
+document.addEventListener('click', (e) => {
+  const wrapper = document.querySelector('.desktop-more-wrapper');
+  if (wrapper && !wrapper.contains(e.target)) {
+    closeAllMoreMenus();
+  }
+});
+
+function openMobileMoreDrawer() {
+  const drawer = document.getElementById('moreDrawer');
+  const overlay = document.getElementById('moreDrawerOverlay');
+  if (drawer) drawer.classList.remove('closed');
+  if (overlay) overlay.classList.remove('closed');
+}
+
+function closeMobileMoreDrawer() {
+  const drawer = document.getElementById('moreDrawer');
+  const overlay = document.getElementById('moreDrawerOverlay');
+  if (drawer) drawer.classList.add('closed');
+  if (overlay) overlay.classList.add('closed');
 }
 
 // ==============================================================================
-// 4. DASHBOARD & CENTRAL TELEMETRY POLLING
+// 4. TELEMETRY, SYSTEM STATUS & SSE STREAM
 // ==============================================================================
 
-function initDashboard() {
-  fetchSystemStatus();
-  initSystemPolling();
-  fetchVaultFiles();
-  fetchMediaLibrary();
-  fetchTasks();
-  fetchEvents();
-  checkModelEstimate(document.getElementById('aiModelSelect')?.value || 'qwen2.5:0.5b');
-}
-
-function initSystemPolling() {
+function startPeriodicPolling() {
   if (appState.systemStatusInterval) clearInterval(appState.systemStatusInterval);
-  appState.systemStatusInterval = setInterval(fetchSystemStatus, 3000);
+  pollSystemStatus();
+  appState.systemStatusInterval = setInterval(pollSystemStatus, 3000);
 }
 
-async function fetchSystemStatus() {
-  if (!authState.token) return;
+async function pollSystemStatus() {
+  if (!authState.isAuthenticated) return;
   try {
     const res = await apiFetch('/api/system/status');
-    if (!res.ok) return;
-    const data = await res.json();
-    renderApplianceStatus(data);
-  } catch (_) {}
-}
-
-function renderApplianceStatus(data) {
-  const { server, appliance, memory, disk, device, services, tasks } = data;
-
-  // Header Subtitle & WAN Status
-  if (server) {
-    document.getElementById('serverApplianceSub').textContent = `${server.device || 'Android Termux'} • Uptime: ${server.uptime || '--'}`;
-    const tunnelPill = document.getElementById('metaTunnelStatus');
-    if (tunnelPill && services && services.localtonet) {
-      const isOnline = (services.localtonet.status === 'online');
-      tunnelPill.textContent = isOnline ? 'Active' : 'Offline';
-      tunnelPill.style.color = isOnline ? 'var(--accent-cyan)' : 'var(--accent-rose)';
+    if (res.ok) {
+      const data = await res.json();
+      updateTelemetryUI(data);
     }
-  }
-
-  // Thermal & Battery Telemetry
-  if (device) {
-    const thermPill = document.getElementById('metaThermalState');
-    if (thermPill) {
-      thermPill.textContent = device.thermal_state || 'NORMAL';
-      thermPill.style.color = (device.thermal_state === 'CRITICAL') ? 'var(--accent-rose)' :
-        ((device.thermal_state === 'THROTTLED' || device.thermal_state === 'WARM') ? 'var(--accent-amber)' : 'var(--accent-emerald)');
-    }
-    const batPill = document.getElementById('metaBatteryPct');
-    if (batPill) {
-      batPill.textContent = (device.battery_percent !== null) ? `${device.battery_percent}%` : '--%';
-    }
-  }
-
-  // Governor State Badge
-  if (appliance) {
-    const badge = document.getElementById('governorStateBadge');
-    if (badge) {
-      badge.textContent = appliance.badge || '● HEALTHY';
-      badge.className = `governor-badge ${appliance.state.toLowerCase().includes('crit') ? 'critical' : (appliance.state.toLowerCase().includes('press') ? 'pressure' : 'normal')}`;
-    }
-  }
-
-  // RAM Usage
-  if (memory) {
-    document.getElementById('ramStatText').textContent = `${memory.used_mb} MB / ${memory.total_mb} MB (${memory.ram_percent}%)`;
-    document.getElementById('ramProgressBar').style.width = `${memory.ram_percent}%`;
-    document.getElementById('ramAvailableDetail').textContent = `Available: ${memory.available_mb} MB`;
-  }
-
-  // Disk Storage
-  if (disk) {
-    document.getElementById('diskStatText').textContent = `${disk.used_gb} GB / ${disk.total_gb} GB (${disk.percent}%)`;
-    document.getElementById('diskProgressBar').style.width = `${disk.percent}%`;
-    document.getElementById('diskFreeDetail').textContent = `Free: ${disk.free_gb} GB`;
-    document.getElementById('diskTotalDetail').textContent = `Capacity: ${disk.total_gb} GB`;
-  }
-
-  // Services Quad
-  if (services) {
-    updateServiceCard('svcCardNexus', 'svcPillNexus', 'svcPidNexus', services.nexusnode);
-    updateServiceCard('svcCardTunnel', 'svcPillTunnel', 'svcPidTunnel', services.localtonet);
-    updateServiceCard('svcCardSsh', 'svcPillSsh', 'svcPidSsh', services.ssh);
-    updateServiceCard('svcCardOllama', 'svcPillOllama', 'svcPidOllama', services.ollama);
-  }
-
-  // Active Task Preview
-  const taskContainer = document.getElementById('activeJobContainer');
-  if (taskContainer) {
-    if (tasks && tasks.active_tasks && tasks.active_tasks.length > 0) {
-      const active = tasks.active_tasks[0];
-      taskContainer.innerHTML = `
-        <div class="active-job-card">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong>${escapeHtml(active.title)}</strong>
-            <span class="badge-pill available">${active.progress}%</span>
-          </div>
-          <div class="progress-track-bg" style="margin: 0.5rem 0;">
-            <div class="progress-fill-cyan" style="width: ${active.progress}%;"></div>
-          </div>
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span class="font-mono" style="font-size:0.75rem; color:var(--text-muted);">${escapeHtml(active.type)}</span>
-            <button class="ghost-btn danger" style="padding:0.25rem 0.5rem; font-size:0.75rem;" onclick="cancelTask('${active.id}')">Cancel</button>
-          </div>
-        </div>
-      `;
-    } else {
-      taskContainer.innerHTML = `<p class="empty-state-muted">No background tasks currently executing.</p>`;
-    }
-  }
-
-  // RAG Stats
-  if (data.rag) {
-    const dStat = document.getElementById('ragDocsStat');
-    const cStat = document.getElementById('ragChunksStat');
-    const uStat = document.getElementById('ragUpdatedStat');
-    if (dStat) dStat.textContent = `Docs: ${data.rag.documents_count || 0}`;
-    if (cStat) cStat.textContent = `Chunks: ${data.rag.chunks_count || 0}`;
-    if (uStat) uStat.textContent = `Synced: ${data.rag.updated_at ? new Date(data.rag.updated_at * 1000).toLocaleTimeString() : 'Never'}`;
+  } catch (e) {
+    console.warn('System status poll error:', e);
   }
 }
 
-function updateServiceCard(cardId, pillId, pidId, serviceData) {
-  const card = document.getElementById(cardId);
-  const pill = document.getElementById(pillId);
-  const pidSpan = document.getElementById(pidId);
+function updateTelemetryUI(data) {
+  if (!data) return;
 
-  if (!card || !pill || !serviceData) return;
+  // 1. Top Status Strip
+  const stripUptime = document.getElementById('stripUptime');
+  if (stripUptime && data.system && data.system.uptime) {
+    stripUptime.textContent = data.system.uptime;
+  }
 
-  const isOnline = (serviceData.status === 'online' || serviceData.status === 'running');
-  if (isOnline) {
-    card.classList.add('online');
-    pill.textContent = 'ONLINE';
-    pill.className = 'svc-state-pill online';
+  const stripBattery = document.getElementById('stripBattery');
+  if (stripBattery && data.battery) {
+    stripBattery.textContent = `${data.battery.level ?? '--'}%`;
+  }
+
+  const stripConnStatus = document.getElementById('stripConnStatus');
+  const stripStatusDot = document.getElementById('stripStatusDot');
+  if (stripConnStatus && data.network) {
+    const isWan = data.network.mode === 'wan';
+    stripConnStatus.textContent = isWan ? 'ONLINE (WAN)' : 'ONLINE (LAN)';
+    if (stripStatusDot) stripStatusDot.className = 'status-dot';
+  }
+
+  // 2. RAM Meter (PSS + Ollama)
+  const ram = data.memory || {};
+  const ramPercent = ram.percent || 0;
+  const ramMeterFill = document.getElementById('ramMeterFill');
+  const ramMeterVal = document.getElementById('ramMeterVal');
+  const ramDetail = document.getElementById('ramDetailText');
+  if (ramMeterFill) {
+    ramMeterFill.style.width = `${Math.min(ramPercent, 100)}%`;
+    if (ramPercent >= 90) ramMeterFill.className = 'meter-fill critical';
+    else if (ramPercent >= 80) ramMeterFill.className = 'meter-fill warning';
+    else ramMeterFill.className = 'meter-fill';
+  }
+  if (ramMeterVal) ramMeterVal.textContent = `${ramPercent}%`;
+  if (ramDetail && ram.used_mb && ram.total_mb) {
+    ramDetail.textContent = `${ram.used_mb} / ${ram.total_mb} MB`;
+  }
+
+  // 3. Swap / ZRAM Meter
+  const swap = data.swap || {};
+  const swapPercent = swap.percent || 0;
+  const swapMeterFill = document.getElementById('swapMeterFill');
+  const swapMeterVal = document.getElementById('swapMeterVal');
+  const swapDetail = document.getElementById('swapDetailText');
+  if (swapMeterFill) {
+    swapMeterFill.style.width = `${Math.min(swapPercent, 100)}%`;
+  }
+  if (swapMeterVal) swapMeterVal.textContent = `${swapPercent}%`;
+  if (swapDetail && swap.used_mb !== undefined) {
+    swapDetail.textContent = `${swap.used_mb} / ${swap.total_mb || 0} MB`;
+  }
+
+  // 4. Storage Meter
+  const stg = data.storage || {};
+  const stgPercent = stg.percent || 0;
+  const stgMeterFill = document.getElementById('storageMeterFill');
+  const stgMeterVal = document.getElementById('storageMeterVal');
+  const stgDetail = document.getElementById('storageDetailText');
+  if (stgMeterFill) stgMeterFill.style.width = `${Math.min(stgPercent, 100)}%`;
+  if (stgMeterVal) stgMeterVal.textContent = `${stgPercent}%`;
+  if (stgDetail && stg.used_gb) {
+    stgDetail.textContent = `${stg.used_gb} / ${stg.total_gb} GB`;
+  }
+
+  // 5. CPU Meter
+  const cpu = data.cpu || {};
+  const cpuPercent = cpu.percent || 0;
+  const cpuMeterFill = document.getElementById('cpuMeterFill');
+  const cpuMeterVal = document.getElementById('cpuMeterVal');
+  if (cpuMeterFill) cpuMeterFill.style.width = `${Math.min(cpuPercent, 100)}%`;
+  if (cpuMeterVal) cpuMeterVal.textContent = `${cpuPercent}%`;
+
+  // 6. Battery & Thermal Chip
+  const dashBatteryLevel = document.getElementById('dashBatteryLevel');
+  const dashBatteryStatus = document.getElementById('dashBatteryStatus');
+  if (dashBatteryLevel && data.battery) {
+    dashBatteryLevel.textContent = `${data.battery.level ?? '--'}%`;
+    if (dashBatteryStatus) dashBatteryStatus.textContent = data.battery.status || 'STANDBY';
+  }
+
+  const dashThermalLevel = document.getElementById('dashThermalLevel');
+  const dashThermalStatus = document.getElementById('dashThermalStatus');
+  if (dashThermalLevel && data.thermal) {
+    dashThermalLevel.textContent = `${data.thermal.temp_c ?? '--'}°C`;
+    if (dashThermalStatus) dashThermalStatus.textContent = (data.thermal.status || 'NORMAL').toUpperCase();
+  }
+
+  // 7. Active Task Supervision
+  if (data.active_task) {
+    const task = data.active_task;
+    appState.activeTaskId = task.id;
+    const taskTitle = document.getElementById('activeTaskTitle');
+    const taskStatus = document.getElementById('activeTaskStatus');
+    const taskFill = document.getElementById('activeTaskMeterFill');
+    const taskStep = document.getElementById('activeTaskStepText');
+    const taskPct = document.getElementById('activeTaskPercent');
+    const cancelBtn = document.getElementById('activeTaskCancelBtn');
+    const idText = document.getElementById('activeTaskIdText');
+
+    if (taskTitle) taskTitle.textContent = task.title || task.type;
+    if (taskStatus) taskStatus.textContent = (task.status || 'RUNNING').toUpperCase();
+    if (taskFill) taskFill.style.width = `${Math.min(task.progress || 0, 100)}%`;
+    if (taskStep) taskStep.textContent = task.step_label || 'Executing...';
+    if (taskPct) taskPct.textContent = `${task.progress || 0}%`;
+    if (cancelBtn) cancelBtn.style.display = 'block';
+    if (idText) idText.textContent = `TASK: #${task.id}`;
   } else {
-    card.classList.remove('online');
-    pill.textContent = (serviceData.status || 'OFFLINE').toUpperCase();
-    pill.className = 'svc-state-pill';
+    appState.activeTaskId = null;
+    const taskTitle = document.getElementById('activeTaskTitle');
+    const taskStatus = document.getElementById('activeTaskStatus');
+    const taskFill = document.getElementById('activeTaskMeterFill');
+    const taskStep = document.getElementById('activeTaskStepText');
+    const taskPct = document.getElementById('activeTaskPercent');
+    const cancelBtn = document.getElementById('activeTaskCancelBtn');
+    const idText = document.getElementById('activeTaskIdText');
+
+    if (taskTitle) taskTitle.textContent = 'No Active Operations';
+    if (taskStatus) taskStatus.textContent = 'IDLE';
+    if (taskFill) taskFill.style.width = '0%';
+    if (taskStep) taskStep.textContent = 'System standby';
+    if (taskPct) taskPct.textContent = '0%';
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    if (idText) idText.textContent = 'TASK: NONE';
   }
 
-  if (pidSpan) {
-    pidSpan.textContent = serviceData.pid || '--';
+  // 8. Core Services
+  if (data.services) {
+    updateServicesUI(data.services);
   }
 }
 
-// ==============================================================================
-// 5. STORAGE VAULT OPERATIONS
-// ==============================================================================
+function updateServicesUI(services) {
+  // NexusNode
+  const nexus = services.nexusnode || {};
+  const svcBadgeNexus = document.getElementById('svcBadgeNexus');
+  const svcDotNexus = document.getElementById('svcDotNexus');
+  const svcDetailNexus = document.getElementById('svcDetailNexus');
+  if (svcBadgeNexus) svcBadgeNexus.textContent = nexus.running ? 'RUNNING' : 'STOPPED';
+  if (svcDotNexus) svcDotNexus.className = nexus.running ? 'service-dot online' : 'service-dot offline';
+  if (svcDetailNexus) svcDetailNexus.textContent = `PID ${nexus.pid || '--'} • Port 5000`;
 
-async function fetchVaultFiles() {
-  const container = document.getElementById('vaultFilesContainer');
+  // SSHD
+  const ssh = services.sshd || {};
+  const svcBadgeSsh = document.getElementById('svcBadgeSsh');
+  const svcDotSsh = document.getElementById('svcDotSsh');
+  const svcDetailSsh = document.getElementById('svcDetailSsh');
+  if (svcBadgeSsh) svcBadgeSsh.textContent = ssh.running ? 'RUNNING' : 'STOPPED';
+  if (svcDotSsh) svcDotSsh.className = ssh.running ? 'service-dot online' : 'service-dot offline';
+  if (svcDetailSsh) svcDetailSsh.textContent = `PID ${ssh.pid || '--'} • Port 8022`;
+
+  // LocalToNet
+  const l2n = services.localtonet || {};
+  const svcBadgeL2n = document.getElementById('svcBadgeL2n');
+  const svcDotL2n = document.getElementById('svcDotL2n');
+  const svcDetailL2n = document.getElementById('svcDetailL2n');
+  if (svcBadgeL2n) svcBadgeL2n.textContent = l2n.connected ? 'CONNECTED' : (l2n.running ? 'CONNECTING' : 'OFFLINE');
+  if (svcDotL2n) svcDotL2n.className = l2n.connected ? 'service-dot online' : (l2n.running ? 'service-dot warning' : 'service-dot offline');
+  if (svcDetailL2n && l2n.url) svcDetailL2n.textContent = l2n.url;
+
+  // Ollama
+  const ollama = services.ollama || {};
+  const svcBadgeOllama = document.getElementById('svcBadgeOllama');
+  const svcDotOllama = document.getElementById('svcDotOllama');
+  const svcDetailOllama = document.getElementById('svcDetailOllama');
+  if (svcBadgeOllama) svcBadgeOllama.textContent = ollama.running ? 'RUNNING' : 'STANDBY';
+  if (svcDotOllama) svcDotOllama.className = ollama.running ? 'service-dot online' : 'service-dot warning';
+  if (svcDetailOllama) svcDetailOllama.textContent = `PID ${ollama.pid || '--'} • Port 11434`;
+}
+
+function connectLogStream() {
+  if (appState.eventSource) appState.eventSource.close();
+  const token = authState.token;
+  const url = token ? `/api/logs/stream?token=${encodeURIComponent(token)}` : '/api/logs/stream';
+
+  appState.eventSource = new EventSource(url);
+  appState.eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      appendEventLog(data);
+    } catch (e) {}
+  };
+  appState.eventSource.onerror = () => {
+    // Reconnect silently handled by browser
+  };
+}
+
+function appendEventLog(log) {
+  const container = document.getElementById('eventLogFeed');
   if (!container) return;
 
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+
+  const time = log.timestamp ? log.timestamp.split('T')[1]?.substring(0, 8) : '--:--:--';
+  const level = log.level || 'INFO';
+
+  entry.innerHTML = `
+    <span class="log-time">[${time}]</span>
+    <span class="log-level ${level}">${level}</span>
+    <span class="log-msg">${escapeHtml(log.message || log.event || '')}</span>
+  `;
+
+  container.prepend(entry);
+  if (container.children.length > 50) {
+    container.removeChild(container.lastChild);
+  }
+}
+
+function clearEventFeed() {
+  const container = document.getElementById('eventLogFeed');
+  if (container) {
+    container.innerHTML = '<div class="log-entry"><span class="log-time">[SYSTEM]</span><span class="log-level INFO">INFO</span><span class="log-msg">Feed cleared.</span></div>';
+  }
+}
+
+// ==============================================================================
+// 5. VAULT FILE MANAGER
+// ==============================================================================
+
+async function loadVaultFiles() {
   try {
     const res = await apiFetch('/files');
-    if (!res.ok) return;
-    const files = await res.json();
-    appState.cachedFiles = files;
-    renderVaultFiles(files);
-  } catch (_) {}
+    if (res.ok) {
+      const data = await res.json();
+      appState.cachedFiles = data.files || [];
+      renderVaultTable(appState.cachedFiles);
+    }
+  } catch (e) {
+    console.error('Failed to load vault files:', e);
+  }
 }
 
-function renderVaultFiles(files) {
-  const container = document.getElementById('vaultFilesContainer');
-  if (!container) return;
+function renderVaultTable(files) {
+  const tbody = document.getElementById('vaultTableBody');
+  const countLabel = document.getElementById('vaultFileCount');
+  if (!tbody) return;
 
-  if (!files || files.length === 0) {
-    container.innerHTML = `<p class="empty-state-muted">Vault is empty. Upload or download media to get started.</p>`;
+  let filtered = files;
+  if (appState.activeVaultFilter !== 'all') {
+    filtered = filtered.filter(f => (f.category || '').toLowerCase() === appState.activeVaultFilter);
+  }
+  if (appState.activeVaultQuery) {
+    const q = appState.activeVaultQuery.toLowerCase();
+    filtered = filtered.filter(f => (f.name || '').toLowerCase().includes(q));
+  }
+
+  if (countLabel) countLabel.textContent = `${filtered.length} OBJECTS`;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--on-surface-muted); padding: 24px;">No objects found in this location.</td></tr>';
     return;
   }
 
-  const canManage = hasPrivilege('can_manage_files');
-  const canShare = hasPrivilege('can_create_shares');
+  tbody.innerHTML = filtered.map(file => {
+    const ext = (file.name.split('.').pop() || 'FILE').toUpperCase();
+    const size = formatBytes(file.size || 0);
+    const date = file.modified ? file.modified.substring(0, 16).replace('T', ' ') : '--';
+    const isMedia = ['MP3', 'MP4', 'MKV', 'WEBM', 'M4A', 'FLAC', 'WAV'].includes(ext);
 
-  container.innerHTML = files.map(f => `
-    <div class="vault-file-row">
-      <div class="file-info-group">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: ${f.is_dir ? 'var(--accent-amber)' : 'var(--accent-cyan)'}; flex-shrink:0;">
-          ${f.is_dir ? '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>' : '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'}
-        </svg>
-        <span class="file-name-text font-mono">${escapeHtml(f.name)}</span>
-      </div>
-      <div class="file-actions-row">
-        ${!f.is_dir ? `<a class="ghost-btn" href="/download/${encodeURIComponent(f.name)}?auth=${encodeURIComponent(authState.token)}" download title="Download">↓</a>` : ''}
-        ${!f.is_dir && canShare ? `<button class="ghost-btn" title="Create Temporary Share Link" onclick="openCreateShareModal('${escapeHtml(f.name)}')">Share</button>` : ''}
-        ${!f.is_dir && canManage ? `<button class="ghost-btn" title="Checksums" onclick="showFileChecksum('${escapeHtml(f.name)}')">#</button>` : ''}
-        ${canManage ? `<button class="ghost-btn danger" title="Delete File" onclick="deleteVaultFile('${escapeHtml(f.name)}')">&times;</button>` : ''}
-      </div>
-    </div>
-  `).join('');
+    return `
+      <tr>
+        <td style="font-weight: 500; color: var(--on-surface-bright);">${escapeHtml(file.name)}</td>
+        <td><span class="node-badge">${ext}</span></td>
+        <td class="font-data-sm">${size}</td>
+        <td class="font-data-sm" style="color: var(--on-surface-variant);">${date}</td>
+        <td style="text-align: right;">
+          <div style="display: inline-flex; gap: 4px;">
+            ${isMedia ? `<button class="icon-btn" title="Stream" onclick="playMediaFile('${encodeURIComponent(file.path || file.name)}', '${ext.toLowerCase()}', '${escapeHtml(file.name)}')"><span class="material-symbols-outlined" style="font-size: 16px;">play_arrow</span></button>` : ''}
+            <a class="icon-btn" title="Download" href="/download/${encodeURIComponent(file.path || file.name)}" download><span class="material-symbols-outlined" style="font-size: 16px;">download</span></a>
+            <button class="icon-btn" title="Delete" onclick="handleVaultDelete('${encodeURIComponent(file.path || file.name)}')"><span class="material-symbols-outlined" style="font-size: 16px;">delete</span></button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
-function filterVaultFiles() {
-  const query = (document.getElementById('vaultSearchInput')?.value || '').toLowerCase();
-  const typeFilter = document.getElementById('vaultTypeFilter')?.value || 'all';
-
-  const filtered = appState.cachedFiles.filter(f => {
-    const matchesSearch = f.name.toLowerCase().includes(query);
-    if (!matchesSearch) return false;
-    if (typeFilter === 'all') return true;
-
-    const ext = f.name.split('.').pop().toLowerCase();
-    if (typeFilter === 'audio') return ['mp3', 'm4a', 'opus', 'wav', 'flac'].includes(ext);
-    if (typeFilter === 'video') return ['mp4', 'mkv', 'webm', 'mov'].includes(ext);
-    if (typeFilter === 'documents') return ['pdf', 'txt', 'md', 'docx', 'py', 'json'].includes(ext);
-    if (typeFilter === 'archives') return ['zip', 'tar', 'gz', '7z', 'bz2'].includes(ext);
-    if (typeFilter === 'models') return ['gguf', 'bin'].includes(ext);
-    return true;
-  });
-
-  renderVaultFiles(filtered);
+function filterVaultLocation(location, elem) {
+  appState.activeVaultFilter = location;
+  document.querySelectorAll('.vault-nav-item').forEach(el => el.classList.remove('active'));
+  if (elem) elem.classList.add('active');
+  renderVaultTable(appState.cachedFiles);
 }
 
-async function handleFileUpload(file) {
+function handleVaultSearch(query) {
+  appState.activeVaultQuery = query;
+  renderVaultTable(appState.cachedFiles);
+}
+
+async function handleVaultUpload(event) {
+  const file = event.target.files[0];
   if (!file) return;
-  if (!hasPrivilege('can_upload_files')) {
-    showToast('Permission denied: File upload forbidden.', 'error');
-    return;
-  }
 
   const formData = new FormData();
   formData.append('file', file);
 
-  showToast(`Uploading '${file.name}'...`, 'info');
   try {
+    showToast(`Uploading ${file.name}...`, 'info');
     const res = await apiFetch('/upload', {
       method: 'POST',
       body: formData
     });
     if (res.ok) {
-      showToast(`'${file.name}' uploaded successfully.`, 'success');
-      fetchVaultFiles();
-      fetchStorageIntelligence();
-    }
-  } catch (err) {
-    showToast(`Upload failed: ${err.message}`, 'error');
-  }
-}
-
-async function deleteVaultFile(filename) {
-  if (!hasPrivilege('can_manage_files')) {
-    showToast('Permission denied: File deletion forbidden.', 'error');
-    return;
-  }
-
-  if (!confirm(`Are you sure you want to delete '${filename}'?`)) return;
-
-  try {
-    const res = await apiFetch(`/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
-    if (res.ok) {
-      showToast(`'${filename}' deleted.`, 'info');
-      fetchVaultFiles();
-      fetchStorageIntelligence();
-    }
-  } catch (err) {
-    showToast(`Delete failed: ${err.message}`, 'error');
-  }
-}
-
-async function showFileChecksum(filename) {
-  openModal('checksumModal');
-  const box = document.getElementById('checksumContent');
-  box.textContent = `Calculating SHA-256 and MD5 for '${filename}'...`;
-
-  try {
-    const res = await apiFetch(`/api/vault/checksum/${encodeURIComponent(filename)}`);
-    if (res.ok) {
-      const data = await res.json();
-      box.innerHTML = `
-        <div style="display:flex; flex-direction:column; gap:0.5rem;">
-          <div><strong>Target:</strong> ${escapeHtml(data.filename)}</div>
-          <div><strong>Size:</strong> ${(data.size_bytes / 1024).toFixed(1)} KB (${data.size_bytes} bytes)</div>
-          <div><strong>SHA-256:</strong><br><span style="color:var(--accent-cyan);">${data.sha256}</span></div>
-          <div><strong>MD5:</strong><br><span style="color:var(--accent-emerald);">${data.md5}</span></div>
-        </div>
-      `;
+      showToast('File uploaded successfully.', 'success');
+      loadVaultFiles();
     } else {
-      box.textContent = 'Failed to calculate checksum.';
+      const err = await res.json();
+      showToast(err.error || 'Upload failed.', 'error');
     }
-  } catch (err) {
-    box.textContent = `Error: ${err.message}`;
+  } catch (e) {
+    showToast('Failed to upload file.', 'error');
+  } finally {
+    event.target.value = '';
   }
 }
 
-async function triggerCleanTemp() {
-  if (!hasPrivilege('can_manage_files')) {
-    showToast('Permission denied: File cleanup forbidden.', 'error');
-    return;
-  }
-  try {
-    const res = await apiFetch('/api/vault/clean-temp', { method: 'POST' });
-    if (res.ok) {
-      showToast('Temporary download artifacts swept.', 'success');
-      fetchVaultFiles();
-      fetchStorageIntelligence();
-    }
-  } catch (_) {}
-}
-
-// ==============================================================================
-// 6. MEDIA CENTER & STREAMING
-// ==============================================================================
-
-async function handleMediaDownloadSubmit(e) {
-  e.preventDefault();
-  if (!hasPrivilege('can_download_media')) {
-    showToast('Permission denied: Media downloading forbidden.', 'error');
-    return;
-  }
-
-  const url = document.getElementById('mediaUrlInput').value.trim();
-  const format = document.getElementById('mediaFormatSelect').value;
-  const quality = document.getElementById('mediaQualitySelect').value;
-  const destination = document.getElementById('mediaDestSelect').value;
-  const subtitlesMode = document.getElementById('mediaSubtitlesSelect').value;
-  const filename = document.getElementById('mediaCustomFilename').value.trim();
+async function handleVaultDelete(filename) {
+  if (!confirm(`Are you sure you want to delete ${decodeURIComponent(filename)}?`)) return;
 
   try {
-    const res = await apiFetch('/api/media/download', {
+    const res = await apiFetch('/delete', {
       method: 'POST',
-      body: JSON.stringify({
-        url,
-        format,
-        quality,
-        destination,
-        subtitles: { mode: subtitlesMode },
-        filename
-      })
+      body: JSON.stringify({ filename: decodeURIComponent(filename) })
     });
     if (res.ok) {
-      const data = await res.json();
-      showToast(`Enqueued ${data.count || 1} media download task(s).`, 'success');
-      document.getElementById('mediaUrlInput').value = '';
-      document.getElementById('mediaCustomFilename').value = '';
-      switchTab('tasks');
+      showToast('Object deleted.', 'success');
+      loadVaultFiles();
+    } else {
+      const err = await res.json();
+      showToast(err.error || 'Delete failed.', 'error');
     }
-  } catch (err) {
-    showToast(`Enqueue failed: ${err.message}`, 'error');
+  } catch (e) {
+    showToast('Failed to delete object.', 'error');
   }
 }
 
-async function fetchMediaLibrary() {
-  const container = document.getElementById('mediaLibraryContainer');
-  if (!container) return;
+async function handleCleanTempFiles() {
+  try {
+    showToast('Cleaning temporary files...', 'info');
+    const res = await apiFetch('/api/vault/cleanup-temp', { method: 'POST' });
+    if (res.ok) {
+      showToast('Temporary storage cleaned.', 'success');
+      loadVaultFiles();
+    }
+  } catch (e) {
+    showToast('Cleanup failed.', 'error');
+  }
+}
+
+// ==============================================================================
+// 6. MEDIA CENTER (ACQUISITION ENGINE & LIBRARY)
+// ==============================================================================
+
+async function handleMediaDownloadSubmit(event) {
+  event.preventDefault();
+  const urlInput = document.getElementById('mediaUrlInput');
+  const formatSelect = document.getElementById('mediaFormatSelect');
+  const qualitySelect = document.getElementById('mediaQualitySelect');
+  const destSelect = document.getElementById('mediaDestSelect');
+  const embedMeta = document.getElementById('mediaEmbedMeta');
+  const subs = document.getElementById('mediaSubs');
+
+  if (!urlInput || !urlInput.value.trim()) return;
+
+  const payload = {
+    url: urlInput.value.trim(),
+    format: formatSelect ? formatSelect.value : 'mp4',
+    quality: qualitySelect ? qualitySelect.value : 'best',
+    destination: destSelect ? destSelect.value : 'media/videos',
+    embed_metadata: embedMeta ? embedMeta.checked : true,
+    subtitles: subs ? subs.checked : false
+  };
 
   try {
-    const res = await apiFetch('/api/media/library');
-    if (!res.ok) return;
-    const library = await res.json();
-    appState.mediaLibrary = library;
-    renderMediaLibrary();
-  } catch (_) {}
+    showToast('Queuing download task...', 'info');
+    const res = await apiFetch('/api/media/download', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast('Download queued successfully.', 'success');
+      urlInput.value = '';
+      pollMediaQueue();
+      pollSystemStatus();
+    } else {
+      showToast(data.error || 'Failed to queue download.', 'error');
+    }
+  } catch (e) {
+    showToast('Network error queuing download.', 'error');
+  }
 }
 
-function switchMediaCat(category, btn) {
-  appState.activeMediaCat = category;
-  document.querySelectorAll('.tab-pill-group .tab-pill').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  renderMediaLibrary();
+async function pollMediaQueue() {
+  try {
+    const res = await apiFetch('/api/tasks?type=media_download');
+    if (res.ok) {
+      const tasks = await res.json();
+      renderMediaQueue(tasks.tasks || []);
+    }
+  } catch (e) {}
 }
 
-function renderMediaLibrary() {
-  const container = document.getElementById('mediaLibraryContainer');
+function renderMediaQueue(tasks) {
+  const container = document.getElementById('mediaQueueContainer');
+  const countLabel = document.getElementById('mediaQueueCount');
   if (!container) return;
 
-  let items = [];
-  const cat = appState.activeMediaCat;
+  const active = tasks.filter(t => t.status === 'RUNNING' || t.status === 'QUEUED');
+  if (countLabel) countLabel.textContent = `${active.length} ACTIVE`;
 
-  if (cat === 'all') {
-    items = [
-      ...appState.mediaLibrary.music,
-      ...appState.mediaLibrary.videos,
-      ...appState.mediaLibrary.podcasts,
-      ...appState.mediaLibrary.downloads,
-      ...appState.mediaLibrary.other
-    ];
-  } else {
-    items = appState.mediaLibrary[cat] || [];
-  }
-
-  if (items.length === 0) {
-    container.innerHTML = `<p class="empty-state-muted">No media found in '${cat}'.</p>`;
+  if (active.length === 0) {
+    container.innerHTML = '<div class="font-data-sm" style="color: var(--on-surface-muted); text-align: center; padding: 16px;">Queue is currently empty.</div>';
     return;
   }
 
-  container.innerHTML = items.map(item => `
-    <div class="media-card">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span class="badge-pill available font-mono">${item.format}</span>
-        <span class="font-mono" style="font-size:0.72rem; color:var(--text-dim);">${item.size_display}</span>
+  container.innerHTML = active.map(t => `
+    <div style="background-color: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); padding: 10px 12px; display: flex; justify-content: space-between; align-items: center;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span class="font-headline-md" style="font-size: 13px; color: var(--on-surface-bright);">${escapeHtml(t.title || 'YT-DLP Operation')}</span>
+        <span class="font-data-sm" style="color: var(--on-surface-variant);">${t.status} • ${t.progress || 0}%</span>
       </div>
-      <strong class="file-name-text font-mono" style="font-size:0.82rem; margin:0.25rem 0;">${escapeHtml(item.filename)}</strong>
-      <div style="display:flex; gap:0.4rem; margin-top:auto;">
-        <button class="primary-action-btn full-width" style="padding:0.35rem 0.5rem; font-size:0.76rem;" onclick="playMediaStream('${escapeHtml(item.path)}', '${escapeHtml(item.filename)}', '${item.format}')">▶ Play</button>
-        <a class="ghost-btn" href="${item.stream_url}?auth=${encodeURIComponent(authState.token)}" download title="Direct Download">↓</a>
-      </div>
+      <button class="btn btn-danger" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="cancelTask(${t.id})">Cancel</button>
     </div>
   `).join('');
 }
 
-function playMediaStream(relPath, filename, format) {
-  const playerCard = document.getElementById('mediaPlayerCard');
-  const mount = document.getElementById('playerMountContainer');
-  const title = document.getElementById('playerMediaTitle');
-  const sub = document.getElementById('playerMediaSub');
+async function loadMediaLibrary() {
+  try {
+    const res = await apiFetch('/api/media/library');
+    if (res.ok) {
+      const data = await res.json();
+      appState.mediaLibrary = data.items || [];
+      renderMediaLibrary(appState.mediaLibrary);
+    }
+  } catch (e) {
+    console.error('Failed to load media library:', e);
+  }
+}
 
-  if (!playerCard || !mount) return;
+function renderMediaLibrary(items) {
+  const grid = document.getElementById('mediaLibraryGrid');
+  if (!grid) return;
 
-  playerCard.style.display = 'flex';
-  title.textContent = filename;
-  sub.textContent = `Streaming: ${relPath}`;
+  if (items.length === 0) {
+    grid.innerHTML = '<div class="font-data-sm" style="color: var(--on-surface-muted); padding: 16px;">No media files found in Vault.</div>';
+    return;
+  }
 
-  const streamUrl = `/stream/${encodeURIComponent(relPath)}?auth=${encodeURIComponent(authState.token)}`;
-  const isVideo = ['MP4', 'MKV', 'WEBM', 'MOV'].includes(format.toUpperCase());
+  grid.innerHTML = items.map(m => {
+    const isVideo = (m.type === 'video');
+    return `
+      <div class="media-card">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="material-symbols-outlined" style="color: var(--primary);">${isVideo ? 'movie' : 'music_note'}</span>
+          <span class="font-headline-md" style="font-size: 13px; color: var(--on-surface-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(m.name)}</span>
+        </div>
+        <span class="font-data-sm" style="color: var(--on-surface-variant);">${formatBytes(m.size || 0)}</span>
+        <div style="display: flex; gap: 6px; margin-top: 4px;">
+          <button class="btn btn-primary" style="flex: 1; padding: 4px 8px; font-size: 11px; min-height: 28px;" onclick="playMediaFile('${encodeURIComponent(m.path)}', '${m.type}', '${escapeHtml(m.name)}')">
+            <span class="material-symbols-outlined" style="font-size: 14px;">play_arrow</span>
+            <span>Play</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
 
-  if (isVideo) {
-    mount.innerHTML = `<video controls autoplay style="width:100%; max-height:420px;" src="${streamUrl}"></video>`;
+function playMediaFile(encodedPath, type, title) {
+  const path = decodeURIComponent(encodedPath);
+  const streamUrl = `/stream/${encodeURIComponent(path)}`;
+  const playerBox = document.getElementById('mediaPlayerBox');
+  const nowPlayingTitle = document.getElementById('nowPlayingTitle');
+  const audio = document.getElementById('globalAudioPlayer');
+  const video = document.getElementById('globalVideoPlayer');
+
+  if (!playerBox) return;
+  playerBox.style.display = 'block';
+  if (nowPlayingTitle) nowPlayingTitle.textContent = `Streaming: ${title}`;
+
+  if (type === 'video' || path.endsWith('.mp4') || path.endsWith('.mkv') || path.endsWith('.webm')) {
+    if (audio) { audio.pause(); audio.style.display = 'none'; }
+    if (video) {
+      video.src = streamUrl;
+      video.style.display = 'block';
+      video.play();
+    }
   } else {
-    mount.innerHTML = `<audio controls autoplay style="width:100%; padding:1rem;" src="${streamUrl}"></audio>`;
+    if (video) { video.pause(); video.style.display = 'none'; }
+    if (audio) {
+      audio.src = streamUrl;
+      audio.style.display = 'block';
+      audio.play();
+    }
   }
 }
 
 function closeMediaPlayer() {
-  const playerCard = document.getElementById('mediaPlayerCard');
-  const mount = document.getElementById('playerMountContainer');
-  if (mount) mount.innerHTML = '';
-  if (playerCard) playerCard.style.display = 'none';
+  const playerBox = document.getElementById('mediaPlayerBox');
+  const audio = document.getElementById('globalAudioPlayer');
+  const video = document.getElementById('globalVideoPlayer');
+  if (audio) { audio.pause(); audio.src = ''; }
+  if (video) { video.pause(); video.src = ''; }
+  if (playerBox) playerBox.style.display = 'none';
 }
 
 // ==============================================================================
-// 7. TASK QUEUE & WORKER
+// 7. TASK SUPERVISION
 // ==============================================================================
 
-async function fetchTasks() {
-  const container = document.getElementById('tasksListContainer');
-  if (!container) return;
-
+async function loadTasksList() {
   try {
     const res = await apiFetch('/api/tasks');
-    if (!res.ok) return;
-    const tasks = await res.json();
-    renderTasks(tasks);
-  } catch (_) {}
+    if (res.ok) {
+      const data = await res.json();
+      renderTasksTable(data.tasks || []);
+    }
+  } catch (e) {
+    console.error('Failed to load tasks:', e);
+  }
 }
 
-function renderTasks(tasks) {
-  const container = document.getElementById('tasksListContainer');
-  if (!container) return;
+function renderTasksTable(tasks) {
+  const tbody = document.getElementById('tasksTableBody');
+  if (!tbody) return;
 
-  if (!tasks || tasks.length === 0) {
-    container.innerHTML = `<p class="empty-state-muted">No background tasks found.</p>`;
+  if (tasks.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--on-surface-muted); padding: 24px;">No background tasks found.</td></tr>';
     return;
   }
 
-  container.innerHTML = tasks.map(t => `
-    <div class="task-item-card ${t.status === 'running' ? 'running' : ''}">
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.4rem;">
-        <div>
-          <span class="badge-pill ${t.status === 'running' ? 'available' : ''}">${t.status.toUpperCase()}</span>
-          <strong style="margin-left:0.4rem;">${escapeHtml(t.title)}</strong>
-        </div>
-        <div style="display:flex; align-items:center; gap:0.5rem;">
-          <span class="font-mono" style="font-size:0.75rem; color:var(--text-muted);">${t.progress}%</span>
-          ${t.status === 'running' || t.status === 'queued' ? `<button class="ghost-btn danger" style="padding:0.2rem 0.5rem; font-size:0.72rem;" onclick="cancelTask('${t.id}')">Cancel</button>` : ''}
-        </div>
-      </div>
-      <div class="progress-track-bg">
-        <div class="progress-fill-cyan" style="width: ${t.progress}%;"></div>
-      </div>
-      ${t.logs && t.logs.length > 0 ? `
-        <div class="font-mono" style="font-size:0.72rem; color:var(--text-dim); background:#03060c; padding:0.4rem; border-radius:var(--radius-xs); max-height:80px; overflow-y:auto;">
-          ${escapeHtml(t.logs.slice(-3).join('\n'))}
-        </div>
-      ` : ''}
-    </div>
-  `).join('');
+  tbody.innerHTML = tasks.map(t => {
+    const canCancel = (t.status === 'RUNNING' || t.status === 'QUEUED');
+    const created = t.created_at ? t.created_at.substring(0, 16).replace('T', ' ') : '--';
+    let statusClass = 'var(--on-surface-variant)';
+    if (t.status === 'RUNNING') statusClass = 'var(--primary)';
+    if (t.status === 'COMPLETED') statusClass = 'var(--status-healthy)';
+    if (t.status === 'FAILED') statusClass = 'var(--status-critical)';
+
+    return `
+      <tr>
+        <td><span class="font-label-caps" style="color: ${statusClass};">${t.status}</span></td>
+        <td><span class="node-badge">${escapeHtml(t.type || 'TASK')}</span></td>
+        <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(t.title || 'Task #' + t.id)}</td>
+        <td class="font-data-sm">${t.progress || 0}%</td>
+        <td class="font-data-sm">${escapeHtml(t.owner || 'system')}</td>
+        <td class="font-data-sm" style="color: var(--on-surface-variant);">${created}</td>
+        <td style="text-align: right;">
+          ${canCancel ? `<button class="btn btn-danger" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="cancelTask(${t.id})">Abort</button>` : '<span style="color: var(--on-surface-dim); font-size: 11px;">--</span>'}
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function cancelCurrentActiveTask() {
+  if (appState.activeTaskId) {
+    cancelTask(appState.activeTaskId);
+  }
 }
 
 async function cancelTask(taskId) {
   try {
     const res = await apiFetch(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
     if (res.ok) {
-      showToast('Task cancellation requested.', 'info');
-      fetchTasks();
+      showToast(`Task #${taskId} cancelled.`, 'warning');
+      loadTasksList();
+      pollSystemStatus();
     }
-  } catch (err) {
-    showToast(`Cancel failed: ${err.message}`, 'error');
+  } catch (e) {
+    showToast('Failed to cancel task.', 'error');
   }
 }
 
 // ==============================================================================
-// 8. AI STUDIO, RAG & OLLAMA (AUTHORITATIVE REGISTRY & RUNTIME)
+// 8. AI STUDIO (MODEL SELECTION, RESIDENCY & CHAT)
 // ==============================================================================
 
-async function initAIStudio() {
-  await Promise.all([
-    fetchAIModels(),
-    fetchAIState(),
-    fetchAIMetrics()
-  ]);
+async function loadAiState() {
+  try {
+    // 1. Get Models List
+    const modelsRes = await apiFetch('/api/ai/models');
+    if (modelsRes.ok) {
+      const modelsData = await modelsRes.json();
+      const select = document.getElementById('aiModelSelect');
+      if (select && modelsData.models) {
+        select.innerHTML = modelsData.models.map(m => `
+          <option value="${m.name}" ${m.name === modelsData.selected_model ? 'selected' : ''}>${m.name} (${formatBytes(m.size || 0)})</option>
+        `).join('');
+        appState.selectedModel = modelsData.selected_model || (modelsData.models[0] ? modelsData.models[0].name : '');
+      }
+    }
+
+    // 2. Get Runtime Residency State
+    const stateRes = await apiFetch('/api/ai/state');
+    if (stateRes.ok) {
+      const stateData = await stateRes.json();
+      const loadedName = document.getElementById('aiLoadedModelName');
+      const loadedMem = document.getElementById('aiLoadedModelMemory');
+      const unloadBtn = document.getElementById('aiUnloadModelBtn');
+
+      if (stateData.loaded_model) {
+        appState.loadedModel = stateData.loaded_model;
+        if (loadedName) loadedName.textContent = stateData.loaded_model;
+        if (loadedMem) loadedMem.textContent = `Resident RAM: ${stateData.memory_mb || 0} MB`;
+        if (unloadBtn) unloadBtn.style.display = 'block';
+      } else {
+        appState.loadedModel = '';
+        if (loadedName) loadedName.textContent = 'None (Unloaded)';
+        if (loadedMem) loadedMem.textContent = 'Resident RAM: 0 MB';
+        if (unloadBtn) unloadBtn.style.display = 'none';
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load AI state:', e);
+  }
 }
 
-async function fetchAIModels() {
+async function handleSelectAiModel() {
   const select = document.getElementById('aiModelSelect');
-  if (!select) return;
+  if (!select || !select.value) return;
 
   try {
-    const res = await apiFetch('/api/ai/models');
-    if (!res.ok) return;
-    const models = await res.json();
-
-    if (models.length === 0) {
-      select.innerHTML = `<option value="qwen2.5:0.5b">qwen2.5:0.5b (Default)</option>`;
-      return;
-    }
-
-    select.innerHTML = models.map(m => `
-      <option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${m.size_display} | ${m.quantization})</option>
-    `).join('');
-
-    const currentVal = select.value;
-    if (currentVal) {
-      checkModelEstimate(currentVal);
-    }
-  } catch (_) {}
-}
-
-async function fetchAIState() {
-  try {
-    const res = await apiFetch('/api/ai/state');
-    if (!res.ok) return;
-    const state = await res.json();
-
-    const selTxt = document.getElementById('aiSelectedModelText');
-    const loadTxt = document.getElementById('aiLoadedModelText');
-    if (selTxt) selTxt.textContent = state.selected_model || 'None';
-    if (loadTxt) loadTxt.textContent = state.loaded_model ? `${state.loaded_model} (${state.loaded_model_details?.runtime_size_mb || 0}MB)` : 'None (Standby)';
-
-    const select = document.getElementById('aiModelSelect');
-    if (select && state.selected_model) {
-      select.value = state.selected_model;
-    }
-  } catch (_) {}
-}
-
-async function fetchAIMetrics() {
-  try {
-    const res = await apiFetch('/api/ai/metrics');
-    if (!res.ok) return;
-    const metrics = await res.json();
-
-    const tpsEl = document.getElementById('aiThroughputText');
-    if (tpsEl && metrics.length > 0) {
-      const latest = metrics[0];
-      tpsEl.textContent = `${latest.gen_tokens_per_sec || 0} t/s`;
-    }
-  } catch (_) {}
-}
-
-async function handleModelSelectChange(modelName) {
-  try {
+    showToast(`Setting ${select.value} as active inference model...`, 'info');
     const res = await apiFetch('/api/ai/models/select', {
       method: 'POST',
-      body: JSON.stringify({ model: modelName })
+      body: JSON.stringify({ model: select.value })
     });
     if (res.ok) {
-      const data = await res.json();
-      const selTxt = document.getElementById('aiSelectedModelText');
-      if (selTxt) selTxt.textContent = data.selected_model;
-      showToast(`Active chat model: ${data.selected_model}`, 'info');
+      showToast('Model selected successfully.', 'success');
+      loadAiState();
     }
-  } catch (_) {}
-  checkModelEstimate(modelName);
+  } catch (e) {
+    showToast('Failed to select model.', 'error');
+  }
 }
 
-async function checkModelEstimate(modelName) {
-  const badge = document.getElementById('modelResourceBadge');
-  if (!badge) return;
-
+async function handleUnloadAiModel() {
   try {
-    const res = await apiFetch('/api/models/estimate', {
-      method: 'POST',
-      body: JSON.stringify({ model: modelName })
-    });
+    showToast('Unloading resident model...', 'info');
+    const res = await apiFetch('/api/ai/models/unload', { method: 'POST' });
     if (res.ok) {
-      const data = await res.json();
-      badge.textContent = `Footprint: ~${data.estimated_runtime_mb} MB | Free RAM: ${data.available_mb} MB | ${data.decision}`;
-      badge.className = `model-resource-badge ${data.decision === 'SAFE' ? 'safe' : (data.decision === 'WARNING' ? 'warning' : 'blocked')}`;
+      showToast('Model unloaded from memory.', 'success');
+      loadAiState();
     }
-  } catch (_) {}
-}
-
-async function toggleEngine(action) {
-  if (!hasPrivilege('can_control_services')) {
-    showToast('Permission denied: Service control forbidden.', 'error');
-    return;
-  }
-  showToast(`Issuing AI engine '${action}' command...`, 'info');
-  try {
-    const res = await apiFetch(`/${action}`, { method: 'POST' });
-    const data = await res.json();
-    showToast(data.message || data.error || 'Command sent', res.ok ? 'success' : 'error');
-    fetchSystemStatus();
-    fetchAIState();
-  } catch (err) {
-    showToast(`Engine toggle failed: ${err.message}`, 'error');
+  } catch (e) {
+    showToast('Failed to unload model.', 'error');
   }
 }
 
-async function triggerRagRebuild() {
-  if (!hasPrivilege('can_use_rag')) {
-    showToast('Permission denied: RAG indexing forbidden.', 'error');
-    return;
-  }
-  try {
-    const res = await apiFetch('/api/rag/index', { method: 'POST' });
-    if (res.ok) {
-      showToast('RAG SQLite FTS5 indexing initiated in background.', 'success');
-      fetchSystemStatus();
-    }
-  } catch (err) {
-    showToast(`RAG error: ${err.message}`, 'error');
-  }
-}
+async function handleSendAiChat(event) {
+  event.preventDefault();
+  const input = document.getElementById('aiChatInput');
+  const chatBox = document.getElementById('aiChatBox');
+  const sysPrompt = document.getElementById('aiSystemPrompt');
+  const ragEnabled = document.getElementById('aiRagEnabled');
+  const keepAlive = document.getElementById('aiKeepAliveSelect');
 
-async function handleChatSubmit(e) {
-  e.preventDefault();
-  if (!hasPrivilege('can_use_ai')) {
-    showToast('Permission denied: AI usage forbidden.', 'error');
-    return;
-  }
+  if (!input || !input.value.trim() || appState.isStreamingChat) return;
 
-  const promptInput = document.getElementById('chatPromptInput');
-  const prompt = promptInput.value.trim();
-  if (!prompt) return;
+  const userMessage = input.value.trim();
+  input.value = '';
 
-  const model = document.getElementById('aiModelSelect')?.value || 'qwen2.5:0.5b';
-  promptInput.value = '';
+  // Append User Bubble
+  const userBubble = document.createElement('div');
+  userBubble.className = 'chat-bubble user';
+  userBubble.textContent = userMessage;
+  chatBox.appendChild(userBubble);
 
-  appendChatMessage('user', prompt);
+  // Append Assistant Bubble Placeholder
+  const assistantBubble = document.createElement('div');
+  assistantBubble.className = 'chat-bubble assistant';
+  assistantBubble.innerHTML = '<em>Inferring response on TECNO BG6...</em>';
+  chatBox.appendChild(assistantBubble);
+  chatBox.scrollTop = chatBox.scrollHeight;
 
-  const assistantBubble = appendChatMessage('assistant', '...');
-  let fullResponse = '';
+  appState.isStreamingChat = true;
 
   try {
     const res = await fetch('/chat/stream', {
       method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ prompt, model, rag_enabled: true })
+      headers: {
+        'Content-Type': 'application/json',
+        'localtonet-skip-warning': 'true',
+        'Authorization': `Bearer ${authState.token || ''}`
+      },
+      body: JSON.stringify({
+        message: userMessage,
+        model: appState.selectedModel,
+        system_prompt: sysPrompt ? sysPrompt.value : '',
+        use_rag: ragEnabled ? ragEnabled.checked : true,
+        keep_alive: keepAlive ? keepAlive.value : '5m'
+      })
     });
 
-    if (res.status === 401) {
-      clearAuthState(true);
-      return;
-    }
-    if (res.status === 403) {
-      assistantBubble.textContent = 'Permission denied: You do not have access to AI Studio.';
+    if (!res.ok) {
+      assistantBubble.textContent = 'Neural inference failed. Check Ollama service.';
+      appState.isStreamingChat = false;
       return;
     }
 
     const reader = res.body.getReader();
-    const decoder = new TextDecoder('utf-8');
+    const decoder = new TextDecoder();
+    let accumulated = '';
+    assistantBubble.textContent = '';
 
     while (true) {
-      const { done, value } = await reader.read();
+      const { value, done } = await reader.read();
       if (done) break;
-
-      const chunkText = decoder.decode(value);
-      const lines = chunkText.split('\n');
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.token) {
-              fullResponse += data.token;
-              assistantBubble.textContent = fullResponse;
-            }
-            if (data.citations && data.citations.length > 0) {
-              const citBox = document.createElement('div');
-              citBox.className = 'citations-box';
-              citBox.innerHTML = `<strong>Vault Citations:</strong><br>` + data.citations.map(c => `• ${escapeHtml(c.doc)}`).join('<br>');
-              assistantBubble.parentNode.insertBefore(citBox, assistantBubble);
-            }
-            if (data.error) {
-              assistantBubble.textContent = `Error: ${data.error}`;
-            }
-          } catch (_) {}
-        }
-      }
+      const chunk = decoder.decode(value, { stream: true });
+      accumulated += chunk;
+      assistantBubble.textContent = accumulated;
+      chatBox.scrollTop = chatBox.scrollHeight;
     }
-    fetchAIMetrics();
-    fetchAIState();
-  } catch (err) {
-    assistantBubble.textContent = `Streaming failed: ${err.message}`;
-  }
-}
-}
-
-function appendChatMessage(role, text) {
-  const container = document.getElementById('chatMessagesContainer');
-  if (!container) return null;
-
-  const msgDiv = document.createElement('div');
-  msgDiv.className = `chat-message ${role}`;
-  const bubble = document.createElement('div');
-  bubble.className = 'chat-bubble';
-  bubble.textContent = text;
-  msgDiv.appendChild(bubble);
-  container.appendChild(msgDiv);
-  container.scrollTop = container.scrollHeight;
-  return bubble;
-}
-
-function clearChat() {
-  const container = document.getElementById('chatMessagesContainer');
-  if (container) {
-    container.innerHTML = `
-      <div class="chat-message assistant">
-        <div class="chat-bubble">NexusNode AI Studio ready. How can I assist you with your vault documents today?</div>
-      </div>
-    `;
+  } catch (e) {
+    assistantBubble.textContent = 'Connection error during token streaming.';
+  } finally {
+    appState.isStreamingChat = false;
+    loadAiState();
   }
 }
 
 // ==============================================================================
-// 9. NETWORK CENTER DIAGNOSTICS
+// 9. ADMIN DIAGNOSTICS & SYSTEM AUDIT
 // ==============================================================================
 
-async function runAllNetworkTests() {
-  testNetworkTarget('internet');
-  testNetworkTarget('nexusnode');
-  testNetworkTarget('tunnel');
-  testNetworkTarget('ollama');
-}
-
-async function testNetworkTarget(target) {
-  const badgeId = `diagBadge${target.charAt(0).toUpperCase() + target.slice(1)}`;
-  const latId = `diagLat${target.charAt(0).toUpperCase() + target.slice(1)}`;
-  const badge = document.getElementById(badgeId);
-  const latSpan = document.getElementById(latId);
-
-  if (badge) badge.textContent = 'PROBING';
+async function loadDiagnosticsReport() {
+  if (authState.role !== 'admin') return;
 
   try {
-    const res = await apiFetch('/api/network/test', {
-      method: 'POST',
-      body: JSON.stringify({ target })
-    });
+    const res = await apiFetch('/api/admin/diagnostics/full-report');
     if (res.ok) {
       const data = await res.json();
-      if (badge) {
-        badge.textContent = data.status.toUpperCase();
-        badge.className = `badge-pill ${data.status === 'available' ? 'available' : 'unavailable'}`;
-      }
-      if (latSpan && data.latency_ms !== null) {
-        latSpan.textContent = `${data.latency_ms} ms`;
+      renderDiagnosticFindings(data.findings || []);
+      renderDiagnosticsProcesses(data.processes || []);
+      if (data.rag) {
+        const docCount = document.getElementById('ragDocCount');
+        const idxSize = document.getElementById('ragIndexSize');
+        const walSize = document.getElementById('ragWalSize');
+        if (docCount) docCount.textContent = data.rag.doc_count || 0;
+        if (idxSize) idxSize.textContent = `${Math.round((data.rag.index_bytes || 0) / 1024)} KB`;
+        if (walSize) walSize.textContent = `${Math.round((data.rag.wal_bytes || 0) / 1024)} KB`;
       }
     }
-  } catch (_) {
-    if (badge) {
-      badge.textContent = 'ERROR';
-      badge.className = 'badge-pill unavailable';
-    }
+  } catch (e) {
+    console.error('Failed to load diagnostics report:', e);
   }
 }
 
-// ==============================================================================
-// 10. EVENTS & AUDIT LOGS
-// ==============================================================================
-
-async function fetchEvents() {
-  const container = document.getElementById('eventsTerminalContainer');
-  const recentTicker = document.getElementById('recentEventsFeed');
-
-  try {
-    const res = await apiFetch(`/api/events?category=${appState.activeEventCat}&limit=60`);
-    if (!res.ok) return;
-    const events = await res.json();
-    appState.allEvents = events;
-
-    // Render in main terminal
-    if (container) {
-      if (events.length === 0) {
-        container.innerHTML = `<p class="empty-state-muted">No audit events found.</p>`;
-      } else {
-        container.innerHTML = events.map(e => `
-          <div class="log-entry">
-            <span class="log-time">[${new Date(e.created_at * 1000).toLocaleTimeString()}]</span>
-            <span class="log-cat">${escapeHtml(e.category)}</span>
-            <span class="log-msg">${escapeHtml(e.message)}</span>
-          </div>
-        `).join('');
-      }
-    }
-
-    // Render in Dashboard Recent Events Ticker
-    if (recentTicker) {
-      if (events.length === 0) {
-        recentTicker.innerHTML = `<p class="empty-state-muted">No recent events.</p>`;
-      } else {
-        recentTicker.innerHTML = events.slice(0, 5).map(e => `
-          <div style="display:flex; justify-content:space-between; font-size:0.75rem; padding:0.25rem 0; border-bottom:1px solid var(--border-subtle);">
-            <span class="font-mono" style="color:var(--text-muted);">${new Date(e.created_at * 1000).toLocaleTimeString()}</span>
-            <span class="font-mono" style="color:var(--accent-cyan); font-weight:700;">${escapeHtml(e.category)}</span>
-            <span class="file-name-text" style="max-width:60%;">${escapeHtml(e.message)}</span>
-          </div>
-        `).join('');
-      }
-    }
-  } catch (_) {}
-}
-
-function filterEventsCategory(cat, btn) {
-  appState.activeEventCat = cat;
-  document.querySelectorAll('#eventFilterChips .chip').forEach(c => c.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  fetchEvents();
-}
-
-// ==============================================================================
-// 11. SCHEDULED AUTOMATION
-// ==============================================================================
-
-async function fetchAutomationJobs() {
-  const container = document.getElementById('automationJobsContainer');
+function renderDiagnosticFindings(findings) {
+  const container = document.getElementById('diagFindingsContainer');
+  const countLabel = document.getElementById('diagFindingsCount');
   if (!container) return;
 
-  try {
-    const res = await apiFetch('/api/automation/jobs');
-    if (!res.ok) return;
-    const jobs = await res.json();
+  if (countLabel) countLabel.textContent = `${findings.length} FINDINGS`;
 
-    if (jobs.length === 0) {
-      container.innerHTML = `<p class="empty-state-muted">No scheduled jobs configured.</p>`;
-      return;
-    }
-
-    container.innerHTML = jobs.map(j => `
-      <div class="glass-card" style="padding:0.85rem;">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
-          <div>
-            <strong>${escapeHtml(j.name)}</strong>
-            <p class="card-subtitle font-mono">Interval: ${j.interval_seconds}s | Status: ${j.enabled ? 'Enabled' : 'Disabled'}</p>
-          </div>
-          <div style="display:flex; gap:0.4rem;">
-            <button class="ghost-btn" onclick="toggleJobState('${j.id}')">${j.enabled ? 'Disable' : 'Enable'}</button>
-            <button class="primary-action-btn" style="padding:0.25rem 0.6rem; font-size:0.75rem;" onclick="runJobNow('${j.id}')">Run Now</button>
-          </div>
-        </div>
-      </div>
-    `).join('');
-  } catch (_) {}
-}
-
-async function toggleJobState(jobId) {
-  try {
-    const res = await apiFetch(`/api/automation/jobs/${jobId}/toggle`, { method: 'POST' });
-    if (res.ok) {
-      showToast('Job status updated.', 'info');
-      fetchAutomationJobs();
-    }
-  } catch (_) {}
-}
-
-async function runJobNow(jobId) {
-  try {
-    const res = await apiFetch(`/api/automation/jobs/${jobId}/run`, { method: 'POST' });
-    if (res.ok) {
-      showToast('Scheduled task triggered.', 'success');
-      switchTab('tasks');
-    }
-  } catch (_) {}
-}
-
-// ==============================================================================
-// 12. ATOMIC BACKUPS
-// ==============================================================================
-
-async function fetchBackupsList() {
-  const container = document.getElementById('backupsListContainer');
-  if (!container) return;
-
-  try {
-    const res = await apiFetch('/api/backups');
-    if (!res.ok) return;
-    const backups = await res.json();
-
-    if (backups.length === 0) {
-      container.innerHTML = `<p class="empty-state-muted">No system backups created yet.</p>`;
-      return;
-    }
-
-    const isAdmin = (authState.role === 'admin');
-
-    container.innerHTML = backups.map(b => `
-      <div class="glass-card" style="padding:0.85rem;">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
-          <div>
-            <strong>${escapeHtml(b.filename)}</strong>
-            <p class="card-subtitle font-mono">Size: ${Math.round(b.size_bytes / 1024)} KB | SHA-256: ${b.checksum.slice(0, 16)}...</p>
-          </div>
-          <div style="display:flex; gap:0.4rem;">
-            <a class="ghost-btn" href="/api/backups/download/${b.id}?auth=${encodeURIComponent(authState.token)}" download>Download</a>
-            ${isAdmin ? `<button class="ghost-btn danger" onclick="restoreBackup('${b.id}')">Restore</button>` : ''}
-          </div>
-        </div>
-      </div>
-    `).join('');
-  } catch (_) {}
-}
-
-async function triggerQuickBackup() {
-  if (!hasPrivilege('can_manage_backups')) {
-    showToast('Permission denied: Backups creation forbidden.', 'error');
-    return;
-  }
-  showToast('Generating atomic backup snapshot...', 'info');
-  try {
-    const res = await apiFetch('/api/backups/create', { method: 'POST' });
-    if (res.ok) {
-      showToast('Atomic backup created successfully.', 'success');
-      fetchBackupsList();
-    }
-  } catch (err) {
-    showToast(`Backup failed: ${err.message}`, 'error');
-  }
-}
-
-async function restoreBackup(backupId) {
-  if (authState.role !== 'admin') {
-    showToast('Permission denied: Only system administrators can restore backups.', 'error');
-    return;
-  }
-  if (!confirm(`Restore configuration and RAG index from backup '${backupId}'?`)) return;
-  try {
-    const res = await apiFetch('/api/backups/restore', {
-      method: 'POST',
-      body: JSON.stringify({ backup_id: backupId, confirm: true })
-    });
-    const data = await res.json();
-    showToast(data.message || 'Restored successfully', 'success');
-  } catch (err) {
-    showToast(`Restore failed: ${err.message}`, 'error');
-  }
-}
-
-// ==============================================================================
-// 13. STORAGE INTELLIGENCE
-// ==============================================================================
-
-async function fetchStorageIntelligence() {
-  try {
-    const res = await apiFetch('/api/storage/intelligence');
-    if (!res.ok) return;
-    const data = await res.json();
-    renderStorageIntelligence(data);
-  } catch (_) {}
-}
-
-function renderStorageIntelligence(data) {
-  const { breakdown, large_files } = data;
-  if (!breakdown) return;
-
-  const total = (breakdown.videos_bytes + breakdown.music_bytes + breakdown.models_bytes + breakdown.vault_bytes + breakdown.temp_bytes) || 1;
-
-  const vPct = Math.max(1, Math.round((breakdown.videos_bytes / total) * 100));
-  const mPct = Math.max(1, Math.round((breakdown.music_bytes / total) * 100));
-  const oPct = Math.max(1, Math.round((breakdown.models_bytes / total) * 100));
-  const docPct = Math.max(1, Math.round((breakdown.vault_bytes / total) * 100));
-  const tPct = Math.max(1, Math.round((breakdown.temp_bytes / total) * 100));
-
-  const multiBar = document.getElementById('storageMultiBar');
-  if (multiBar) {
-    multiBar.innerHTML = `
-      <div class="bar-segment video" style="width:${vPct}%;"></div>
-      <div class="bar-segment music" style="width:${mPct}%;"></div>
-      <div class="bar-segment models" style="width:${oPct}%;"></div>
-      <div class="bar-segment vault" style="width:${docPct}%;"></div>
-      <div class="bar-segment temp" style="width:${tPct}%;"></div>
-    `;
-  }
-
-  const legend = document.getElementById('storageBreakdownLegend');
-  if (legend) {
-    legend.innerHTML = `
-      <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;"></div> Videos (${Math.round(breakdown.videos_bytes/(1024*1024))} MB)</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#10b981;"></div> Music (${Math.round(breakdown.music_bytes/(1024*1024))} MB)</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#a855f7;"></div> AI Models (${Math.round(breakdown.models_bytes/(1024*1024))} MB)</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#06b6d4;"></div> Vault Docs (${Math.round(breakdown.vault_bytes/(1024*1024))} MB)</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#f43f5e;"></div> Temp Files (${Math.round(breakdown.temp_bytes/(1024*1024))} MB)</div>
-    `;
-  }
-
-  const lContainer = document.getElementById('largeFilesContainer');
-  if (lContainer) {
-    if (!large_files || large_files.length === 0) {
-      lContainer.innerHTML = `<p class="empty-state-muted">No files exceeding 50 MB found.</p>`;
-    } else {
-      lContainer.innerHTML = large_files.map(f => `
-        <div class="vault-file-row">
-          <span class="file-name-text font-mono">${escapeHtml(f.name)}</span>
-          <span class="font-mono" style="color:var(--accent-amber); font-size:0.8rem;">${f.size_mb} MB</span>
-        </div>
-      `).join('');
-    }
-  }
-}
-
-// ==============================================================================
-// 14. ADMIN HUB & RBAC (STRICTLY ISOLATED)
-// ==============================================================================
-
-async function fetchAdminUsers() {
-  const container = document.getElementById('adminUsersContainer');
-  if (!container) return;
-
-  if (authState.role !== 'admin' && !hasPrivilege('can_manage_users')) {
-    container.innerHTML = `<p class="empty-state-muted">Permission denied.</p>`;
+  if (findings.length === 0) {
+    container.innerHTML = '<div class="font-data-sm" style="color: var(--status-healthy); padding: 16px;">All subsystems operating within optimal thermal and memory budgets.</div>';
     return;
   }
 
-  try {
-    const res = await apiFetch('/api/admin/users');
-    if (!res.ok) return;
-    const users = await res.json();
-    container.innerHTML = users.map(u => `
-      <div class="vault-file-row">
-        <div>
-          <strong>${escapeHtml(u.user_id)}</strong>
-          <span class="role-badge ${u.role}">${u.role.toUpperCase()}</span>
+  container.innerHTML = findings.map(f => `
+    <div class="finding-card ${f.severity || 'WARNING'}">
+      <div class="finding-header">
+        <span class="finding-problem">${escapeHtml(f.problem || 'Anomalous Metric')}</span>
+        <span class="node-badge" style="color: ${f.severity === 'CRITICAL' ? 'var(--status-critical)' : 'var(--status-warning)'};">${f.severity || 'WARN'}</span>
+      </div>
+      <div class="finding-grid">
+        <div class="finding-cell">
+          <span>EVIDENCE</span>
+          <div>${escapeHtml(f.evidence || '--')}</div>
         </div>
-        <div style="display:flex; gap:0.4rem;">
-          <button class="ghost-btn" onclick="openEditPrivilegesModal('${escapeHtml(u.user_id)}', ${escapeHtml(JSON.stringify(u.privileges || {}))})">Privileges</button>
-          ${u.user_id !== 'admin' ? `<button class="ghost-btn danger" onclick="deleteUserAccount('${escapeHtml(u.user_id)}')">Delete</button>` : ''}
+        <div class="finding-cell">
+          <span>LIKELY CAUSE</span>
+          <div>${escapeHtml(f.cause || '--')}</div>
         </div>
       </div>
-    `).join('');
-  } catch (_) {}
-}
-
-function renderPrivilegesCheckboxes(containerId, initialPrivs = {}) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-
-  container.innerHTML = ALL_PRIVILEGES_LIST.map(p => {
-    const isChecked = Boolean(initialPrivs[p]);
-    const label = p.replace(/^can_/, '').replace(/_/g, ' ');
-    return `
-      <label class="priv-checkbox-label">
-        <input type="checkbox" name="priv_${p}" value="${p}" ${isChecked ? 'checked' : ''}>
-        <span>${label}</span>
-      </label>
-    `;
-  }).join('');
-}
-
-function openCreateUserModal() {
-  renderPrivilegesCheckboxes('newPrivilegesGrid', USER_DEFAULT_PRIVILEGES);
-  openModal('createUserModal');
-}
-
-async function handleCreateUserSubmit(e) {
-  e.preventDefault();
-  const user_id = document.getElementById('newUserId').value.trim();
-  const password = document.getElementById('newUserPassword').value.trim();
-
-  const privileges = {};
-  document.querySelectorAll('#newPrivilegesGrid input[type="checkbox"]').forEach(cb => {
-    privileges[cb.value] = cb.checked;
-  });
-
-  try {
-    const res = await apiFetch('/api/admin/users', {
-      method: 'POST',
-      body: JSON.stringify({ user_id, password, privileges })
-    });
-    if (res.ok) {
-      showToast(`User '${user_id}' created successfully.`, 'success');
-      closeModal('createUserModal');
-      document.getElementById('newUserId').value = '';
-      document.getElementById('newUserPassword').value = '';
-      fetchAdminUsers();
-    }
-  } catch (err) {
-    showToast(`User creation error: ${err.message}`, 'error');
-  }
-}
-
-function openEditPrivilegesModal(userId, privs) {
-  document.getElementById('editPrivUserId').value = userId;
-  document.getElementById('editPrivilegesTitle').textContent = `Privileges: ${userId}`;
-  renderPrivilegesCheckboxes('editPrivilegesGrid', privs);
-  openModal('editPrivilegesModal');
-}
-
-async function handleSavePrivilegesSubmit(e) {
-  e.preventDefault();
-  const user_id = document.getElementById('editPrivUserId').value;
-  const privileges = {};
-  document.querySelectorAll('#editPrivilegesGrid input[type="checkbox"]').forEach(cb => {
-    privileges[cb.value] = cb.checked;
-  });
-
-  try {
-    const res = await apiFetch('/api/admin/users/update-privileges', {
-      method: 'POST',
-      body: JSON.stringify({ user_id, privileges })
-    });
-    if (res.ok) {
-      showToast(`Privileges updated for '${user_id}'.`, 'success');
-      closeModal('editPrivilegesModal');
-      fetchAdminUsers();
-    }
-  } catch (err) {
-    showToast(`Update error: ${err.message}`, 'error');
-  }
-}
-
-async function deleteUserAccount(userId) {
-  if (!confirm(`Delete user '${userId}'?`)) return;
-  try {
-    const res = await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
-    if (res.ok) {
-      showToast(`User '${userId}' deleted.`, 'info');
-      fetchAdminUsers();
-    }
-  } catch (err) {
-    showToast(`Delete error: ${err.message}`, 'error');
-  }
-}
-
-// Shares Inspector
-async function fetchSharesList() {
-  const container = document.getElementById('adminSharesContainer');
-  if (!container) return;
-
-  try {
-    const res = await apiFetch('/api/shares');
-    if (!res.ok) return;
-    const shares = await res.json();
-
-    if (shares.length === 0) {
-      container.innerHTML = `<p class="empty-state-muted">No temporary share links active.</p>`;
-      return;
-    }
-
-    container.innerHTML = shares.map(s => `
-      <div class="vault-file-row">
-        <div>
-          <strong>${escapeHtml(s.filename)}</strong>
-          <p class="card-subtitle font-mono">Downloads: ${s.downloads_count} / ${s.max_downloads || '∞'} | Token: ${s.token.slice(0, 10)}...</p>
-        </div>
-        <div>
-          ${!s.revoked ? `<button class="ghost-btn danger" onclick="revokeShareLink('${s.id}')">Revoke</button>` : `<span class="badge-pill unavailable">REVOKED</span>`}
-        </div>
+      <div class="finding-cell" style="margin-top: 4px;">
+        <span>RECOMMENDED ACTION</span>
+        <div style="color: var(--primary);">${escapeHtml(f.recommendation || '--')}</div>
       </div>
-    `).join('');
-  } catch (_) {}
+    </div>
+  `).join('');
 }
 
-function openCreateShareModal(filename) {
-  document.getElementById('shareFilenameInput').value = filename;
-  document.getElementById('shareFilenameDisplay').textContent = `Target: ${filename}`;
-  document.getElementById('shareResultBox').style.display = 'none';
-  openModal('createShareModal');
+function renderDiagnosticsProcesses(procs) {
+  const tbody = document.getElementById('diagProcessTableBody');
+  if (!tbody) return;
+
+  if (procs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--on-surface-muted); padding: 16px;">No process telemetry available.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = procs.map(p => `
+    <tr>
+      <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(p.name)}</td>
+      <td class="font-data-sm">${p.pid || '--'}</td>
+      <td class="font-data-sm">${p.rss_mb || 0} MB</td>
+      <td class="font-data-sm">${p.pss_mb || 0} MB</td>
+      <td class="font-data-sm">${p.threads || '--'}</td>
+      <td class="font-data-sm">${p.open_handles || p.open_fds || '--'}</td>
+    </tr>
+  `).join('');
 }
 
-async function handleCreateShareSubmit(e) {
-  e.preventDefault();
-  const filename = document.getElementById('shareFilenameInput').value;
-  const duration = document.getElementById('shareDurationSelect').value;
-  const max_downloads = parseInt(document.getElementById('shareMaxDownloads').value) || 0;
-
+async function handleCaptureProfileSnapshot() {
   try {
-    const res = await apiFetch('/api/shares', {
-      method: 'POST',
-      body: JSON.stringify({ filename, duration, max_downloads })
-    });
+    showToast('Capturing runtime diagnostic profile...', 'info');
+    const res = await apiFetch('/api/admin/diagnostics/profile-snapshot', { method: 'POST' });
     if (res.ok) {
-      const data = await res.json();
-      const fullUrl = `${window.location.origin}${data.share_url}`;
-      document.getElementById('shareResultUrl').value = fullUrl;
-      document.getElementById('shareResultBox').style.display = 'block';
-      showToast('Share link generated.', 'success');
-      fetchSharesList();
+      showToast('Profile snapshot saved to diagnostics repository.', 'success');
+      loadDiagnosticsReport();
     }
-  } catch (err) {
-    showToast(`Share error: ${err.message}`, 'error');
+  } catch (e) {
+    showToast('Failed to capture profile snapshot.', 'error');
   }
 }
 
-function copyShareUrl() {
-  const urlInput = document.getElementById('shareResultUrl');
-  urlInput.select();
-  navigator.clipboard.writeText(urlInput.value);
-  showToast('Share URL copied to clipboard.', 'success');
-}
-
-async function revokeShareLink(shareId) {
+async function handleCompactRagIndex() {
   try {
-    const res = await apiFetch(`/api/shares/${shareId}`, { method: 'DELETE' });
+    showToast('Compacting SQLite FTS5 RAG Index...', 'info');
+    const res = await apiFetch('/api/rag/compact', { method: 'POST' });
     if (res.ok) {
-      showToast('Share revoked.', 'info');
-      fetchSharesList();
+      showToast('RAG Inverted Index compacted.', 'success');
+      loadDiagnosticsReport();
     }
-  } catch (_) {}
-}
-
-// Database Inspector
-async function inspectDbTable(tableName) {
-  const container = document.getElementById('dbRowsContainer');
-  if (!container) return;
-
-  try {
-    const res = await apiFetch(`/api/admin/db/query?table=${tableName}&limit=25`);
-    if (!res.ok) return;
-    const data = await res.json();
-
-    if (data.rows.length === 0) {
-      container.innerHTML = `<p class="empty-state-muted">Table '${tableName}' is empty.</p>`;
-      return;
-    }
-
-    container.innerHTML = `
-      <div style="font-size:0.75rem; color:var(--text-dim); margin-bottom:0.4rem;">Showing ${data.count} records</div>
-      ${data.rows.map(r => `
-        <div style="background:var(--bg-surface-2); padding:0.5rem; border-radius:var(--radius-sm); margin-bottom:0.35rem; font-family:monospace; font-size:0.76rem;">
-          ${Object.entries(r).map(([k, v]) => `<div><span style="color:var(--accent-cyan);">${k}:</span> ${escapeHtml(String(v))}</div>`).join('')}
-        </div>
-      `).join('')}
-    `;
-  } catch (_) {}
+  } catch (e) {
+    showToast('Compaction failed.', 'error');
+  }
 }
 
 // ==============================================================================
-// 15. SYSTEM SETTINGS
+// 10. SETTINGS, AUTOMATION & BACKUPS
 // ==============================================================================
 
 async function loadSettings() {
   try {
     const res = await apiFetch('/api/settings');
-    if (!res.ok) return;
-    const s = await res.json();
-    const rNorm = document.getElementById('settingRamNorm');
-    const rPress = document.getElementById('settingRamPressure');
-    if (rNorm) rNorm.value = s.ram_normal_mb;
-    if (rPress) rPress.value = s.ram_pressure_mb;
-  } catch (_) {}
+    if (res.ok) {
+      const data = await res.json();
+      const host = document.getElementById('settingHostname');
+      const port = document.getElementById('settingPort');
+      const ramP = document.getElementById('settingRamPressure');
+      const ramC = document.getElementById('settingRamCritical');
+      if (host && data.hostname) host.value = data.hostname;
+      if (port && data.port) port.value = data.port;
+      if (ramP && data.ram_pressure_threshold) ramP.value = data.ram_pressure_threshold;
+      if (ramC && data.ram_critical_threshold) ramC.value = data.ram_critical_threshold;
+    }
+  } catch (e) {}
 }
 
-async function handleSettingsSave(e) {
-  e.preventDefault();
-  if (!hasPrivilege('can_manage_settings')) {
-    showToast('Permission denied: Settings modification forbidden.', 'error');
-    return;
-  }
+async function handleSaveSettings() {
+  const host = document.getElementById('settingHostname');
+  const port = document.getElementById('settingPort');
+  const ramP = document.getElementById('settingRamPressure');
+  const ramC = document.getElementById('settingRamCritical');
 
-  const ram_normal_mb = parseInt(document.getElementById('settingRamNorm').value);
-  const ram_pressure_mb = parseInt(document.getElementById('settingRamPressure').value);
+  const payload = {
+    hostname: host ? host.value : 'TECNO BG6',
+    port: port ? parseInt(port.value, 10) : 5000,
+    ram_pressure_threshold: ramP ? parseInt(ramP.value, 10) : 82,
+    ram_critical_threshold: ramC ? parseInt(ramC.value, 10) : 92
+  };
 
   try {
     const res = await apiFetch('/api/settings', {
       method: 'POST',
-      body: JSON.stringify({ ram_normal_mb, ram_pressure_mb })
+      body: JSON.stringify(payload)
     });
     if (res.ok) {
       showToast('Settings saved successfully.', 'success');
-      fetchSystemStatus();
     }
-  } catch (err) {
-    showToast(`Settings save error: ${err.message}`, 'error');
+  } catch (e) {
+    showToast('Failed to save settings.', 'error');
   }
 }
 
-// ==============================================================================
-// 16. UI HELPERS & MODALS
-// ==============================================================================
-
-function openModal(id) {
-  const el = document.getElementById(id);
-  if (el) el.classList.add('open');
+async function loadAutomationJobs() {
+  try {
+    const res = await apiFetch('/api/automation/jobs');
+    if (res.ok) {
+      const data = await res.json();
+      const container = document.getElementById('automationJobsList');
+      if (container && data.jobs) {
+        container.innerHTML = data.jobs.map(j => `
+          <div class="service-row">
+            <div>
+              <div class="service-name">${escapeHtml(j.name)}</div>
+              <div class="service-detail">${escapeHtml(j.schedule || 'Scheduled')} • Last run: ${j.last_run || 'Never'}</div>
+            </div>
+            <button class="btn btn-primary" style="padding: 2px 8px; font-size: 11px; min-height: 28px;" onclick="runAutomationJob('${j.id}')">Run Now</button>
+          </div>
+        `).join('');
+      }
+    }
+  } catch (e) {}
 }
 
-function closeModal(id) {
-  const el = document.getElementById(id);
-  if (el) el.classList.remove('open');
+async function runAutomationJob(jobId) {
+  try {
+    showToast(`Triggering job ${jobId}...`, 'info');
+    const res = await apiFetch(`/api/automation/jobs/${jobId}/run`, { method: 'POST' });
+    if (res.ok) {
+      showToast('Job executed.', 'success');
+      loadAutomationJobs();
+    }
+  } catch (e) {
+    showToast('Job execution failed.', 'error');
+  }
 }
 
-function showToast(message, type = 'info', durationMs = 3500) {
+async function loadBackupsList() {
+  try {
+    const res = await apiFetch('/api/backups');
+    if (res.ok) {
+      const data = await res.json();
+      const tbody = document.getElementById('backupsTableBody');
+      if (tbody && data.backups) {
+        if (data.backups.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--on-surface-muted); padding: 16px;">No backup archives generated yet.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.backups.map(b => `
+          <tr>
+            <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(b.filename)}</td>
+            <td class="font-data-sm">${formatBytes(b.size || 0)}</td>
+            <td class="font-data-sm">${b.created || '--'}</td>
+            <td style="text-align: right;">
+              <a class="btn btn-primary" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" href="/download/${encodeURIComponent(b.filename)}" download>Download</a>
+            </td>
+          </tr>
+        `).join('');
+      }
+    }
+  } catch (e) {}
+}
+
+async function handleCreateBackup() {
+  try {
+    showToast('Generating system backup...', 'info');
+    const res = await apiFetch('/api/backups/create', { method: 'POST' });
+    if (res.ok) {
+      showToast('Backup archive created.', 'success');
+      loadBackupsList();
+    }
+  } catch (e) {
+    showToast('Backup creation failed.', 'error');
+  }
+}
+
+async function loadStorageIntel() {
+  try {
+    const res = await apiFetch('/api/system/storage-intel');
+    if (res.ok) {
+      const data = await res.json();
+      const container = document.getElementById('storageIntelBreakdown');
+      if (container && data.breakdown) {
+        container.innerHTML = data.breakdown.map(b => `
+          <div class="service-row">
+            <div>
+              <div class="service-name">${escapeHtml(b.directory)}</div>
+              <div class="service-detail">${b.file_count || 0} objects</div>
+            </div>
+            <span class="font-data-md" style="color: var(--primary);">${formatBytes(b.size_bytes || 0)}</span>
+          </div>
+        `).join('');
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadEventsArchive() {
+  try {
+    const res = await apiFetch('/api/events');
+    if (res.ok) {
+      const data = await res.json();
+      const container = document.getElementById('fullEventLogContainer');
+      if (container && data.events) {
+        container.innerHTML = data.events.map(ev => `
+          <div class="log-entry">
+            <span class="log-time">[${ev.timestamp ? ev.timestamp.substring(11, 19) : '--'}]</span>
+            <span class="log-level ${ev.level || 'INFO'}">${ev.level || 'INFO'}</span>
+            <span class="log-msg">${escapeHtml(ev.message || '')}</span>
+          </div>
+        `).join('');
+      }
+    }
+  } catch (e) {}
+}
+
+async function loadAdminUsers() {
+  if (authState.role !== 'admin') return;
+  try {
+    const res = await apiFetch('/api/users');
+    if (res.ok) {
+      const data = await res.json();
+      const tbody = document.getElementById('adminUserTableBody');
+      if (tbody && data.users) {
+        tbody.innerHTML = data.users.map(u => `
+          <tr>
+            <td style="color: var(--on-surface-bright); font-weight: 500;">${escapeHtml(u.username)}</td>
+            <td><span class="node-badge" style="color: ${u.role === 'admin' ? 'var(--primary)' : 'var(--on-surface-variant)'};">${(u.role || 'USER').toUpperCase()}</span></td>
+            <td class="font-data-sm">${u.created_at ? u.created_at.substring(0, 10) : '--'}</td>
+            <td style="text-align: right;">
+              <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="showToast('User edit modal ready.', 'info')">Edit</button>
+            </td>
+          </tr>
+        `).join('');
+      }
+    }
+  } catch (e) {}
+}
+
+function openAddUserModal() {
+  showToast('Add user dialog opening...', 'info');
+}
+
+// ==============================================================================
+// 11. UTILITY FUNCTIONS
+// ==============================================================================
+
+function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
 
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  toast.textContent = message;
-  container.appendChild(toast);
+  toast.innerHTML = `
+    <span class="material-symbols-outlined" style="font-size: 16px;">
+      ${type === 'success' ? 'check_circle' : (type === 'error' ? 'error' : (type === 'warning' ? 'warning' : 'info'))}
+    </span>
+    <span>${escapeHtml(message)}</span>
+  `;
 
+  container.appendChild(toast);
   setTimeout(() => {
     toast.style.opacity = '0';
-    setTimeout(() => toast.remove(), 250);
-  }, durationMs);
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+function formatBytes(bytes, decimals = 2) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
 function escapeHtml(str) {
@@ -1806,126 +1458,9 @@ function escapeHtml(str) {
 }
 
 // ==============================================================================
-// 17. TECHNICAL SYSTEM DIAGNOSTICS & ROOT-CAUSE ENGINE (ADMIN ONLY)
+// 12. INITIALIZATION ON DOM READY
 // ==============================================================================
 
-async function runFullDiagnosticReport() {
-  if (authState.role !== 'admin') return;
-
-  const findingsContainer = document.getElementById('diagFindingsContainer');
-  if (findingsContainer) {
-    findingsContainer.innerHTML = '<p class="empty-state-muted">Executing full diagnostic rules & inspecting /proc...</p>';
-  }
-
-  try {
-    const res = await apiFetch('/api/admin/diagnostics/full-report');
-    if (!res.ok) return;
-    const data = await res.json();
-
-    // 1. Update Health Summary & Timestamp
-    const healthPill = document.getElementById('diagOverallHealthPill');
-    const tsEl = document.getElementById('diagLastTimestamp');
-    const countEl = document.getElementById('diagFindingsCount');
-
-    if (healthPill) {
-      healthPill.textContent = `● ${data.overall_status}`;
-      healthPill.style.color = data.overall_status === 'HEALTHY' ? 'var(--accent-emerald)' : (data.overall_status === 'WARNING' ? 'var(--accent-amber)' : 'var(--accent-rose)');
-    }
-    if (tsEl) tsEl.textContent = new Date(data.timestamp * 1000).toLocaleTimeString();
-    if (countEl) countEl.textContent = data.findings_count;
-
-    // 2. Render Automated Root-Cause Findings Cards
-    if (findingsContainer) {
-      if (data.findings.length === 0) {
-        findingsContainer.innerHTML = `
-          <div class="finding-card" style="border-left-color: var(--accent-emerald);">
-            <div class="finding-card-header">
-              <span class="finding-title" style="color: var(--accent-emerald);">✔ All Subsystems Operating Within 4 GB RAM Android Budget</span>
-              <span class="finding-pill" style="background: rgba(16, 185, 129, 0.2); color: var(--accent-emerald);">OPTIMAL</span>
-            </div>
-            <p class="finding-detail-row">Memory footprint, thread pool, RAG SQLite cache, and process limits are fully compliant.</p>
-          </div>
-        `;
-      } else {
-        findingsContainer.innerHTML = data.findings.map(f => `
-          <div class="finding-card severity-${f.severity}">
-            <div class="finding-card-header">
-              <span class="finding-title">${escapeHtml(f.problem)}</span>
-              <span class="finding-pill ${f.severity}">${f.severity}</span>
-            </div>
-            <p class="finding-detail-row"><strong>Evidence:</strong> ${escapeHtml(f.evidence)}</p>
-            <p class="finding-detail-row"><strong>Likely Cause:</strong> ${escapeHtml(f.likely_cause)}</p>
-            <div class="finding-action-row"><strong>Recommended Action:</strong> ${escapeHtml(f.recommended_action)}</div>
-          </div>
-        `).join('');
-      }
-    }
-
-    // 3. Update Process Introspection Cards
-    const proc = data.diagnostics.telemetry.process;
-    const rssEl = document.getElementById('diagNexusRss');
-    const pssEl = document.getElementById('diagNexusPss');
-    const thEl = document.getElementById('diagNexusThreads');
-    const fdEl = document.getElementById('diagNexusFds');
-    if (rssEl) rssEl.textContent = `${proc.rss_mb} MB`;
-    if (pssEl) pssEl.textContent = `${proc.pss_mb} MB`;
-    if (thEl) thEl.textContent = proc.threads;
-    if (fdEl) fdEl.textContent = proc.open_fds;
-
-    // 4. Update RAG Deep Diagnostics
-    const rag = data.diagnostics.rag;
-    const rDbEl = document.getElementById('diagRagDbSize');
-    const rChunksEl = document.getElementById('diagRagTotalChunks');
-    const rDocsEl = document.getElementById('diagRagTotalDocs');
-    const rAvgEl = document.getElementById('diagRagAvgTokens');
-    const rLargeEl = document.getElementById('diagRagLargestDoc');
-    const rRamEl = document.getElementById('diagRagEstRam');
-    const rDurEl = document.getElementById('diagRagRebuildDuration');
-
-    if (rDbEl) rDbEl.textContent = `${rag.database_size_kb} KB`;
-    if (rChunksEl) rChunksEl.textContent = rag.chunk_count;
-    if (rDocsEl) rDocsEl.textContent = rag.document_count;
-    if (rAvgEl) rAvgEl.textContent = rag.avg_chunk_tokens;
-    if (rLargeEl) rLargeEl.textContent = rag.largest_document;
-    if (rRamEl) rRamEl.textContent = `< ${rag.memory_estimate_mb} MB`;
-    if (rDurEl) rDurEl.textContent = `${rag.rebuild_duration_ms} ms`;
-
-  } catch (err) {
-    if (findingsContainer) {
-      findingsContainer.innerHTML = `<p class="empty-state-muted">Diagnostic analysis failed: ${escapeHtml(err.message)}</p>`;
-    }
-  }
-}
-
-async function captureProfileSnapshot() {
-  if (authState.role !== 'admin') return;
-  try {
-    const res = await apiFetch('/api/admin/diagnostics/profile-snapshot', { method: 'POST' });
-    if (res.ok) {
-      const data = await res.json();
-      showToast(`Snapshot captured! RSS: ${data.process_rss_mb} MB | Threads: ${data.threads_count} | WAL: ${data.wal_size_kb} KB`, 'success');
-      runFullDiagnosticReport();
-    }
-  } catch (err) {
-    showToast(`Snapshot error: ${err.message}`, 'error');
-  }
-}
-
-async function compactRagIndex() {
-  if (!hasPrivilege('can_use_rag')) return;
-  try {
-    const res = await apiFetch('/api/rag/compact', { method: 'POST' });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.migrated) {
-        showToast(`RAG SQLite FTS5 Compaction complete (${data.chunks_migrated} chunks migrated).`, 'success');
-      } else {
-        showToast(data.message || 'No legacy index file to compact.', 'info');
-      }
-      runFullDiagnosticReport();
-    }
-  } catch (err) {
-    showToast(`Compaction error: ${err.message}`, 'error');
-  }
-}
-
+document.addEventListener('DOMContentLoaded', () => {
+  initAuth();
+});

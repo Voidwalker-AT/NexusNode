@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode Admin Diagnostics</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-error": "#690005",
+                      "surface-tint": "#00daf3",
+                      "error": "#ffb4ab",
+                      "on-secondary-fixed": "#2a0053",
+                      "surface-variant": "#2e3638",
+                      "error-container": "#93000a",
+                      "surface-container-high": "#242b2d",
+                      "on-secondary": "#460283",
+                      "on-surface": "#dce4e5",
+                      "on-tertiary-container": "#6f5500",
+                      "on-secondary-fixed-variant": "#5e289b",
+                      "tertiary-fixed-dim": "#f3bf26",
+                      "on-tertiary": "#3e2e00",
+                      "on-background": "#dce4e5",
+                      "surface-bright": "#333a3c",
+                      "on-tertiary-fixed": "#251a00",
+                      "on-error-container": "#ffdad6",
+                      "inverse-on-surface": "#2a3233",
+                      "primary-fixed-dim": "#00daf3",
+                      "tertiary-fixed": "#ffdf96",
+                      "outline-variant": "#3b494c",
+                      "on-surface-variant": "#bac9cc",
+                      "surface-container-lowest": "#080f11",
+                      "outline": "#849396",
+                      "inverse-primary": "#006875",
+                      "on-tertiary-fixed-variant": "#594400",
+                      "surface": "#0d1516",
+                      "on-primary-fixed-variant": "#004f58",
+                      "primary-fixed": "#9cf0ff",
+                      "on-secondary-container": "#cfa7ff",
+                      "on-primary-container": "#00626e",
+                      "on-primary-fixed": "#001f24",
+                      "primary": "#c3f5ff",
+                      "surface-container": "#192122",
+                      "tertiary": "#ffeac0",
+                      "surface-dim": "#0d1516",
+                      "background": "#0d1516",
+                      "surface-container-low": "#151d1e",
+                      "surface-container-highest": "#2e3638",
+                      "primary-container": "#00e5ff",
+                      "secondary": "#dab9ff",
+                      "inverse-surface": "#dce4e5",
+                      "tertiary-container": "#fec931",
+                      "on-primary": "#00363d",
+                      "secondary-fixed": "#eedbff",
+                      "secondary-container": "#602b9d",
+                      "secondary-fixed-dim": "#dab9ff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "stack-gap": "8px",
+                      "container-padding": "16px",
+                      "element-gap": "4px",
+                      "section-margin": "24px",
+                      "unit": "4px"
+              },
+              "fontFamily": {
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Inter"
+                      ],
+                      "data-md": [
+                              "JetBrains Mono"
+                      ],
+                      "data-lg": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-lg": [
+                              "Inter"
+                      ],
+                      "data-sm": [
+                              "JetBrains Mono"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-caps": [
+                              "10px",
+                              {
+                                      "lineHeight": "12px",
+                                      "letterSpacing": "0.06em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-md": [
+                              "18px",
+                              {
+                                      "lineHeight": "24px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "data-md": [
+                              "13px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "data-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-lg": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "data-sm": [
+                              "11px",
+                              {
+                                      "lineHeight": "14px",
+                                      "letterSpacing": "0.02em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        body {
+            background-color: #000000;
+            color: #dce4e5;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        
+        .technical-border {
+            border: 1px solid #2C2C2C;
+        }
+
+        .level-1-surface {
+            background-color: #121212;
+        }
+
+        .level-2-surface {
+            background-color: #1C1C1C;
+        }
+
+        .status-amber { color: #fec931; }
+        .status-amber-border { border-color: #fec931; }
+        .status-green { color: #00e5ff; } /* Using primary as green equivalent for technical look */
+        .status-red { color: #ffb4ab; }
+        
+        .meter-bg { background-color: #2C2C2C; }
+        
+        /* Custom Scrollbar for technical feel */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #000000; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2C2C2C; 
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3b494c; 
+        }
+
+        .data-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .expandable-content {
+            display: none;
+        }
+        .expanded .expandable-content {
+            display: block;
+        }
+        .expanded .chevron {
+            transform: rotate(90deg);
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col">
+<!-- Global Status Bar (Top) -->
+<header class="hidden md:flex justify-between items-center px-container-padding h-16 w-full max-w-none bg-surface border-b border-outline-variant flat no shadows sticky top-0 z-40">
+<div class="flex items-center gap-4">
+<span class="font-headline-lg text-headline-lg font-bold text-primary tracking-tighter">NexusNode</span>
+<span class="font-label-caps text-label-caps bg-surface-variant text-on-surface-variant px-2 py-1 rounded">SYS_DIAGNOSTICS</span>
+</div>
+<!-- Navigation Links -->
+<nav class="flex gap-6">
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors flex items-center h-full" href="#">Dashboard</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors flex items-center h-full" href="#">Vault</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors flex items-center h-full" href="#">Media</a>
+<a class="font-label-caps text-label-caps text-primary border-b-2 border-primary pb-1 flex items-center h-full" href="#">Tasks</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors flex items-center h-full" href="#">AI Studio</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100"><span class="material-symbols-outlined">sensors</span></button>
+<button class="text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-tertiary-container rounded-full"></span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100"><span class="material-symbols-outlined">account_circle</span></button>
+<button class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors ml-2 border border-outline-variant px-3 py-1 rounded">More</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto px-container-padding py-section-margin md:px-8 max-w-7xl mx-auto w-full flex flex-col gap-section-margin pb-24 md:pb-8">
+<!-- Diagnostic Header & Action -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 technical-border level-1-surface p-container-padding rounded status-amber-border">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full flex items-center justify-center bg-tertiary-container bg-opacity-20">
+<span class="material-symbols-outlined text-tertiary-container text-3xl" style="font-variation-settings: 'FILL' 1;">warning</span>
+</div>
+<div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface">System State: WARNING</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Diagnostic run required. Memory pressure detected on active indices.</p>
+</div>
+</div>
+<button class="w-full md:w-auto bg-transparent border border-primary text-primary px-6 py-3 font-label-caps text-label-caps hover:bg-primary hover:text-on-primary transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">play_arrow</span>
+                Run Full Diagnostic
+            </button>
+</div>
+<!-- System Overview Metrics -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-unit">
+<!-- Metric: CPU -->
+<div class="technical-border level-1-surface p-container-padding flex flex-col gap-2">
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Process (CPU)</span>
+<span class="font-data-md text-data-md text-on-surface">4 Cores (TECNO BG6)</span>
+</div>
+<div class="font-headline-md text-headline-md text-on-surface">45% Load</div>
+<div class="meter-bg h-2 w-full mt-auto rounded-sm overflow-hidden">
+<div class="bg-primary h-full w-[45%]"></div>
+</div>
+</div>
+<!-- Metric: Memory -->
+<div class="technical-border level-1-surface p-container-padding flex flex-col gap-2 status-amber-border">
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Memory (RAM)</span>
+<span class="font-data-md text-data-md text-tertiary-container">RSS 1.4GB / PSS 1.1GB</span>
+</div>
+<div class="font-headline-md text-headline-md text-tertiary-container">87% Used</div>
+<div class="meter-bg h-2 w-full mt-auto rounded-sm overflow-hidden">
+<div class="bg-tertiary-container h-full w-[87%]"></div>
+</div>
+</div>
+<!-- Metric: DB -->
+<div class="technical-border level-1-surface p-container-padding flex flex-col gap-2">
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant">SQLite WAL</span>
+<span class="font-data-md text-data-md text-on-surface">12.4k Rows</span>
+</div>
+<div class="font-headline-md text-headline-md text-on-surface">128 MB</div>
+<div class="meter-bg h-2 w-full mt-auto rounded-sm overflow-hidden">
+<div class="bg-primary h-full w-[45%]"></div>
+</div>
+</div>
+<!-- Metric: Network -->
+<div class="technical-border level-1-surface p-container-padding flex flex-col gap-2">
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Network</span>
+<span class="font-data-md text-data-md text-on-surface">Active</span>
+</div>
+<div class="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
+                    Stable
+                    <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+</div>
+<div class="meter-bg h-2 w-full mt-auto rounded-sm overflow-hidden">
+<div class="bg-primary h-full w-[100%]"></div>
+</div>
+</div>
+</div>
+<!-- Detailed Diagnostic Log -->
+<div class="technical-border level-1-surface flex flex-col">
+<div class="p-container-padding border-b border-outline-variant flex justify-between items-center level-2-surface">
+<h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">list_alt</span>
+                    Diagnostic Items
+                </h2>
+<span class="font-label-caps text-label-caps bg-surface-variant text-on-surface-variant px-2 py-1 rounded">4 ITEMS</span>
+</div>
+<!-- Item: RAG -->
+<div class="border-b border-outline-variant p-container-padding hover:bg-surface-variant transition-colors cursor-pointer group" onclick="this.classList.toggle('expanded')">
+<div class="flex items-start gap-4">
+<span class="material-symbols-outlined text-tertiary-container mt-1 chevron transition-transform duration-200">chevron_right</span>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="font-data-lg text-data-lg text-tertiary-container">Memory Pressure: RAG Index</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Index size currently at 901MB. Nearing capacity threshold.</p>
+</div>
+<span class="font-label-caps text-label-caps bg-tertiary-container bg-opacity-20 text-tertiary-container px-2 py-1 rounded border border-tertiary-container">CRITICAL</span>
+</div>
+<div class="expandable-content mt-4 pt-4 border-t border-outline-variant">
+<div class="level-2-surface p-4 rounded technical-border">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant mb-1">PROBLEM</div>
+<div class="font-data-md text-data-md text-on-surface">Memory pressure on active indices.</div>
+</div>
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant mb-1">EVIDENCE</div>
+<div class="font-data-md text-data-md text-on-surface">RSS 1.4GB / PSS 1.1GB (87% of 2GB RAM)</div>
+</div>
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant mb-1">LIKELY CAUSE</div>
+<div class="font-data-md text-data-md text-on-surface">Oversized legacy index structures retained in memory.</div>
+</div>
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant mb-1">RECOMMENDATION</div>
+<div class="font-data-md text-data-md text-on-surface">Migrate to SQLite FTS5 for optimized querying.</div>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="bg-surface-variant text-on-surface px-4 py-2 font-label-caps text-label-caps hover:bg-outline-variant transition-colors">Clear Cache</button>
+<button class="border border-tertiary-container text-tertiary-container px-4 py-2 font-label-caps text-label-caps hover:bg-tertiary-container hover:text-on-tertiary-container transition-colors">Initiate Migration</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Item: Network -->
+<div class="border-b border-outline-variant p-container-padding hover:bg-surface-variant transition-colors cursor-pointer group" onclick="this.classList.toggle('expanded')">
+<div class="flex items-start gap-4">
+<span class="material-symbols-outlined text-primary mt-1 chevron transition-transform duration-200">chevron_right</span>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="font-data-lg text-data-lg text-primary">LocalToNet Routing</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">LocalToNet tunnel stable. Public endpoint active.</p>
+</div>
+<span class="font-label-caps text-label-caps bg-primary bg-opacity-20 text-primary px-2 py-1 rounded border border-primary">HEALTHY</span>
+</div>
+<div class="expandable-content mt-4 pt-4 border-t border-outline-variant">
+<div class="level-2-surface p-4 rounded technical-border">
+<div class="font-data-sm text-data-sm text-on-surface-variant whitespace-pre font-mono">
+PING tunnel.localtonet.com (104.21.XX.XX) 56(84) bytes of data.
+64 bytes from 104.21.XX.XX: icmp_seq=1 ttl=54 time=14.2 ms
+64 bytes from 104.21.XX.XX: icmp_seq=2 ttl=54 time=13.8 ms
+
+--- tunnel.localtonet.com ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss
+                                </div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Item: Database -->
+<div class="border-b border-outline-variant p-container-padding hover:bg-surface-variant transition-colors cursor-pointer group" onclick="this.classList.toggle('expanded')">
+<div class="flex items-start gap-4">
+<span class="material-symbols-outlined text-primary mt-1 chevron transition-transform duration-200">chevron_right</span>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="font-data-lg text-data-lg text-primary">SQLite Telemetry</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">WAL size healthy. Row counts within expected parameters.</p>
+</div>
+<span class="font-label-caps text-label-caps bg-primary bg-opacity-20 text-primary px-2 py-1 rounded border border-primary">HEALTHY</span>
+</div>
+<div class="expandable-content mt-4 pt-4 border-t border-outline-variant">
+<div class="level-2-surface p-4 rounded technical-border grid grid-cols-2 gap-4">
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant mb-1">WAL SIZE</div>
+<div class="font-data-md text-data-md text-on-surface">128 MB</div>
+</div>
+<div>
+<div class="font-label-caps text-label-caps text-on-surface-variant mb-1">VAULT ROWS</div>
+<div class="font-data-md text-data-md text-on-surface">12,403</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Item: Process -->
+<div class="p-container-padding hover:bg-surface-variant transition-colors cursor-pointer group" onclick="this.classList.toggle('expanded')">
+<div class="flex items-start gap-4">
+<span class="material-symbols-outlined text-primary mt-1 chevron transition-transform duration-200">chevron_right</span>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="font-data-lg text-data-lg text-primary">Runit Services</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Resource allocation mapping for supervised services.</p>
+</div>
+<span class="font-label-caps text-label-caps bg-primary bg-opacity-20 text-primary px-2 py-1 rounded border border-primary">HEALTHY</span>
+</div>
+<div class="expandable-content mt-4 pt-4 border-t border-outline-variant">
+<div class="level-2-surface p-4 rounded technical-border overflow-x-auto">
+<table class="w-full text-left font-data-sm text-data-sm">
+<thead>
+<tr class="text-on-surface-variant border-b border-outline-variant">
+<th class="pb-2">PID</th>
+<th class="pb-2">USER</th>
+<th class="pb-2">VIRT</th>
+<th class="pb-2">RES</th>
+<th class="pb-2">%CPU</th>
+<th class="pb-2">%MEM</th>
+<th class="pb-2">COMMAND</th>
+</tr>
+</thead>
+<tbody class="text-on-surface">
+<tr class="border-b border-outline-variant opacity-70 hover:opacity-100">
+<td class="py-2">1042</td>
+<td class="py-2">nxadmin</td>
+<td class="py-2">4.2G</td>
+<td class="py-2">1.4G</td>
+<td class="py-2 text-tertiary-container">45.2</td>
+<td class="py-2">70.0</td>
+<td class="py-2">nexus-core</td>
+</tr>
+<tr class="opacity-70 hover:opacity-100">
+<td class="py-2">891</td>
+<td class="py-2">root</td>
+<td class="py-2">2.1G</td>
+<td class="py-2">400M</td>
+<td class="py-2">5.1</td>
+<td class="py-2">20.0</td>
+<td class="py-2">runsvdir</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex md:hidden justify-around items-center h-16 px-2 bg-surface border-t border-outline-variant flat no shadows">
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-full h-full" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-label-caps text-label-caps mt-1">Dash</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-full h-full" href="#">
+<span class="material-symbols-outlined">storage</span>
+<span class="font-label-caps text-label-caps mt-1">Vault</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-full h-full" href="#">
+<span class="material-symbols-outlined">perm_media</span>
+<span class="font-label-caps text-label-caps mt-1">Media</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary active:bg-surface-variant transition-transform duration-200 active:scale-90 w-full h-full" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">checklist</span>
+<span class="font-label-caps text-label-caps mt-1">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-full h-full" href="#">
+<span class="material-symbols-outlined">psychology</span>
+<span class="font-label-caps text-label-caps mt-1">AI</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-full h-full" href="#">
+<span class="material-symbols-outlined">menu</span>
+<span class="font-label-caps text-label-caps mt-1">More</span>
+</a>
+</nav>
+</body></html>

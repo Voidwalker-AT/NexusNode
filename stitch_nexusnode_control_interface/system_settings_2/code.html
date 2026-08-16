@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode - Settings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-surface": "#e5e2e1",
+                      "on-primary-fixed-variant": "#004f58",
+                      "surface-container-high": "#2a2a2a",
+                      "on-surface-variant": "#bac9cc",
+                      "primary-fixed-dim": "#00daf3",
+                      "graphite-surface": "#121212",
+                      "on-tertiary-fixed": "#1b1b1c",
+                      "background": "#131313",
+                      "inverse-on-surface": "#313030",
+                      "surface-dim": "#131313",
+                      "secondary-fixed": "#f4d9ff",
+                      "on-tertiary": "#303030",
+                      "border-subtle": "#333333",
+                      "surface-container-lowest": "#0e0e0e",
+                      "secondary-container": "#ab08ff",
+                      "on-secondary-container": "#fef0ff",
+                      "primary-container": "#00e5ff",
+                      "graphite-raised": "#1E1E1E",
+                      "tertiary": "#efeceb",
+                      "oled-black": "#000000",
+                      "on-secondary-fixed-variant": "#6f00a9",
+                      "on-tertiary-container": "#5a5959",
+                      "surface-container": "#201f1f",
+                      "on-error": "#690005",
+                      "on-secondary": "#4e0078",
+                      "tertiary-container": "#d2d0cf",
+                      "on-tertiary-fixed-variant": "#474746",
+                      "surface-bright": "#393939",
+                      "primary": "#c3f5ff",
+                      "primary-fixed": "#9cf0ff",
+                      "surface-container-low": "#1c1b1b",
+                      "status-healthy": "#00C853",
+                      "surface": "#131313",
+                      "tertiary-fixed-dim": "#c8c6c5",
+                      "error-container": "#93000a",
+                      "on-primary-container": "#00626e",
+                      "on-primary": "#00363d",
+                      "on-secondary-fixed": "#2f004b",
+                      "surface-tint": "#00daf3",
+                      "status-critical": "#D50000",
+                      "outline-variant": "#3b494c",
+                      "surface-variant": "#353534",
+                      "secondary-fixed-dim": "#e4b5ff",
+                      "inverse-primary": "#006875",
+                      "inverse-surface": "#e5e2e1",
+                      "tertiary-fixed": "#e5e2e1",
+                      "surface-container-highest": "#353534",
+                      "error": "#ffb4ab",
+                      "on-error-container": "#ffdad6",
+                      "secondary": "#e4b5ff",
+                      "on-primary-fixed": "#001f24",
+                      "on-background": "#e5e2e1",
+                      "status-warning": "#FFD600",
+                      "outline": "#849396"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "margin-mobile": "16px",
+                      "touch-target": "44px",
+                      "margin-desktop": "24px",
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "stack-gap": "8px"
+              },
+              "fontFamily": {
+                      "headline-lg": ["Inter"],
+                      "label-caps": ["Inter"],
+                      "data-md": ["JetBrains Mono"],
+                      "body-sm": ["Inter"],
+                      "body-md": ["Inter"],
+                      "data-lg": ["JetBrains Mono"],
+                      "data-sm": ["JetBrains Mono"],
+                      "headline-md": ["Inter"]
+              },
+              "fontSize": {
+                      "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "label-caps": ["10px", {"lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700"}],
+                      "data-md": ["13px", {"lineHeight": "18px", "fontWeight": "500"}],
+                      "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                      "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "data-lg": ["16px", {"lineHeight": "20px", "fontWeight": "600"}],
+                      "data-sm": ["11px", {"lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                      "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        /* Custom Toggle Switch styling based on theme */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #00daf3;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #00daf3;
+        }
+        .toggle-checkbox:focus + .toggle-label {
+            box-shadow: 0 0 0 2px #121212, 0 0 0 4px #00daf3;
+        }
+    </style>
+</head>
+<body class="bg-oled-black text-on-surface font-body-md text-body-md antialiased min-h-screen flex selection:bg-primary-fixed-dim selection:text-oled-black">
+<!-- JSON Component: SideNavBar (Desktop Shell) -->
+<nav class="hidden md:flex fixed inset-y-0 left-0 z-40 flex-col w-64 bg-graphite-surface border-r border-border-subtle">
+<div class="h-16 flex flex-col justify-center px-6 border-b border-border-subtle">
+<h1 class="font-headline-md text-headline-md text-on-surface tracking-tight">NexusNode</h1>
+<span class="font-data-sm text-data-sm text-on-surface-variant">System Controller</span>
+</div>
+<div class="flex-1 overflow-y-auto py-4">
+<ul class="space-y-1">
+<!-- Inactive items -->
+<li>
+<a class="flex items-center px-6 py-3 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md group" href="#">
+<span class="material-symbols-outlined mr-4 opacity-70 group-hover:opacity-100">lan</span>
+                        Network
+                    </a>
+</li>
+<li>
+<a class="flex items-center px-6 py-3 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md group" href="#">
+<span class="material-symbols-outlined mr-4 opacity-70 group-hover:opacity-100">event_note</span>
+                        Events
+                    </a>
+</li>
+<li>
+<a class="flex items-center px-6 py-3 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md group" href="#">
+<span class="material-symbols-outlined mr-4 opacity-70 group-hover:opacity-100">hard_drive</span>
+                        Storage
+                    </a>
+</li>
+<li>
+<a class="flex items-center px-6 py-3 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md group" href="#">
+<span class="material-symbols-outlined mr-4 opacity-70 group-hover:opacity-100">backup</span>
+                        Backups
+                    </a>
+</li>
+<li>
+<a class="flex items-center px-6 py-3 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md group" href="#">
+<span class="material-symbols-outlined mr-4 opacity-70 group-hover:opacity-100">settings_input_component</span>
+                        Automation
+                    </a>
+</li>
+<li>
+<a class="flex items-center px-6 py-3 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md group" href="#">
+<span class="material-symbols-outlined mr-4 opacity-70 group-hover:opacity-100">terminal</span>
+                        Diagnostics
+                    </a>
+</li>
+<!-- Active Item: Settings -->
+<li>
+<a class="flex items-center px-6 py-3 bg-surface-container-high text-primary-fixed-dim border-l-2 border-primary-fixed-dim transition-all duration-150 ease-in-out font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined mr-4" style="font-variation-settings: 'FILL' 1;">settings</span>
+                        Settings
+                    </a>
+</li>
+<li>
+<a class="flex items-center px-6 py-3 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out font-body-md text-body-md group" href="#">
+<span class="material-symbols-outlined mr-4 opacity-70 group-hover:opacity-100">admin_panel_settings</span>
+                        Admin
+                    </a>
+</li>
+</ul>
+</div>
+<div class="p-4 border-t border-border-subtle">
+<button class="w-full flex items-center justify-center py-2 px-4 border border-border-subtle rounded-DEFAULT text-on-surface hover:bg-surface-container-low transition-colors font-body-md text-body-md">
+                Log Out
+            </button>
+</div>
+</nav>
+<!-- JSON Component: BottomNavBar (Mobile Shell) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-touch-target px-margin-mobile bg-surface-container-lowest border-t border-border-subtle touch-none select-none">
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform w-16 h-full active:bg-surface-container-high" href="#">
+<span class="material-symbols-outlined mb-1 text-[20px]">dashboard</span>
+<span class="font-label-caps text-label-caps">Dash</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform w-16 h-full active:bg-surface-container-high" href="#">
+<span class="material-symbols-outlined mb-1 text-[20px]">storage</span>
+<span class="font-label-caps text-label-caps">Vault</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform w-16 h-full active:bg-surface-container-high" href="#">
+<span class="material-symbols-outlined mb-1 text-[20px]">movie</span>
+<span class="font-label-caps text-label-caps">Media</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform w-16 h-full active:bg-surface-container-high" href="#">
+<span class="material-symbols-outlined mb-1 text-[20px]">task_alt</span>
+<span class="font-label-caps text-label-caps">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform w-16 h-full active:bg-surface-container-high" href="#">
+<span class="material-symbols-outlined mb-1 text-[20px]">psychology</span>
+<span class="font-label-caps text-label-caps">AI</span>
+</a>
+<!-- Active mobile item representing Settings/More -->
+<a class="flex flex-col items-center justify-center text-primary-fixed-dim active:scale-95 transition-transform w-16 h-full bg-surface-container-high" href="#">
+<span class="material-symbols-outlined mb-1 text-[20px]" style="font-variation-settings: 'FILL' 1;">menu</span>
+<span class="font-label-caps text-label-caps">More</span>
+</a>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 md:ml-64 flex flex-col min-h-screen pb-[60px] md:pb-0">
+<!-- Header area -->
+<header class="px-margin-mobile md:px-margin-desktop py-6 border-b border-border-subtle bg-background/80 backdrop-blur-md sticky top-0 z-30">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface tracking-tight mb-1">Appliance Configuration</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Global parameters for node identity and operational telemetry.</p>
+</div>
+<!-- Status Badge -->
+<div class="hidden sm:flex items-center px-3 py-1 border border-border-subtle rounded-sm bg-surface-container-high">
+<div class="w-2 h-2 rounded-full bg-status-healthy mr-2 animate-pulse"></div>
+<span class="font-data-sm text-data-sm text-on-surface uppercase tracking-wider">System Ready</span>
+</div>
+</div>
+</header>
+<!-- Complex Layout: Settings Secondary Nav + Forms -->
+<div class="flex-1 flex flex-col lg:flex-row w-full max-w-7xl mx-auto">
+<!-- Internal Page Sidebar (Requested by user: General, Network, AI, Storage, Security, Advanced) -->
+<aside class="w-full lg:w-56 flex-shrink-0 border-b lg:border-b-0 lg:border-r border-border-subtle bg-background overflow-x-auto lg:overflow-x-visible hide-scrollbar">
+<nav class="flex lg:flex-col p-2 lg:p-4 gap-1 min-w-max lg:min-w-0">
+<button class="px-4 py-2.5 flex items-center bg-surface-container-high text-primary-fixed-dim rounded-DEFAULT font-body-sm text-body-sm border border-border-subtle text-left w-full">
+                        General
+                    </button>
+<button class="px-4 py-2.5 flex items-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low rounded-DEFAULT font-body-sm text-body-sm transition-colors text-left w-full">
+                        Network
+                    </button>
+<button class="px-4 py-2.5 flex items-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low rounded-DEFAULT font-body-sm text-body-sm transition-colors text-left w-full">
+                        AI Configuration
+                    </button>
+<button class="px-4 py-2.5 flex items-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low rounded-DEFAULT font-body-sm text-body-sm transition-colors text-left w-full">
+                        Storage
+                    </button>
+<button class="px-4 py-2.5 flex items-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low rounded-DEFAULT font-body-sm text-body-sm transition-colors text-left w-full">
+                        Security
+                    </button>
+<div class="my-2 border-t border-border-subtle hidden lg:block"></div>
+<button class="px-4 py-2.5 flex items-center text-on-surface-variant hover:text-status-warning hover:bg-surface-container-low rounded-DEFAULT font-body-sm text-body-sm transition-colors text-left w-full">
+                        Advanced (Termux)
+                    </button>
+</nav>
+</aside>
+<!-- Configuration Content Area -->
+<div class="flex-1 p-margin-mobile md:p-margin-desktop space-y-stack-gap md:space-y-6">
+<!-- Section: Node Identity -->
+<section class="bg-graphite-surface border border-border-subtle rounded-lg overflow-hidden">
+<div class="px-6 py-4 border-b border-border-subtle bg-surface-container-low">
+<h3 class="font-headline-md text-headline-md text-on-surface">Node Identity</h3>
+</div>
+<div class="p-6 space-y-6">
+<!-- Form Row: Hostname -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+<div class="md:col-span-1">
+<label class="block font-body-sm text-body-sm text-on-surface" for="hostname">Hostname</label>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Unique identifier on the local mesh.</p>
+</div>
+<div class="md:col-span-2">
+<input class="w-full bg-graphite-raised border border-border-subtle rounded-DEFAULT px-3 py-2 text-on-surface font-data-md text-data-md focus:border-primary-fixed-dim focus:ring-1 focus:ring-primary-fixed-dim transition-colors outline-none" id="hostname" type="text" value="nexus-core-01"/>
+</div>
+</div>
+<hr class="border-border-subtle"/>
+<!-- Form Row: Environment -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+<div class="md:col-span-1">
+<label class="block font-body-sm text-body-sm text-on-surface" for="environment">Environment Tier</label>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Operational context of this node.</p>
+</div>
+<div class="md:col-span-2 flex items-center gap-4">
+<select class="bg-graphite-raised border border-border-subtle rounded-DEFAULT px-3 py-2 text-on-surface font-data-md text-data-md focus:border-primary-fixed-dim focus:outline-none appearance-none min-w-[200px]" id="environment">
+<option selected="" value="prod">Production</option>
+<option value="staging">Staging</option>
+<option value="dev">Development</option>
+<option value="edge">Edge/Remote</option>
+</select>
+<div class="px-2 py-1 bg-[#1c1b1b] border border-[#3b494c] rounded-sm flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-fixed-dim"></span>
+<span class="font-data-sm text-data-sm text-primary-fixed-dim uppercase">Active</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Section: Telemetry & Monitoring -->
+<section class="bg-graphite-surface border border-border-subtle rounded-lg overflow-hidden">
+<div class="px-6 py-4 border-b border-border-subtle bg-surface-container-low flex justify-between items-center">
+<h3 class="font-headline-md text-headline-md text-on-surface">Telemetry</h3>
+<span class="material-symbols-outlined text-on-surface-variant">sensors</span>
+</div>
+<div class="divide-y divide-border-subtle">
+<!-- Toggle Item 1 -->
+<div class="p-6 flex items-start justify-between gap-4 hover:bg-surface-container-low transition-colors">
+<div>
+<h4 class="font-body-md text-body-md text-on-surface mb-1">Hardware Metrics Logging</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Continuously sample CPU, RAM, and thermal sensors. Required for diagnostic timelines.</p>
+</div>
+<!-- Custom CSS Toggle -->
+<div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in mt-1 flex-shrink-0">
+<input checked="" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-graphite-raised border-2 border-border-subtle appearance-none cursor-pointer z-10 transition-all duration-200" id="toggle_hw" name="toggle_hw" style="right: 0; border-color: #00daf3;" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-6 rounded-full bg-surface-container-highest cursor-pointer transition-colors duration-200" for="toggle_hw" style="background-color: #004f58;"></label>
+</div>
+</div>
+<!-- Toggle Item 2 -->
+<div class="p-6 flex items-start justify-between gap-4 hover:bg-surface-container-low transition-colors">
+<div>
+<h4 class="font-body-md text-body-md text-on-surface mb-1">Aggressive Network Tracing</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Capture packet headers for deep protocol analysis. <span class="text-status-warning">May impact I/O performance.</span></p>
+</div>
+<div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in mt-1 flex-shrink-0">
+<input class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-graphite-raised border-2 border-border-subtle appearance-none cursor-pointer z-10 transition-all duration-200" id="toggle_net" name="toggle_net" style="right: 24px;" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-6 rounded-full bg-surface-container-highest cursor-pointer transition-colors duration-200" for="toggle_net"></label>
+</div>
+</div>
+<!-- Toggle Item 3 -->
+<div class="p-6 flex items-start justify-between gap-4 hover:bg-surface-container-low transition-colors">
+<div>
+<h4 class="font-body-md text-body-md text-on-surface mb-1">Anonymous Error Reporting</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Send sanitized crash dumps to central administration.</p>
+</div>
+<div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in mt-1 flex-shrink-0">
+<input checked="" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-graphite-raised border-2 border-border-subtle appearance-none cursor-pointer z-10 transition-all duration-200" id="toggle_err" name="toggle_err" style="right: 0; border-color: #00daf3;" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-6 rounded-full bg-surface-container-highest cursor-pointer transition-colors duration-200" for="toggle_err" style="background-color: #004f58;"></label>
+</div>
+</div>
+</div>
+</section>
+<!-- Save Action Bar -->
+<div class="flex justify-end pt-4 gap-4">
+<button class="px-6 py-2 border border-border-subtle text-on-surface bg-transparent hover:bg-surface-container-high rounded-DEFAULT font-body-sm text-body-sm transition-colors">
+                        Revert Changes
+                    </button>
+<button class="px-6 py-2 border border-primary-fixed-dim text-primary-fixed-dim bg-primary-fixed-dim/10 hover:bg-primary-fixed-dim/20 rounded-DEFAULT font-body-sm text-body-sm transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">save</span>
+                        Apply Configuration
+                    </button>
+</div>
+</div>
+</div>
+</main>
+<style>
+        /* Hide scrollbar for internal nav */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<script>
+        // Simple script to handle toggle visual states for the custom CSS toggles if needed, 
+        // though CSS handles the basic checked state above.
+        document.querySelectorAll('.toggle-checkbox').forEach(toggle => {
+            toggle.addEventListener('change', function() {
+                if(this.checked) {
+                    this.style.right = '0';
+                    this.style.borderColor = '#00daf3';
+                    this.nextElementSibling.style.backgroundColor = '#004f58';
+                } else {
+                    this.style.right = '24px';
+                    this.style.borderColor = '#333333';
+                    this.nextElementSibling.style.backgroundColor = '#353534';
+                }
+            });
+        });
+    </script>
+</body></html>

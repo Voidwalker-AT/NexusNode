@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode - Media Center</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#e5e2e1",
+                        "on-primary-fixed-variant": "#004f58",
+                        "surface-container-high": "#2a2a2a",
+                        "on-surface-variant": "#bac9cc",
+                        "primary-fixed-dim": "#00daf3",
+                        "graphite-surface": "#121212",
+                        "on-tertiary-fixed": "#1b1b1c",
+                        "background": "#131313",
+                        "inverse-on-surface": "#313030",
+                        "surface-dim": "#131313",
+                        "secondary-fixed": "#f4d9ff",
+                        "on-tertiary": "#303030",
+                        "border-subtle": "#333333",
+                        "surface-container-lowest": "#0e0e0e",
+                        "secondary-container": "#ab08ff",
+                        "on-secondary-container": "#fef0ff",
+                        "primary-container": "#00e5ff",
+                        "graphite-raised": "#1E1E1E",
+                        "tertiary": "#efeceb",
+                        "oled-black": "#000000",
+                        "on-secondary-fixed-variant": "#6f00a9",
+                        "on-tertiary-container": "#5a5959",
+                        "surface-container": "#201f1f",
+                        "on-error": "#690005",
+                        "on-secondary": "#4e0078",
+                        "tertiary-container": "#d2d0cf",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "surface-bright": "#393939",
+                        "primary": "#c3f5ff",
+                        "primary-fixed": "#9cf0ff",
+                        "surface-container-low": "#1c1b1b",
+                        "status-healthy": "#00C853",
+                        "surface": "#131313",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "error-container": "#93000a",
+                        "on-primary-container": "#00626e",
+                        "on-primary": "#00363d",
+                        "on-secondary-fixed": "#2f004b",
+                        "surface-tint": "#00daf3",
+                        "status-critical": "#D50000",
+                        "outline-variant": "#3b494c",
+                        "surface-variant": "#353534",
+                        "secondary-fixed-dim": "#e4b5ff",
+                        "inverse-primary": "#006875",
+                        "inverse-surface": "#e5e2e1",
+                        "tertiary-fixed": "#e5e2e1",
+                        "surface-container-highest": "#353534",
+                        "error": "#ffb4ab",
+                        "on-error-container": "#ffdad6",
+                        "secondary": "#e4b5ff",
+                        "on-primary-fixed": "#001f24",
+                        "on-background": "#e5e2e1",
+                        "status-warning": "#FFD600",
+                        "outline": "#849396"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "margin-mobile": "16px",
+                        "touch-target": "44px",
+                        "margin-desktop": "24px",
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "stack-gap": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "data-md": ["JetBrains Mono"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "data-lg": ["JetBrains Mono"],
+                        "data-sm": ["JetBrains Mono"],
+                        "headline-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700" }],
+                        "data-md": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-lg": ["16px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "data-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Custom Scrollbar for dark theme */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #131313;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333333;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #5a5959;
+        }
+        
+        .border-glow:focus-within {
+            border-color: #00daf3;
+            box-shadow: 0 0 0 1px #00daf3;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md h-screen overflow-hidden flex flex-col">
+<!-- TopNavBar -->
+<nav aria-label="Top Navigation" class="hidden md:flex fixed top-0 left-0 w-full z-50 items-center justify-between px-margin-desktop h-12 bg-background border-b border-border-subtle">
+<div class="flex items-center space-x-gutter">
+<span class="font-headline-lg text-headline-lg font-bold text-primary-fixed-dim tracking-tight">NexusNode</span>
+</div>
+<div class="flex items-center space-x-margin-desktop h-full">
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-2 py-1 rounded" href="#">Dashboard</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-2 py-1 rounded" href="#">Vault</a>
+<a aria-current="page" class="text-primary-fixed-dim border-b-2 border-primary-fixed-dim pb-1 font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-2 h-full flex items-center pt-1" href="#">Media</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-2 py-1 rounded" href="#">Tasks</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-2 py-1 rounded" href="#">AI Studio</a>
+</div>
+<div class="flex items-center space-x-stack-gap">
+<button class="text-primary-fixed-dim hover:text-primary hover:bg-surface-container-low transition-colors p-1 rounded">
+<span class="material-symbols-outlined text-data-lg">sensors</span>
+</button>
+<button class="text-primary-fixed-dim hover:text-primary hover:bg-surface-container-low transition-colors p-1 rounded">
+<span class="material-symbols-outlined text-data-lg">dns</span>
+</button>
+<button class="text-primary-fixed-dim hover:text-primary hover:bg-surface-container-low transition-colors p-1 rounded relative">
+<span class="material-symbols-outlined text-data-lg">notifications</span>
+<span class="absolute top-1 right-1 w-2 h-2 bg-status-critical rounded-full"></span>
+</button>
+<button class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-2 py-1 rounded ml-2">More</button>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 mt-12 overflow-hidden flex flex-col md:flex-row p-gutter gap-gutter max-w-[1600px] mx-auto w-full">
+<!-- Left Panel: Download Controls -->
+<section class="w-full md:w-1/3 flex flex-col gap-stack-gap bg-graphite-surface border border-border-subtle rounded-DEFAULT overflow-hidden">
+<div class="p-gutter border-b border-border-subtle bg-surface-container flex items-center justify-between">
+<h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-fixed-dim">download</span>
+                    Acquisition Engine
+                </h2>
+<span class="px-2 py-0.5 border border-primary-fixed-dim text-primary-fixed-dim font-label-caps text-label-caps rounded-sm">YT-DLP CORE</span>
+</div>
+<div class="p-gutter flex-1 overflow-y-auto space-y-margin-desktop">
+<!-- URL Input -->
+<div class="space-y-stack-gap">
+<label class="block font-data-sm text-data-sm text-on-surface-variant">TARGET URI</label>
+<div class="relative border-glow border border-border-subtle bg-graphite-raised rounded-DEFAULT flex items-center px-3 py-2 transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant mr-2 text-data-lg">link</span>
+<input class="bg-transparent border-none w-full text-on-surface font-data-md text-data-md focus:outline-none focus:ring-0 placeholder-on-tertiary-container p-0" placeholder="https://..." type="text"/>
+</div>
+</div>
+<!-- Format Selection -->
+<div class="grid grid-cols-2 gap-stack-gap">
+<div class="space-y-stack-gap">
+<label class="block font-data-sm text-data-sm text-on-surface-variant">FORMAT</label>
+<select class="w-full bg-graphite-raised border border-border-subtle rounded-DEFAULT px-3 py-2 text-on-surface font-body-sm focus:border-primary-fixed-dim focus:ring-0 outline-none appearance-none">
+<option>Video + Audio (MKV)</option>
+<option>Video Only (MP4)</option>
+<option>Audio Only (FLAC)</option>
+<option>Audio Only (MP3)</option>
+</select>
+</div>
+<div class="space-y-stack-gap">
+<label class="block font-data-sm text-data-sm text-on-surface-variant">QUALITY</label>
+<select class="w-full bg-graphite-raised border border-border-subtle rounded-DEFAULT px-3 py-2 text-on-surface font-body-sm focus:border-primary-fixed-dim focus:ring-0 outline-none appearance-none">
+<option>Best Available (4K)</option>
+<option>1080p</option>
+<option>720p</option>
+<option>Custom Rule...</option>
+</select>
+</div>
+</div>
+<!-- Options -->
+<div class="space-y-stack-gap">
+<label class="block font-data-sm text-data-sm text-on-surface-variant">EXTRACTION PARAMETERS</label>
+<div class="bg-graphite-raised border border-border-subtle rounded-DEFAULT p-3 space-y-3">
+<label class="flex items-center space-x-3 cursor-pointer group">
+<input checked="" class="form-checkbox h-4 w-4 text-primary-fixed-dim border-border-subtle bg-surface-dim focus:ring-primary-fixed-dim rounded-sm" type="checkbox"/>
+<span class="font-body-sm text-on-surface group-hover:text-primary-fixed-dim transition-colors">Embed Metadata &amp; Chapters</span>
+</label>
+<label class="flex items-center space-x-3 cursor-pointer group">
+<input checked="" class="form-checkbox h-4 w-4 text-primary-fixed-dim border-border-subtle bg-surface-dim focus:ring-primary-fixed-dim rounded-sm" type="checkbox"/>
+<span class="font-body-sm text-on-surface group-hover:text-primary-fixed-dim transition-colors">Download Subtitles (en, auto-gen)</span>
+</label>
+<label class="flex items-center space-x-3 cursor-pointer group">
+<input class="form-checkbox h-4 w-4 text-primary-fixed-dim border-border-subtle bg-surface-dim focus:ring-primary-fixed-dim rounded-sm" type="checkbox"/>
+<span class="font-body-sm text-on-surface group-hover:text-primary-fixed-dim transition-colors">SponsorBlock Removal</span>
+</label>
+</div>
+</div>
+</div>
+<div class="p-gutter border-t border-border-subtle bg-surface-container">
+<button class="w-full bg-graphite-raised border border-primary-fixed-dim text-primary-fixed-dim font-data-md text-data-md py-3 rounded-DEFAULT hover:bg-surface-container-high active:scale-[0.98] transition-all flex justify-center items-center gap-2">
+<span class="material-symbols-outlined text-data-lg">add_task</span>
+                    QUEUE DOWNLOAD
+                </button>
+</div>
+</section>
+<!-- Right Panel: Queue & Library -->
+<section class="w-full md:w-2/3 flex flex-col gap-gutter h-full">
+<!-- Active Downloads -->
+<div class="flex-1 flex flex-col bg-graphite-surface border border-border-subtle rounded-DEFAULT overflow-hidden min-h-[300px]">
+<div class="px-gutter py-3 border-b border-border-subtle bg-surface-container flex items-center justify-between">
+<h2 class="font-data-md text-data-md text-on-surface uppercase flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-fixed-dim text-[16px]">sync</span>
+                        Active Operations
+                    </h2>
+<span class="font-data-sm text-data-sm text-on-surface-variant">2 IN PROGRESS</span>
+</div>
+<div class="flex-1 overflow-y-auto p-gutter space-y-stack-gap">
+<!-- Active Item 1 -->
+<div class="border border-border-subtle bg-graphite-raised rounded-DEFAULT p-3">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-surface-dim border border-border-subtle rounded-sm flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary-fixed-dim">movie</span>
+</div>
+<div>
+<h4 class="font-body-md text-on-surface leading-tight line-clamp-1">Advanced CSS Grid Layouts Masterclass</h4>
+<p class="font-data-sm text-on-surface-variant mt-1">Downloading [22/137] segments • yt-dlp</p>
+</div>
+</div>
+<button class="text-on-surface-variant hover:text-status-critical transition-colors p-1">
+<span class="material-symbols-outlined text-data-lg">close</span>
+</button>
+</div>
+<div class="flex items-center gap-4 mt-3">
+<div class="flex-1 h-2 bg-surface-dim border border-border-subtle rounded-full overflow-hidden">
+<div class="h-full bg-primary-fixed-dim w-[45%] shadow-[0_0_8px_rgba(0,218,243,0.5)]"></div>
+</div>
+<div class="font-data-md text-data-md text-primary-fixed-dim shrink-0 text-right min-w-[60px]">45%</div>
+</div>
+<div class="flex justify-between items-center mt-2 font-data-sm text-data-sm">
+<span class="text-on-surface-variant">1.2 GB / 2.8 GB</span>
+<span class="text-status-healthy font-semibold">12.4 MB/s</span>
+<span class="text-on-surface-variant">ETA: 02:14</span>
+</div>
+</div>
+<!-- Queued Item -->
+<div class="border border-border-subtle bg-surface-dim rounded-DEFAULT p-3 opacity-60">
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 bg-surface-container border border-border-subtle rounded-sm flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-surface-variant text-[16px]">schedule</span>
+</div>
+<div>
+<h4 class="font-body-sm text-on-surface line-clamp-1">System Architecture Design Patterns</h4>
+<p class="font-data-sm text-on-surface-variant">QUEUED</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Compact Library -->
+<div class="h-1/3 bg-graphite-surface border border-border-subtle rounded-DEFAULT overflow-hidden flex flex-col relative group">
+<div class="px-gutter py-2 border-b border-border-subtle bg-surface-container flex items-center justify-between z-10">
+<h2 class="font-data-md text-data-md text-on-surface uppercase">Recent Ingests</h2>
+<button class="text-primary-fixed-dim text-data-sm font-data-sm hover:underline">VIEW ALL</button>
+</div>
+<div class="flex-1 overflow-y-auto p-unit">
+<table class="w-full text-left border-collapse">
+<tbody class="font-body-sm">
+<tr class="border-b border-border-subtle hover:bg-surface-container-low transition-colors cursor-pointer group/row">
+<td class="py-2 px-3 w-8 text-on-surface-variant"><span class="material-symbols-outlined text-[16px]">check_circle</span></td>
+<td class="py-2 px-3 text-on-surface truncate max-w-[200px]">Docker Containerization Guide 2024</td>
+<td class="py-2 px-3 text-on-surface-variant font-data-sm text-right">4.2 GB</td>
+<td class="py-2 px-3 text-on-surface-variant font-data-sm text-right">10m ago</td>
+<td class="py-2 px-3 text-right">
+<button class="opacity-0 group-hover/row:opacity-100 text-primary-fixed-dim hover:text-primary transition-opacity">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+</td>
+</tr>
+<tr class="border-b border-border-subtle hover:bg-surface-container-low transition-colors cursor-pointer group/row">
+<td class="py-2 px-3 w-8 text-on-surface-variant"><span class="material-symbols-outlined text-[16px]">check_circle</span></td>
+<td class="py-2 px-3 text-on-surface truncate max-w-[200px]">Network Protocols Explained - TCP/IP</td>
+<td class="py-2 px-3 text-on-surface-variant font-data-sm text-right">850 MB</td>
+<td class="py-2 px-3 text-on-surface-variant font-data-sm text-right">1h ago</td>
+<td class="py-2 px-3 text-right">
+<button class="opacity-0 group-hover/row:opacity-100 text-primary-fixed-dim hover:text-primary transition-opacity">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Contextual Player Overlay (Simulated Hover State) -->
+<div class="absolute bottom-4 right-4 w-64 bg-graphite-raised border border-border-subtle shadow-lg rounded-DEFAULT overflow-hidden hidden group-hover:flex flex-col z-20">
+<div class="h-32 bg-surface-dim relative group/player">
+<!-- Placeholder for video thumbnail -->
+<div class="absolute inset-0 bg-[url('placeholder')] bg-cover bg-center opacity-50 mix-blend-luminosity" data-alt="A dark, technical server room scene with subtle cyan glowing LEDs on rack mounts, cinematic lighting, focused on digital data transfer concepts."></div>
+<div class="absolute inset-0 flex items-center justify-center">
+<button class="w-10 h-10 rounded-full bg-background/80 border border-primary-fixed-dim flex items-center justify-center text-primary-fixed-dim hover:bg-primary-fixed-dim hover:text-background transition-colors">
+<span class="material-symbols-outlined">play_arrow</span>
+</button>
+</div>
+<div class="absolute bottom-1 right-1 bg-background/90 px-1 py-0.5 rounded text-[10px] font-data-sm text-on-surface">14:22</div>
+</div>
+<div class="p-2">
+<h5 class="font-body-sm text-on-surface line-clamp-1 text-[11px]">Docker Containerization Guide 2024</h5>
+</div>
+</div>
+</div>
+</section>
+</main>
+</body></html>

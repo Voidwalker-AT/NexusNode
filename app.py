@@ -107,7 +107,7 @@ def init_unified_db():
                 CREATE TABLE IF NOT EXISTS background_tasks (
                     id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
-                    task_type TEXT NOT NULL,
+                    type TEXT NOT NULL,
                     status TEXT NOT NULL,
                     progress INTEGER NOT NULL DEFAULT 0,
                     logs TEXT DEFAULT '[]',
@@ -119,12 +119,18 @@ def init_unified_db():
                 );
             """)
 
-            # Migration: Ensure owner_user_id exists if table was previously created
+            # Migration: Ensure all columns exist
             cur = conn.cursor()
             cur.execute("PRAGMA table_info(background_tasks);")
             task_cols = [c[1] for c in cur.fetchall()]
             if "owner_user_id" not in task_cols:
                 conn.execute("ALTER TABLE background_tasks ADD COLUMN owner_user_id TEXT NOT NULL DEFAULT 'admin';")
+            if "type" not in task_cols and "task_type" in task_cols:
+                conn.execute("ALTER TABLE background_tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'generic';")
+            if "error" not in task_cols:
+                conn.execute("ALTER TABLE background_tasks ADD COLUMN error TEXT;")
+            if "completed_at" not in task_cols:
+                conn.execute("ALTER TABLE background_tasks ADD COLUMN completed_at REAL;")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_owner ON background_tasks(owner_user_id);")
 
             # 4. Temporary Share Links table with owner_user_id
@@ -1625,7 +1631,7 @@ def api_login():
             return jsonify({"error": "locked_out", "message": f"Too many failed login attempts. Locked for {remaining}s."}), 429
 
     data = request.get_json(force=True, silent=True) or {}
-    user_id = str(data.get("user_id", "")).strip().lower()
+    user_id = str(data.get("user_id") or data.get("username") or "").strip().lower()
     password = str(data.get("password", "")).strip()
 
     if not user_id or not password:
@@ -2096,10 +2102,16 @@ def list_tasks():
         conn = get_db_connection()
         try:
             cur = conn.cursor()
+            cur.execute("PRAGMA table_info(background_tasks);")
+            tcols = [c[1] for c in cur.fetchall()]
+            type_col = "type" if "type" in tcols else "task_type"
+            err_col = "error" if "error" in tcols else "NULL as error"
+
+            query = f"SELECT id, title, {type_col} as task_type, status, progress, logs, {err_col}, owner_user_id, created_at, updated_at FROM background_tasks"
             if is_admin:
-                cur.execute("SELECT id, title, task_type, status, progress, logs, error, owner_user_id, created_at, updated_at FROM background_tasks ORDER BY created_at DESC LIMIT 50")
+                cur.execute(f"{query} ORDER BY created_at DESC LIMIT 50")
             else:
-                cur.execute("SELECT id, title, task_type, status, progress, logs, error, owner_user_id, created_at, updated_at FROM background_tasks WHERE owner_user_id = ? ORDER BY created_at DESC LIMIT 50", (user_id,))
+                cur.execute(f"{query} WHERE owner_user_id = ? ORDER BY created_at DESC LIMIT 50", (user_id,))
             rows = cur.fetchall()
             tasks = []
             for r in rows:

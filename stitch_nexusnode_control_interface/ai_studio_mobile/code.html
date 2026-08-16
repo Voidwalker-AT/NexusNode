@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode - AI Studio</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-surface": "#e5e2e1",
+                      "on-primary-fixed-variant": "#004f58",
+                      "surface-container-high": "#2a2a2a",
+                      "on-surface-variant": "#bac9cc",
+                      "primary-fixed-dim": "#00daf3",
+                      "graphite-surface": "#121212",
+                      "on-tertiary-fixed": "#1b1b1c",
+                      "background": "#131313",
+                      "inverse-on-surface": "#313030",
+                      "surface-dim": "#131313",
+                      "secondary-fixed": "#f4d9ff",
+                      "on-tertiary": "#303030",
+                      "border-subtle": "#333333",
+                      "surface-container-lowest": "#0e0e0e",
+                      "secondary-container": "#ab08ff",
+                      "on-secondary-container": "#fef0ff",
+                      "primary-container": "#00e5ff",
+                      "graphite-raised": "#1E1E1E",
+                      "tertiary": "#efeceb",
+                      "oled-black": "#000000",
+                      "on-secondary-fixed-variant": "#6f00a9",
+                      "on-tertiary-container": "#5a5959",
+                      "surface-container": "#201f1f",
+                      "on-error": "#690005",
+                      "on-secondary": "#4e0078",
+                      "tertiary-container": "#d2d0cf",
+                      "on-tertiary-fixed-variant": "#474746",
+                      "surface-bright": "#393939",
+                      "primary": "#c3f5ff",
+                      "primary-fixed": "#9cf0ff",
+                      "surface-container-low": "#1c1b1b",
+                      "status-healthy": "#00C853",
+                      "surface": "#131313",
+                      "tertiary-fixed-dim": "#c8c6c5",
+                      "error-container": "#93000a",
+                      "on-primary-container": "#00626e",
+                      "on-primary": "#00363d",
+                      "on-secondary-fixed": "#2f004b",
+                      "surface-tint": "#00daf3",
+                      "status-critical": "#D50000",
+                      "outline-variant": "#3b494c",
+                      "surface-variant": "#353534",
+                      "secondary-fixed-dim": "#e4b5ff",
+                      "inverse-primary": "#006875",
+                      "inverse-surface": "#e5e2e1",
+                      "tertiary-fixed": "#e5e2e1",
+                      "surface-container-highest": "#353534",
+                      "error": "#ffb4ab",
+                      "on-error-container": "#ffdad6",
+                      "secondary": "#e4b5ff",
+                      "on-primary-fixed": "#001f24",
+                      "on-background": "#e5e2e1",
+                      "status-warning": "#FFD600",
+                      "outline": "#849396"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "margin-mobile": "16px",
+                      "touch-target": "44px",
+                      "margin-desktop": "24px",
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "stack-gap": "8px"
+              },
+              "fontFamily": {
+                      "headline-lg": [
+                              "Inter"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "data-md": [
+                              "JetBrains Mono"
+                      ],
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "data-lg": [
+                              "JetBrains Mono"
+                      ],
+                      "data-sm": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-md": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "headline-lg": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "label-caps": [
+                              "10px",
+                              {
+                                      "lineHeight": "12px",
+                                      "letterSpacing": "0.06em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "data-md": [
+                              "13px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "data-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "data-sm": [
+                              "11px",
+                              {
+                                      "lineHeight": "14px",
+                                      "letterSpacing": "0.02em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-md": [
+                              "18px",
+                              {
+                                      "lineHeight": "24px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        body {
+            background-color: theme('colors.oled-black');
+            color: theme('colors.on-surface');
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="flex flex-col h-[844px] w-[390px] mx-auto relative overflow-hidden bg-oled-black border-x border-border-subtle selection:bg-primary-fixed-dim selection:text-oled-black">
+<!-- Top App Bar (Mobile Context) -->
+<header class="flex items-center justify-between px-margin-mobile h-12 bg-graphite-surface z-50 shrink-0 border-b border-border-subtle">
+<h1 class="font-headline-md text-headline-md text-on-surface">AI Studio</h1>
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-primary-fixed-dim" data-icon="dns" style="font-variation-settings: 'FILL' 1;">dns</span>
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="notifications">notifications</span>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-stack-gap p-margin-mobile pb-[calc(44px+16px)]">
+<!-- LOADED MODEL STATS -->
+<section class="bg-graphite-surface border border-secondary-container rounded p-3 flex flex-col gap-3 relative overflow-hidden">
+<!-- Subtle gradient background for "Purple accent" -->
+<div class="absolute top-0 right-0 w-32 h-32 bg-secondary-container opacity-10 rounded-full blur-2xl pointer-events-none -mr-10 -mt-10"></div>
+<div class="flex justify-between items-start z-10">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps text-secondary-fixed">LOADED MODEL</span>
+<h2 class="font-headline-md text-headline-md text-on-surface mt-1">Qwen 2.5</h2>
+<span class="font-data-sm text-data-sm text-on-surface-variant mt-0.5">qwen-2.5-7b-instruct-q4_k_m.gguf</span>
+</div>
+<div class="bg-status-healthy/20 border border-status-healthy px-2 py-0.5 rounded">
+<span class="font-label-caps text-label-caps text-status-healthy">RUNNING</span>
+</div>
+</div>
+<div class="grid grid-cols-3 gap-2 z-10 border-t border-border-subtle pt-3">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps text-on-surface-variant mb-1">VRAM</span>
+<span class="font-data-md text-data-md text-on-surface">4.8 GB</span>
+</div>
+<div class="flex flex-col border-l border-border-subtle pl-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant mb-1">SIZE</span>
+<span class="font-data-md text-data-md text-on-surface">1.2 GB</span>
+</div>
+<div class="flex flex-col border-l border-border-subtle pl-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant mb-1">CONTEXT</span>
+<span class="font-data-md text-data-md text-on-surface">8192</span>
+</div>
+</div>
+<!-- VRAM Meter -->
+<div class="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden z-10 mt-1">
+<div class="h-full bg-secondary-container w-[65%] rounded-full"></div>
+</div>
+</section>
+<!-- REAL-TIME INFERENCE STATS -->
+<section class="grid grid-cols-2 gap-stack-gap">
+<div class="bg-graphite-surface border border-border-subtle rounded p-3 flex flex-col">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-[16px] text-status-warning" data-icon="bolt">bolt</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant">SPEED</span>
+</div>
+<div class="flex items-baseline gap-1">
+<span class="font-data-lg text-data-lg text-on-surface">24.5</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">t/s</span>
+</div>
+</div>
+<div class="bg-graphite-surface border border-border-subtle rounded p-3 flex flex-col">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-[16px] text-primary-fixed-dim" data-icon="timer">timer</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant">LOAD TIME</span>
+</div>
+<div class="flex items-baseline gap-1">
+<span class="font-data-lg text-data-lg text-on-surface">840</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">ms</span>
+</div>
+</div>
+</section>
+<!-- MODEL SELECTOR -->
+<section class="flex flex-col gap-3 mt-2 flex-1">
+<div class="flex justify-between items-center">
+<h3 class="font-body-md text-body-md font-semibold text-on-surface">Available Models</h3>
+<span class="font-data-sm text-data-sm text-on-surface-variant">5 Local</span>
+</div>
+<!-- Search -->
+<div class="relative w-full h-touch-target">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" data-icon="search">search</span>
+<input class="w-full h-full bg-graphite-raised border border-border-subtle rounded pl-10 pr-4 font-body-sm text-body-sm text-on-surface placeholder-on-surface-variant focus:outline-none focus:border-primary-fixed-dim transition-colors" placeholder="Search models..." type="text"/>
+</div>
+<!-- Model List -->
+<div class="flex flex-col gap-2">
+<!-- Selected / Loaded Model in List -->
+<button class="w-full text-left bg-graphite-raised border border-secondary-container rounded p-3 flex items-center justify-between active:scale-[0.98] transition-transform">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<span class="font-body-sm text-body-sm font-semibold text-on-surface">Qwen 2.5 (7B)</span>
+<span class="font-label-caps text-label-caps bg-secondary-container/20 text-secondary-fixed px-1.5 py-[2px] rounded border border-secondary-container/50">LOADED</span>
+</div>
+<span class="font-data-sm text-data-sm text-on-surface-variant">1.2GB • Q4_K_M</span>
+</div>
+<span class="material-symbols-outlined text-secondary-container" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</button>
+<!-- Available Model -->
+<button class="w-full text-left bg-graphite-surface border border-border-subtle rounded p-3 flex items-center justify-between hover:bg-surface-container-low active:bg-surface-container-high transition-colors active:scale-[0.98]">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<span class="font-body-sm text-body-sm font-semibold text-on-surface">Llama 3 (8B)</span>
+</div>
+<span class="font-data-sm text-data-sm text-on-surface-variant">4.7GB • Q4_K_M</span>
+</div>
+<div class="font-label-caps text-label-caps border border-border-subtle text-on-surface-variant px-3 py-1.5 rounded bg-surface">
+                        LOAD
+                    </div>
+</button>
+<!-- Available Model -->
+<button class="w-full text-left bg-graphite-surface border border-border-subtle rounded p-3 flex items-center justify-between hover:bg-surface-container-low active:bg-surface-container-high transition-colors active:scale-[0.98]">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<span class="font-body-sm text-body-sm font-semibold text-on-surface">Mistral v0.2 (7B)</span>
+</div>
+<span class="font-data-sm text-data-sm text-on-surface-variant">4.1GB • Q4_K_M</span>
+</div>
+<div class="font-label-caps text-label-caps border border-border-subtle text-on-surface-variant px-3 py-1.5 rounded bg-surface">
+                        LOAD
+                    </div>
+</button>
+<!-- Downloading Model -->
+<button class="w-full text-left bg-graphite-surface border border-border-subtle rounded p-3 flex flex-col gap-2 pointer-events-none opacity-80">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="font-body-sm text-body-sm font-semibold text-on-surface-variant">Phi-3 Mini (3.8B)</span>
+</div>
+<span class="font-data-sm text-data-sm text-primary-fixed-dim">45%</span>
+</div>
+<!-- Progress Bar -->
+<div class="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary-fixed-dim w-[45%] rounded-full"></div>
+</div>
+</button>
+</div>
+</section>
+</main>
+<!-- BottomNavBar (Generated from JSON) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-touch-target px-margin-mobile bg-surface-container-lowest border-t border-border-subtle touch-none select-none">
+<!-- Inactive -->
+<div class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform active:bg-surface-container-high h-full w-full max-w-[60px] cursor-pointer">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-caps text-label-caps mt-1">Dash</span>
+</div>
+<!-- Inactive -->
+<div class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform active:bg-surface-container-high h-full w-full max-w-[60px] cursor-pointer">
+<span class="material-symbols-outlined" data-icon="storage">storage</span>
+<span class="font-label-caps text-label-caps mt-1">Vault</span>
+</div>
+<!-- Inactive -->
+<div class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform active:bg-surface-container-high h-full w-full max-w-[60px] cursor-pointer">
+<span class="material-symbols-outlined" data-icon="movie">movie</span>
+<span class="font-label-caps text-label-caps mt-1">Media</span>
+</div>
+<!-- Inactive -->
+<div class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform active:bg-surface-container-high h-full w-full max-w-[60px] cursor-pointer">
+<span class="material-symbols-outlined" data-icon="task_alt">task_alt</span>
+<span class="font-label-caps text-label-caps mt-1">Tasks</span>
+</div>
+<!-- Active -->
+<div class="flex flex-col items-center justify-center text-primary-fixed-dim active:scale-95 transition-transform active:bg-surface-container-high h-full w-full max-w-[60px] cursor-pointer">
+<span class="material-symbols-outlined" data-icon="psychology" style="font-variation-settings: 'FILL' 1;">psychology</span>
+<span class="font-label-caps text-label-caps mt-1">AI</span>
+</div>
+<!-- Inactive -->
+<div class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform active:bg-surface-container-high h-full w-full max-w-[60px] cursor-pointer">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+<span class="font-label-caps text-label-caps mt-1">More</span>
+</div>
+</nav>
+</body></html>

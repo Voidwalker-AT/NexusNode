@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode Vault</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+<!-- Tailwind & Config -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error": "#690005",
+                        "surface-tint": "#00daf3",
+                        "error": "#ffb4ab",
+                        "on-secondary-fixed": "#2a0053",
+                        "surface-variant": "#2e3638",
+                        "error-container": "#93000a",
+                        "surface-container-high": "#242b2d",
+                        "on-secondary": "#460283",
+                        "on-surface": "#dce4e5",
+                        "on-tertiary-container": "#6f5500",
+                        "on-secondary-fixed-variant": "#5e289b",
+                        "tertiary-fixed-dim": "#f3bf26",
+                        "on-tertiary": "#3e2e00",
+                        "on-background": "#dce4e5",
+                        "surface-bright": "#333a3c",
+                        "on-tertiary-fixed": "#251a00",
+                        "on-error-container": "#ffdad6",
+                        "inverse-on-surface": "#2a3233",
+                        "primary-fixed-dim": "#00daf3",
+                        "tertiary-fixed": "#ffdf96",
+                        "outline-variant": "#3b494c",
+                        "on-surface-variant": "#bac9cc",
+                        "surface-container-lowest": "#080f11",
+                        "outline": "#849396",
+                        "inverse-primary": "#006875",
+                        "on-tertiary-fixed-variant": "#594400",
+                        "surface": "#0d1516",
+                        "on-primary-fixed-variant": "#004f58",
+                        "primary-fixed": "#9cf0ff",
+                        "on-secondary-container": "#cfa7ff",
+                        "on-primary-container": "#00626e",
+                        "on-primary-fixed": "#001f24",
+                        "primary": "#c3f5ff",
+                        "surface-container": "#192122",
+                        "tertiary": "#ffeac0",
+                        "surface-dim": "#0d1516",
+                        "background": "#0d1516",
+                        "surface-container-low": "#151d1e",
+                        "surface-container-highest": "#2e3638",
+                        "primary-container": "#00e5ff",
+                        "secondary": "#dab9ff",
+                        "inverse-surface": "#dce4e5",
+                        "tertiary-container": "#fec931",
+                        "on-primary": "#00363d",
+                        "secondary-fixed": "#eedbff",
+                        "secondary-container": "#602b9d",
+                        "secondary-fixed-dim": "#dab9ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "stack-gap": "8px",
+                        "container-padding": "16px",
+                        "element-gap": "4px",
+                        "section-margin": "24px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "body-sm": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "data-md": ["JetBrains Mono"],
+                        "data-lg": ["JetBrains Mono"],
+                        "headline-lg": ["Inter"],
+                        "data-sm": ["JetBrains Mono"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "label-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700" }],
+                        "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "data-md": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "data-lg": ["16px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "data-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .icon-fill { font-variation-settings: 'FILL' 1; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface-container-lowest text-on-surface font-body-md min-h-screen flex flex-col antialiased">
+<!-- Mobile Header: Search & Filters -->
+<header class="sticky top-0 z-40 bg-surface-container-lowest/95 backdrop-blur-md pt-4 pb-2 px-container-padding border-b border-outline-variant">
+<div class="flex items-center justify-between mb-3">
+<h1 class="font-headline-md text-headline-md text-on-surface">Vault</h1>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">add_circle</span>
+</button>
+</div>
+<!-- Search Bar -->
+<div class="relative w-full mb-3">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant material-symbols-outlined text-[20px]">search</span>
+<input class="w-full bg-surface-container border border-outline-variant rounded-DEFAULT h-10 pl-10 pr-4 text-data-md font-data-md text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary transition-colors" placeholder="Search files, logs, configs..." type="text"/>
+</div>
+<!-- Filters -->
+<div class="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
+<button class="bg-primary/10 border border-primary text-primary px-3 py-1.5 rounded-full flex items-center gap-1 whitespace-nowrap font-data-sm text-data-sm">
+<span class="material-symbols-outlined text-[16px] icon-fill">check_circle</span>
+                All Files
+            </button>
+<button class="bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface px-3 py-1.5 rounded-full flex items-center gap-1 whitespace-nowrap font-data-sm text-data-sm transition-colors">
+                Type
+                <span class="material-symbols-outlined text-[16px]">arrow_drop_down</span>
+</button>
+<button class="bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface px-3 py-1.5 rounded-full flex items-center gap-1 whitespace-nowrap font-data-sm text-data-sm transition-colors">
+                Date
+                <span class="material-symbols-outlined text-[16px]">arrow_drop_down</span>
+</button>
+<button class="bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface px-3 py-1.5 rounded-full flex items-center gap-1 whitespace-nowrap font-data-sm text-data-sm transition-colors">
+                Size
+                <span class="material-symbols-outlined text-[16px]">arrow_drop_down</span>
+</button>
+</div>
+</header>
+<!-- Main Content: File List -->
+<main class="flex-1 px-container-padding py-3 pb-32 flex flex-col gap-stack-gap">
+<!-- Selected Item 1 -->
+<div class="bg-primary/5 border border-primary rounded-DEFAULT p-2 flex items-center gap-3 relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="w-10 h-10 shrink-0 rounded bg-surface border border-primary/30 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined icon-fill">description</span>
+</div>
+<div class="flex-1 min-w-0 flex flex-col">
+<div class="font-data-md text-data-md text-primary truncate">nexus_core_dump.log</div>
+<div class="flex items-center gap-2 mt-0.5 font-data-sm text-data-sm text-primary/70">
+<span>54.2 MB</span>
+<span class="w-1 h-1 rounded-full bg-primary/50"></span>
+<span>10m ago</span>
+</div>
+</div>
+<div class="flex items-center gap-1 text-primary/70">
+<button class="p-1 hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">share</span></button>
+</div>
+</div>
+<!-- Selected Item 2 -->
+<div class="bg-primary/5 border border-primary rounded-DEFAULT p-2 flex items-center gap-3 relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="w-10 h-10 shrink-0 rounded bg-surface border border-primary/30 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined icon-fill">data_object</span>
+</div>
+<div class="flex-1 min-w-0 flex flex-col">
+<div class="font-data-md text-data-md text-primary truncate">auth_matrix_v2.json</div>
+<div class="flex items-center gap-2 mt-0.5 font-data-sm text-data-sm text-primary/70">
+<span>1.2 MB</span>
+<span class="w-1 h-1 rounded-full bg-primary/50"></span>
+<span>2h ago</span>
+</div>
+</div>
+<div class="flex items-center gap-1 text-primary/70">
+<button class="p-1 hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">share</span></button>
+</div>
+</div>
+<!-- Selected Item 3 -->
+<div class="bg-primary/5 border border-primary rounded-DEFAULT p-2 flex items-center gap-3 relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="w-10 h-10 shrink-0 rounded bg-surface border border-primary/30 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined icon-fill">code</span>
+</div>
+<div class="flex-1 min-w-0 flex flex-col">
+<div class="font-data-md text-data-md text-primary truncate">network_topology.xml</div>
+<div class="flex items-center gap-2 mt-0.5 font-data-sm text-data-sm text-primary/70">
+<span>8.4 KB</span>
+<span class="w-1 h-1 rounded-full bg-primary/50"></span>
+<span>5h ago</span>
+</div>
+</div>
+<div class="flex items-center gap-1 text-primary/70">
+<button class="p-1 hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">share</span></button>
+</div>
+</div>
+<!-- Standard Item -->
+<div class="bg-surface-container border border-outline-variant rounded-DEFAULT p-2 flex items-center gap-3 hover:border-outline transition-colors">
+<div class="w-10 h-10 shrink-0 rounded bg-surface-container-lowest border border-outline-variant flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined">folder_zip</span>
+</div>
+<div class="flex-1 min-w-0 flex flex-col">
+<div class="font-data-md text-data-md text-on-surface truncate">system_backup_daily.tar.gz</div>
+<div class="flex items-center gap-2 mt-0.5 font-data-sm text-data-sm text-on-surface-variant">
+<span>2.4 GB</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span>1d ago</span>
+</div>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant">
+<button class="p-1 hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">download</span></button>
+<button class="p-1 hover:text-error transition-colors"><span class="material-symbols-outlined text-[20px]">delete</span></button>
+</div>
+</div>
+<!-- Standard Item -->
+<div class="bg-surface-container border border-outline-variant rounded-DEFAULT p-2 flex items-center gap-3 hover:border-outline transition-colors">
+<div class="w-10 h-10 shrink-0 rounded bg-surface-container-lowest border border-outline-variant flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined">key</span>
+</div>
+<div class="flex-1 min-w-0 flex flex-col">
+<div class="font-data-md text-data-md text-on-surface truncate">access_keys.pem</div>
+<div class="flex items-center gap-2 mt-0.5 font-data-sm text-data-sm text-on-surface-variant">
+<span>4.0 KB</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span>3d ago</span>
+</div>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant">
+<button class="p-1 hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">download</span></button>
+<button class="p-1 hover:text-error transition-colors"><span class="material-symbols-outlined text-[20px]">delete</span></button>
+</div>
+</div>
+<!-- Standard Item -->
+<div class="bg-surface-container border border-outline-variant rounded-DEFAULT p-2 flex items-center gap-3 hover:border-outline transition-colors">
+<div class="w-10 h-10 shrink-0 rounded bg-surface-container-lowest border border-outline-variant flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined">settings_applications</span>
+</div>
+<div class="flex-1 min-w-0 flex flex-col">
+<div class="font-data-md text-data-md text-on-surface truncate">api_gateway_config.yaml</div>
+<div class="flex items-center gap-2 mt-0.5 font-data-sm text-data-sm text-on-surface-variant">
+<span>8.2 KB</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+<span>5d ago</span>
+</div>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant">
+<button class="p-1 hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">download</span></button>
+<button class="p-1 hover:text-error transition-colors"><span class="material-symbols-outlined text-[20px]">delete</span></button>
+</div>
+</div>
+</main>
+<!-- Contextual Selection Bar -->
+<div class="fixed bottom-[72px] left-0 w-full z-40 px-2 pointer-events-none">
+<div class="bg-surface border border-primary rounded-lg p-2 flex justify-between items-center pointer-events-auto shadow-2xl relative overflow-hidden">
+<div class="absolute inset-0 bg-primary/10 pointer-events-none"></div>
+<div class="flex items-center gap-3 relative z-10 pl-2">
+<button class="text-primary hover:text-primary-fixed transition-colors">
+<span class="material-symbols-outlined">close</span>
+</button>
+<span class="font-data-md text-data-md text-primary font-bold">3 items selected</span>
+</div>
+<div class="flex items-center gap-2 relative z-10">
+<button class="p-2 text-primary hover:bg-primary/20 rounded transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined">download</span>
+</button>
+<button class="p-2 text-primary hover:bg-primary/20 rounded transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined">drive_file_move</span>
+</button>
+<button class="p-2 text-error hover:bg-error/20 border border-error/30 rounded transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</div>
+</div>
+<!-- BottomNavBar (Shared Component) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex md:hidden justify-around items-center h-16 px-2 bg-surface border-t border-outline-variant">
+<!-- Dash (Inactive) -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full">
+<span class="material-symbols-outlined mb-1">dashboard</span>
+<span class="font-label-caps text-label-caps">Dash</span>
+</button>
+<!-- Vault (Active) -->
+<button class="flex flex-col items-center justify-center text-primary active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full relative">
+<div class="absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-1 bg-primary rounded-b-full"></div>
+<span class="material-symbols-outlined mb-1 icon-fill">storage</span>
+<span class="font-label-caps text-label-caps">Vault</span>
+</button>
+<!-- Media (Inactive) -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full">
+<span class="material-symbols-outlined mb-1">perm_media</span>
+<span class="font-label-caps text-label-caps">Media</span>
+</button>
+<!-- Tasks (Inactive) -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full">
+<span class="material-symbols-outlined mb-1">checklist</span>
+<span class="font-label-caps text-label-caps">Tasks</span>
+</button>
+<!-- AI (Inactive) -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full">
+<span class="material-symbols-outlined mb-1">psychology</span>
+<span class="font-label-caps text-label-caps">AI</span>
+</button>
+<!-- More (Inactive) -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full">
+<span class="material-symbols-outlined mb-1">menu</span>
+<span class="font-label-caps text-label-caps">More</span>
+</button>
+</nav>
+</body></html>

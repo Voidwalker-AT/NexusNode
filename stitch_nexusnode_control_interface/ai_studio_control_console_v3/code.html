@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode - AI Studio</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-error": "#690005",
+                      "surface-tint": "#00daf3",
+                      "error": "#ffb4ab",
+                      "on-secondary-fixed": "#2a0053",
+                      "surface-variant": "#2e3638",
+                      "error-container": "#93000a",
+                      "surface-container-high": "#242b2d",
+                      "on-secondary": "#460283",
+                      "on-surface": "#dce4e5",
+                      "on-tertiary-container": "#6f5500",
+                      "on-secondary-fixed-variant": "#5e289b",
+                      "tertiary-fixed-dim": "#f3bf26",
+                      "on-tertiary": "#3e2e00",
+                      "on-background": "#dce4e5",
+                      "surface-bright": "#333a3c",
+                      "on-tertiary-fixed": "#251a00",
+                      "on-error-container": "#ffdad6",
+                      "inverse-on-surface": "#2a3233",
+                      "primary-fixed-dim": "#00daf3",
+                      "tertiary-fixed": "#ffdf96",
+                      "outline-variant": "#3b494c",
+                      "on-surface-variant": "#bac9cc",
+                      "surface-container-lowest": "#080f11",
+                      "outline": "#849396",
+                      "inverse-primary": "#006875",
+                      "on-tertiary-fixed-variant": "#594400",
+                      "surface": "#0d1516",
+                      "on-primary-fixed-variant": "#004f58",
+                      "primary-fixed": "#9cf0ff",
+                      "on-secondary-container": "#cfa7ff",
+                      "on-primary-container": "#00626e",
+                      "on-primary-fixed": "#001f24",
+                      "primary": "#c3f5ff",
+                      "surface-container": "#192122",
+                      "tertiary": "#ffeac0",
+                      "surface-dim": "#0d1516",
+                      "background": "#0d1516",
+                      "surface-container-low": "#151d1e",
+                      "surface-container-highest": "#2e3638",
+                      "primary-container": "#00e5ff",
+                      "secondary": "#dab9ff",
+                      "inverse-surface": "#dce4e5",
+                      "tertiary-container": "#fec931",
+                      "on-primary": "#00363d",
+                      "secondary-fixed": "#eedbff",
+                      "secondary-container": "#602b9d",
+                      "secondary-fixed-dim": "#dab9ff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "stack-gap": "8px",
+                      "container-padding": "16px",
+                      "element-gap": "4px",
+                      "section-margin": "24px",
+                      "unit": "4px"
+              },
+              "fontFamily": {
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Inter"
+                      ],
+                      "data-md": [
+                              "JetBrains Mono"
+                      ],
+                      "data-lg": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-lg": [
+                              "Inter"
+                      ],
+                      "data-sm": [
+                              "JetBrains Mono"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-caps": [
+                              "10px",
+                              {
+                                      "lineHeight": "12px",
+                                      "letterSpacing": "0.06em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-md": [
+                              "18px",
+                              {
+                                      "lineHeight": "24px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "data-md": [
+                              "13px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "data-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-lg": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "data-sm": [
+                              "11px",
+                              {
+                                      "lineHeight": "14px",
+                                      "letterSpacing": "0.02em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        body { background-color: #0d1516; color: #dce4e5; }
+        .meter-track { background-color: #2e3638; border-radius: 2px; overflow: hidden; }
+        .meter-fill-primary { background-color: #00daf3; height: 100%; transition: width 0.3s ease; }
+        .meter-fill-secondary { background-color: #dab9ff; height: 100%; transition: width 0.3s ease; }
+        .meter-fill-warning { background-color: #fec931; height: 100%; transition: width 0.3s ease; }
+        .tech-border { border: 1px solid #3b494c; }
+        .tech-card { background-color: #151d1e; border: 1px solid #3b494c; }
+        .tech-focus:focus-within { border-color: #00daf3; }
+        .ai-accent-border { border-color: #602b9d; }
+        .ai-accent-text { color: #dab9ff; }
+        .ai-accent-bg { background-color: #602b9d; }
+    </style>
+</head>
+<body class="font-body-md text-body-md min-h-screen flex flex-col antialiased">
+<!-- TopAppBar -->
+<header class="bg-surface text-primary font-headline-md text-headline-md font-body-md text-body-md font-label-caps text-label-caps docked full-width top-0 border-b border-outline-variant flat no shadows hidden md:flex justify-between items-center px-container-padding h-16 w-full max-w-none z-50">
+<div class="flex items-center gap-4">
+<span class="font-headline-lg text-headline-lg font-bold text-primary tracking-tighter">NexusNode</span>
+</div>
+<nav class="flex gap-6 h-full items-center">
+<a class="text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center h-full" href="#">Dashboard</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center h-full" href="#">Vault</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center h-full" href="#">Media</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 flex items-center h-full" href="#">Tasks</a>
+<a class="text-primary border-b-2 border-primary pb-1 hover:text-primary transition-colors scale-95 duration-100 flex items-center h-full" href="#">AI Studio</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="hover:text-primary transition-colors"><span class="material-symbols-outlined" data-icon="sensors">sensors</span></button>
+<button class="hover:text-primary transition-colors"><span class="material-symbols-outlined" data-icon="notifications">notifications</span></button>
+<button class="hover:text-primary transition-colors"><span class="material-symbols-outlined" data-icon="account_circle">account_circle</span></button>
+<button class="text-on-surface-variant text-label-caps font-label-caps ml-2 border border-outline-variant px-3 py-1 rounded">More</button>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-grow flex flex-col md:flex-row pb-20 md:pb-0 pt-0 md:pt-16 max-w-7xl mx-auto w-full">
+<!-- NavigationDrawer (Desktop) -->
+<aside class="bg-surface-container text-primary font-headline-md text-headline-md font-body-md text-body-md rounded-r-xl border-r border-outline-variant flat no shadows fixed inset-y-0 left-0 z-40 w-80 transform transition-transform hidden lg:flex flex-col pt-16">
+<div class="p-container-padding border-b border-outline-variant flex items-center gap-4">
+<div class="w-10 h-10 bg-primary-container rounded flex items-center justify-center text-on-primary-container font-bold">N</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-primary">System Tools</h2>
+<p class="font-data-sm text-data-sm text-on-surface-variant">v4.2.0-stable</p>
+</div>
+</div>
+<nav class="flex-grow p-container-padding flex flex-col gap-unit">
+<a class="flex items-center gap-3 p-2 text-on-surface-variant hover:bg-surface-variant transition-all duration-150 rounded" href="#"><span class="material-symbols-outlined" data-icon="settings">settings</span> System Tools</a>
+<a class="flex items-center gap-3 p-2 text-on-surface-variant hover:bg-surface-variant transition-all duration-150 rounded" href="#"><span class="material-symbols-outlined" data-icon="terminal">terminal</span> Network Logs</a>
+<a class="flex items-center gap-3 p-2 text-on-surface-variant hover:bg-surface-variant transition-all duration-150 rounded" href="#"><span class="material-symbols-outlined" data-icon="policy">policy</span> Security Audit</a>
+<a class="flex items-center gap-3 p-2 text-on-surface-variant hover:bg-surface-variant transition-all duration-150 rounded" href="#"><span class="material-symbols-outlined" data-icon="backup">backup</span> Backups</a>
+<a class="flex items-center gap-3 p-2 text-on-surface-variant hover:bg-surface-variant transition-all duration-150 rounded" href="#"><span class="material-symbols-outlined" data-icon="system_update">system_update</span> Updates</a>
+<a class="flex items-center gap-3 p-2 text-on-surface-variant hover:bg-surface-variant transition-all duration-150 rounded" href="#"><span class="material-symbols-outlined" data-icon="contact_support">contact_support</span> Support</a>
+</nav>
+<div class="p-container-padding border-t border-outline-variant">
+<button class="w-full py-2 border border-error text-error rounded hover:bg-error hover:text-on-error transition-colors font-data-md text-data-md">Reboot System</button>
+</div>
+</aside>
+<!-- Main Canvas -->
+<div class="flex-grow p-container-padding lg:ml-80 flex flex-col gap-section-margin">
+<!-- Global Status Bar -->
+<section class="tech-card p-container-padding flex flex-wrap gap-6 items-center justify-between">
+<div class="flex gap-6 w-full md:w-auto">
+<div class="flex flex-col gap-1 w-32">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">CPU Load</span>
+<div class="flex items-center gap-2">
+<span class="font-data-lg text-data-lg text-primary">15%</span>
+<div class="meter-track h-2 w-full"><div class="meter-fill-primary w-[15%]"></div></div>
+</div>
+</div>
+<div class="flex flex-col gap-1 w-32">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">RAM Avail</span>
+<div class="flex items-center gap-2">
+<span class="font-data-lg text-data-lg text-tertiary-fixed-dim">800MB</span>
+<div class="meter-track h-2 w-full"><div class="meter-fill-warning w-[85%]"></div></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Dashboard Grid -->
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-stack-gap">
+<!-- Model Configuration Area (Left Column) -->
+<div class="xl:col-span-2 flex flex-col gap-stack-gap">
+<!-- Selected Model Card -->
+<section class="tech-card p-container-padding flex flex-col gap-4">
+<div class="flex justify-between items-start border-b border-outline-variant pb-2">
+<h3 class="font-headline-md text-headline-md text-on-surface">Target Configuration</h3>
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined" data-icon="more_vert">more_vert</span></button>
+</div>
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<span class="font-data-lg text-data-lg text-primary">Qwen 2.5 1.5B</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant bg-surface-container px-2 py-1 rounded tech-border">SELECTED</span>
+</div>
+<div class="grid grid-cols-2 gap-2 mt-2">
+<div class="bg-surface-container p-2 border border-outline-variant rounded flex flex-col">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Quantization</span>
+<span class="font-data-md text-data-md text-on-surface">Q4_K_M</span>
+</div>
+<div class="bg-surface-container p-2 border border-outline-variant rounded flex flex-col">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Context Size</span>
+<span class="font-data-md text-data-md text-on-surface">4096</span>
+</div>
+</div>
+<div class="mt-4 flex gap-2">
+<button class="flex-1 py-2 bg-primary text-on-primary font-data-md text-data-md rounded hover:bg-primary-container transition-colors flex justify-center items-center gap-2">
+<span class="material-symbols-outlined" data-icon="rocket_launch">rocket_launch</span> Load Model
+                                </button>
+</div>
+</div>
+</section>
+<!-- Active Runtime Area -->
+<section class="tech-card p-container-padding flex flex-col gap-4 border-l-4 ai-accent-border">
+<div class="flex justify-between items-center border-b border-outline-variant pb-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined ai-accent-text" data-icon="memory">memory</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Active Runtime</h3>
+</div>
+<span class="font-label-caps text-label-caps ai-accent-text bg-secondary-container/20 px-2 py-1 rounded tech-border flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full ai-accent-bg"></span> LOADED
+                            </span>
+</div>
+<div class="flex flex-col gap-3">
+<div class="flex justify-between items-baseline">
+<span class="font-data-lg text-data-lg text-on-surface">Qwen 2.5 1.5B</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">1.2GB Runtime</span>
+</div>
+<div class="meter-track h-1.5 w-full"><div class="meter-fill-secondary w-[45%]"></div></div>
+<div class="flex justify-between items-center mt-2">
+<span class="font-data-sm text-data-sm text-on-surface-variant">Device: CPU (AVX2)</span>
+<div class="flex gap-2">
+<button class="p-1.5 border border-outline-variant text-on-surface-variant hover:text-primary hover:border-primary rounded transition-colors" title="Clear Context"><span class="material-symbols-outlined text-sm" data-icon="mop">mop</span></button>
+<button class="p-1.5 border border-error text-error hover:bg-error hover:text-on-error rounded transition-colors" title="Unload Model"><span class="material-symbols-outlined text-sm" data-icon="eject">eject</span></button>
+</div>
+</div>
+</div>
+<!-- Telemetry Bento -->
+<div class="grid grid-cols-3 gap-2 mt-2 border-t border-outline-variant pt-4">
+<div class="flex flex-col bg-surface-container p-2 rounded">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Throughput</span>
+<span class="font-data-md text-data-md text-primary">12.5 <span class="text-[10px] text-on-surface-variant">t/s</span></span>
+</div>
+<div class="flex flex-col bg-surface-container p-2 rounded">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Load Time</span>
+<span class="font-data-md text-data-md text-on-surface">1.2s</span>
+</div>
+<div class="flex flex-col bg-surface-container p-2 rounded">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Keep-Alive</span>
+<span class="font-data-md text-data-md text-on-surface">300s</span>
+</div>
+</div>
+<!-- Telemetry Logs -->
+<div class="mt-4 border-t border-outline-variant pt-4 flex flex-col gap-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Inference Telemetry</span>
+<div class="bg-surface-container-lowest p-2 border border-outline-variant rounded h-32 overflow-y-auto font-data-sm text-on-surface-variant flex flex-col gap-1">
+<div class="flex gap-2"><span class="text-primary">[10:42:01]</span><span>SYSTEM: Model Qwen 2.5 1.5B loaded successfully in 1.2s</span></div>
+<div class="flex gap-2"><span class="text-primary">[10:42:05]</span><span>USER: Prompt received (42 tokens)</span></div>
+<div class="flex gap-2"><span class="text-primary">[10:42:06]</span><span>EVAL: Generating response...</span></div>
+<div class="flex gap-2"><span class="text-primary">[10:42:08]</span><span>EVAL: Completed 128 tokens at 12.5 t/s</span></div>
+</div>
+</div>
+</section>
+</div>
+<!-- Right Column (Available Models List) -->
+<div class="flex flex-col gap-stack-gap h-full">
+<section class="tech-card p-container-padding flex flex-col gap-4 h-full">
+<div class="flex justify-between items-center border-b border-outline-variant pb-2">
+<h3 class="font-headline-md text-headline-md text-on-surface">Local Registry</h3>
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-sm" data-icon="refresh">refresh</span></button>
+</div>
+<!-- Search/Filter -->
+<div class="tech-focus flex items-center bg-surface-container border border-outline-variant rounded px-2 py-1 transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant text-sm mr-2" data-icon="search">search</span>
+<input class="bg-transparent border-none text-data-sm text-on-surface w-full focus:ring-0 p-0 placeholder-on-surface-variant" placeholder="Filter models..." type="text"/>
+</div>
+<!-- Model List -->
+<div class="flex flex-col gap-2 overflow-y-auto max-h-[400px] pr-1">
+<!-- List Item -->
+<div class="p-2 border border-outline-variant bg-surface-container-low rounded cursor-pointer hover:border-primary transition-colors group">
+<div class="flex justify-between items-baseline mb-1">
+<span class="font-data-md text-data-md text-on-surface group-hover:text-primary transition-colors">Qwen 2.5 1.5B GGUF</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">1.4 GB</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant">RAM Req: ~1.8GB</span>
+<span class="font-label-caps text-label-caps text-primary border border-primary px-1 rounded">READY</span>
+</div>
+</div>
+<div class="p-2 border border-outline-variant bg-surface-container-low rounded cursor-pointer hover:border-primary transition-colors group">
+<div class="flex justify-between items-baseline mb-1">
+<span class="font-data-md text-data-md text-on-surface group-hover:text-primary transition-colors">Llama 3 8B Instruct GGUF</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">4.7 GB</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-error">RAM Req: ~5.2GB</span>
+<span class="font-label-caps text-label-caps text-error border border-error px-1 rounded">OOM</span>
+</div>
+</div>
+<div class="p-2 border border-outline-variant bg-surface-container-low rounded cursor-pointer hover:border-primary transition-colors group">
+<div class="flex justify-between items-baseline mb-1">
+<span class="font-data-md text-data-md text-on-surface group-hover:text-primary transition-colors">Mistral v0.2 7B GGUF</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">4.1 GB</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-tertiary-fixed-dim">RAM Req: ~4.5GB</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant border border-outline-variant px-1 rounded">IDLE</span>
+</div>
+</div>
+<div class="p-2 border border-outline-variant bg-surface-container-low rounded cursor-pointer hover:border-primary transition-colors group opacity-50">
+<div class="flex justify-between items-baseline mb-1">
+<span class="font-data-md text-data-md text-on-surface group-hover:text-primary transition-colors">Phi 3 Mini 4k GGUF</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">2.2 GB</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant">RAM Req: ~2.5GB</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant border border-outline-variant px-1 rounded"><span class="material-symbols-outlined text-[10px]" data-icon="download">download</span></span>
+</div>
+</div>
+</div>
+<div class="mt-auto pt-4 border-t border-outline-variant">
+<button class="w-full py-1.5 border border-outline-variant text-on-surface-variant hover:text-error hover:border-error transition-colors rounded font-data-md text-data-md flex justify-center items-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="delete_sweep">delete_sweep</span> Purge Memory
+                            </button>
+</div>
+</section>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="bg-surface text-primary font-label-caps text-label-caps font-headline-md text-headline-md docked full-width bottom-0 border-t border-outline-variant flat no shadows fixed left-0 w-full z-50 flex md:hidden justify-around items-center h-16 px-2">
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dash</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full" href="#">
+<span class="material-symbols-outlined" data-icon="storage">storage</span>
+<span>Vault</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full" href="#">
+<span class="material-symbols-outlined" data-icon="perm_media">perm_media</span>
+<span>Media</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full" href="#">
+<span class="material-symbols-outlined" data-icon="checklist">checklist</span>
+<span>Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full" href="#">
+<span class="material-symbols-outlined" data-icon="psychology">psychology</span>
+<span>AI</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:bg-surface-variant transition-transform duration-200 active:scale-90 w-16 h-full" href="#">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+<span>More</span>
+</a>
+</nav>
+</body></html>

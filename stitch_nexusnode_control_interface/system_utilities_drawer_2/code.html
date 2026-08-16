@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode - System Controller</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-surface": "#e5e2e1",
+                      "on-primary-fixed-variant": "#004f58",
+                      "surface-container-high": "#2a2a2a",
+                      "on-surface-variant": "#bac9cc",
+                      "primary-fixed-dim": "#00daf3",
+                      "graphite-surface": "#121212",
+                      "on-tertiary-fixed": "#1b1b1c",
+                      "background": "#131313",
+                      "inverse-on-surface": "#313030",
+                      "surface-dim": "#131313",
+                      "secondary-fixed": "#f4d9ff",
+                      "on-tertiary": "#303030",
+                      "border-subtle": "#333333",
+                      "surface-container-lowest": "#0e0e0e",
+                      "secondary-container": "#ab08ff",
+                      "on-secondary-container": "#fef0ff",
+                      "primary-container": "#00e5ff",
+                      "graphite-raised": "#1E1E1E",
+                      "tertiary": "#efeceb",
+                      "oled-black": "#000000",
+                      "on-secondary-fixed-variant": "#6f00a9",
+                      "on-tertiary-container": "#5a5959",
+                      "surface-container": "#201f1f",
+                      "on-error": "#690005",
+                      "on-secondary": "#4e0078",
+                      "tertiary-container": "#d2d0cf",
+                      "on-tertiary-fixed-variant": "#474746",
+                      "surface-bright": "#393939",
+                      "primary": "#c3f5ff",
+                      "primary-fixed": "#9cf0ff",
+                      "surface-container-low": "#1c1b1b",
+                      "status-healthy": "#00C853",
+                      "surface": "#131313",
+                      "tertiary-fixed-dim": "#c8c6c5",
+                      "error-container": "#93000a",
+                      "on-primary-container": "#00626e",
+                      "on-primary": "#00363d",
+                      "on-secondary-fixed": "#2f004b",
+                      "surface-tint": "#00daf3",
+                      "status-critical": "#D50000",
+                      "outline-variant": "#3b494c",
+                      "surface-variant": "#353534",
+                      "secondary-fixed-dim": "#e4b5ff",
+                      "inverse-primary": "#006875",
+                      "inverse-surface": "#e5e2e1",
+                      "tertiary-fixed": "#e5e2e1",
+                      "surface-container-highest": "#353534",
+                      "error": "#ffb4ab",
+                      "on-error-container": "#ffdad6",
+                      "secondary": "#e4b5ff",
+                      "on-primary-fixed": "#001f24",
+                      "on-background": "#e5e2e1",
+                      "status-warning": "#FFD600",
+                      "outline": "#849396"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "margin-mobile": "16px",
+                      "touch-target": "44px",
+                      "margin-desktop": "24px",
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "stack-gap": "8px"
+              },
+              "fontFamily": {
+                      "headline-lg": ["Inter"],
+                      "label-caps": ["Inter"],
+                      "data-md": ["JetBrains Mono"],
+                      "body-sm": ["Inter"],
+                      "body-md": ["Inter"],
+                      "data-lg": ["JetBrains Mono"],
+                      "data-sm": ["JetBrains Mono"],
+                      "headline-md": ["Inter"]
+              },
+              "fontSize": {
+                      "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                      "label-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700" }],
+                      "data-md": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                      "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                      "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                      "data-lg": ["16px", { "lineHeight": "20px", "fontWeight": "600" }],
+                      "data-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                      "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        .drawer-overlay {
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            opacity: 1;
+            transition: opacity 0.3s ease;
+        }
+        .drawer-content {
+            transform: translateY(0);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .drawer-content.closed {
+            transform: translateY(100%);
+        }
+        .drawer-overlay.closed {
+            opacity: 0;
+            pointer-events: none;
+        }
+      </style>
+</head>
+<body class="bg-oled-black text-on-surface min-h-screen flex flex-col font-body-md overflow-hidden antialiased">
+<!-- Mock Background Content to show context -->
+<main class="flex-1 p-margin-mobile flex flex-col items-center justify-center relative">
+<div class="text-center space-y-4">
+<div class="font-headline-lg text-headline-lg font-bold text-primary-fixed-dim tracking-tight">NexusNode</div>
+<p class="text-on-surface-variant font-body-sm text-body-sm">System Controller Dashboard</p>
+<button class="mt-8 px-4 py-2 border border-border-subtle bg-surface-container-high text-primary-fixed-dim font-data-md text-data-md rounded flex items-center gap-2 hover:border-primary-fixed-dim transition-colors mx-auto" onclick="document.getElementById('more-drawer').classList.remove('closed'); document.getElementById('more-overlay').classList.remove('closed');">
+<span class="material-symbols-outlined text-[18px]">menu</span>
+                 Open More Drawer
+             </button>
+</div>
+</main>
+<!-- BottomNavBar (Desktop Hidden, Mobile Visible) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-40 flex justify-around items-center h-touch-target px-margin-mobile bg-surface-container-lowest border-t border-border-subtle touch-none select-none">
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">dashboard</span>
+<span class="font-label-caps text-label-caps mt-1">Dash</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">storage</span>
+<span class="font-label-caps text-label-caps mt-1">Vault</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">movie</span>
+<span class="font-label-caps text-label-caps mt-1">Media</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">task_alt</span>
+<span class="font-label-caps text-label-caps mt-1">Tasks</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant active:scale-95 transition-transform" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">psychology</span>
+<span class="font-label-caps text-label-caps mt-1">AI</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary-fixed-dim active:scale-95 transition-transform relative" href="#" onclick="document.getElementById('more-drawer').classList.remove('closed'); document.getElementById('more-overlay').classList.remove('closed'); return false;">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">menu</span>
+<span class="font-label-caps text-label-caps mt-1">More</span>
+<!-- Active Indicator -->
+<div class="absolute -top-1 w-8 h-[2px] bg-primary-fixed-dim rounded-full"></div>
+</a>
+</nav>
+<!-- Bottom Sheet Overlay & Drawer -->
+<div class="drawer-overlay fixed inset-0 z-50 closed" id="more-overlay" onclick="document.getElementById('more-drawer').classList.add('closed'); document.getElementById('more-overlay').classList.add('closed');"></div>
+<div class="drawer-content fixed bottom-0 left-0 w-full z-50 bg-graphite-surface rounded-t-xl border-t border-border-subtle flex flex-col max-h-[85vh] closed" id="more-drawer">
+<!-- Drag Handle / Header -->
+<div class="flex justify-center items-center h-8 cursor-grab" onclick="document.getElementById('more-drawer').classList.add('closed'); document.getElementById('more-overlay').classList.add('closed');">
+<div class="w-12 h-1 bg-border-subtle rounded-full"></div>
+</div>
+<div class="px-margin-mobile pb-margin-mobile pt-2 overflow-y-auto">
+<!-- SYSTEM Section -->
+<div class="mb-6">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-3 tracking-widest">SYSTEM</h3>
+<div class="grid grid-cols-4 gap-3">
+<a class="flex flex-col items-center justify-center p-3 bg-surface-container-low border border-border-subtle rounded active:border-primary-fixed-dim transition-colors group" href="#">
+<span class="material-symbols-outlined text-on-surface group-hover:text-primary-fixed-dim transition-colors mb-2" style="font-variation-settings: 'FILL' 0;">lan</span>
+<span class="font-data-sm text-data-sm text-center">Network</span>
+</a>
+<a class="flex flex-col items-center justify-center p-3 bg-surface-container-low border border-border-subtle rounded active:border-primary-fixed-dim transition-colors group" href="#">
+<span class="material-symbols-outlined text-on-surface group-hover:text-primary-fixed-dim transition-colors mb-2" style="font-variation-settings: 'FILL' 0;">event_note</span>
+<span class="font-data-sm text-data-sm text-center">Events</span>
+</a>
+<a class="flex flex-col items-center justify-center p-3 bg-surface-container-low border border-border-subtle rounded active:border-primary-fixed-dim transition-colors group" href="#">
+<span class="material-symbols-outlined text-on-surface group-hover:text-primary-fixed-dim transition-colors mb-2" style="font-variation-settings: 'FILL' 0;">terminal</span>
+<span class="font-data-sm text-data-sm text-center">Diagnostics</span>
+</a>
+</div>
+</div>
+<!-- STORAGE Section -->
+<div class="mb-6">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-3 tracking-widest">STORAGE</h3>
+<div class="grid grid-cols-4 gap-3">
+<a class="flex flex-col items-center justify-center p-3 bg-surface-container-low border border-border-subtle rounded active:border-primary-fixed-dim transition-colors group" href="#">
+<span class="material-symbols-outlined text-on-surface group-hover:text-primary-fixed-dim transition-colors mb-2" style="font-variation-settings: 'FILL' 0;">hard_drive</span>
+<span class="font-data-sm text-data-sm text-center">Storage</span>
+</a>
+<a class="flex flex-col items-center justify-center p-3 bg-surface-container-low border border-border-subtle rounded active:border-primary-fixed-dim transition-colors group" href="#">
+<span class="material-symbols-outlined text-on-surface group-hover:text-primary-fixed-dim transition-colors mb-2" style="font-variation-settings: 'FILL' 0;">backup</span>
+<span class="font-data-sm text-data-sm text-center">Backups</span>
+</a>
+<a class="flex flex-col items-center justify-center p-3 bg-surface-container-low border border-border-subtle rounded active:border-primary-fixed-dim transition-colors group" href="#">
+<span class="material-symbols-outlined text-on-surface group-hover:text-primary-fixed-dim transition-colors mb-2" style="font-variation-settings: 'FILL' 0;">settings_input_component</span>
+<span class="font-data-sm text-data-sm text-center text-[10px]">Automation</span>
+</a>
+</div>
+</div>
+<!-- ADMIN Section -->
+<div class="mb-touch-target"> <!-- Extra padding for bottom nav clearance -->
+<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-3 tracking-widest flex items-center gap-2">
+                    ADMIN 
+                    <span class="bg-status-critical/20 text-status-critical px-1.5 py-0.5 rounded text-[8px] border border-status-critical/50">ADMIN ONLY</span>
+</h3>
+<div class="grid grid-cols-4 gap-3">
+<a class="flex flex-col items-center justify-center p-3 bg-surface-container-low border border-border-subtle rounded active:border-status-critical transition-colors group relative" href="#">
+<span class="material-symbols-outlined text-on-surface group-hover:text-status-critical transition-colors mb-2" style="font-variation-settings: 'FILL' 0;">settings</span>
+<span class="font-data-sm text-data-sm text-center">Settings</span>
+</a>
+<a class="flex flex-col items-center justify-center p-3 bg-surface-container-low border border-border-subtle rounded active:border-status-critical transition-colors group relative" href="#">
+<span class="material-symbols-outlined text-status-critical mb-2" style="font-variation-settings: 'FILL' 0;">admin_panel_settings</span>
+<span class="font-data-sm text-data-sm text-center text-status-critical">Admin</span>
+</a>
+</div>
+</div>
+</div>
+</div>
+<!-- Script to handle back gesture simulation (for demo purposes) -->
+<script>
+        document.addEventListener('keydown', function(event) {
+            if (event.key === "Escape") {
+                document.getElementById('more-drawer').classList.add('closed');
+                document.getElementById('more-overlay').classList.add('closed');
+            }
+        });
+    </script>
+</body></html>

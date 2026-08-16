@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode - Vault</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#e5e2e1",
+                        "on-primary-fixed-variant": "#004f58",
+                        "surface-container-high": "#2a2a2a",
+                        "on-surface-variant": "#bac9cc",
+                        "primary-fixed-dim": "#00daf3",
+                        "graphite-surface": "#121212",
+                        "on-tertiary-fixed": "#1b1b1c",
+                        "background": "#131313",
+                        "inverse-on-surface": "#313030",
+                        "surface-dim": "#131313",
+                        "secondary-fixed": "#f4d9ff",
+                        "on-tertiary": "#303030",
+                        "border-subtle": "#333333",
+                        "surface-container-lowest": "#0e0e0e",
+                        "secondary-container": "#ab08ff",
+                        "on-secondary-container": "#fef0ff",
+                        "primary-container": "#00e5ff",
+                        "graphite-raised": "#1E1E1E",
+                        "tertiary": "#efeceb",
+                        "oled-black": "#000000",
+                        "on-secondary-fixed-variant": "#6f00a9",
+                        "on-tertiary-container": "#5a5959",
+                        "surface-container": "#201f1f",
+                        "on-error": "#690005",
+                        "on-secondary": "#4e0078",
+                        "tertiary-container": "#d2d0cf",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "surface-bright": "#393939",
+                        "primary": "#c3f5ff",
+                        "primary-fixed": "#9cf0ff",
+                        "surface-container-low": "#1c1b1b",
+                        "status-healthy": "#00C853",
+                        "surface": "#131313",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "error-container": "#93000a",
+                        "on-primary-container": "#00626e",
+                        "on-primary": "#00363d",
+                        "on-secondary-fixed": "#2f004b",
+                        "surface-tint": "#00daf3",
+                        "status-critical": "#D50000",
+                        "outline-variant": "#3b494c",
+                        "surface-variant": "#353534",
+                        "secondary-fixed-dim": "#e4b5ff",
+                        "inverse-primary": "#006875",
+                        "inverse-surface": "#e5e2e1",
+                        "tertiary-fixed": "#e5e2e1",
+                        "surface-container-highest": "#353534",
+                        "error": "#ffb4ab",
+                        "on-error-container": "#ffdad6",
+                        "secondary": "#e4b5ff",
+                        "on-primary-fixed": "#001f24",
+                        "on-background": "#e5e2e1",
+                        "status-warning": "#FFD600",
+                        "outline": "#849396"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "margin-mobile": "16px",
+                        "touch-target": "44px",
+                        "margin-desktop": "24px",
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "stack-gap": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Inter", "sans-serif"],
+                        "label-caps": ["Inter", "sans-serif"],
+                        "data-md": ["JetBrains Mono", "monospace"],
+                        "body-sm": ["Inter", "sans-serif"],
+                        "body-md": ["Inter", "sans-serif"],
+                        "data-lg": ["JetBrains Mono", "monospace"],
+                        "data-sm": ["JetBrains Mono", "monospace"],
+                        "headline-md": ["Inter", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700" }],
+                        "data-md": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-lg": ["16px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "data-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Custom scrollbar for high-density tables */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #121212; border-left: 1px solid #333333; }
+        ::-webkit-scrollbar-thumb { background: #333333; }
+        ::-webkit-scrollbar-thumb:hover { background: #00daf3; }
+        
+        /* Checkbox styling */
+        .tech-checkbox {
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border: 1px solid #333333;
+            background: #121212;
+            cursor: pointer;
+            position: relative;
+        }
+        .tech-checkbox:checked {
+            border-color: #00daf3;
+            background: #00daf3;
+        }
+        .tech-checkbox:checked::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 5px;
+            width: 4px;
+            height: 8px;
+            border: solid #000000;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+        }
+    </style>
+</head>
+<body class="bg-oled-black text-on-surface min-h-screen flex flex-col font-body-md text-body-md overflow-hidden selection:bg-primary-fixed-dim selection:text-oled-black">
+<!-- TopNavBar (Shared Component) -->
+<nav class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-margin-desktop h-12 bg-background border-b border-border-subtle">
+<div class="flex items-center gap-8">
+<div class="font-headline-lg text-headline-lg font-bold text-primary-fixed-dim tracking-tight">NexusNode</div>
+<div class="hidden md:flex items-center gap-6 h-full pt-1">
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors cursor-pointer px-2 py-1 rounded-sm" href="#">Dashboard</a>
+<!-- Active Navigation Item -->
+<a class="text-primary-fixed-dim border-b-2 border-primary-fixed-dim pb-1 font-body-md text-body-md cursor-pointer" href="#">Vault</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors cursor-pointer px-2 py-1 rounded-sm" href="#">Media</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors cursor-pointer px-2 py-1 rounded-sm" href="#">Tasks</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors cursor-pointer px-2 py-1 rounded-sm" href="#">AI Studio</a>
+</div>
+</div>
+<div class="flex items-center gap-4 text-on-surface-variant">
+<span class="material-symbols-outlined cursor-pointer hover:text-primary-fixed-dim transition-colors" data-icon="sensors">sensors</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-primary-fixed-dim transition-colors" data-icon="dns">dns</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-primary-fixed-dim transition-colors" data-icon="notifications">notifications</span>
+<div class="h-4 w-px bg-border-subtle mx-2"></div>
+<span class="cursor-pointer hover:text-primary-fixed-dim transition-colors font-data-sm text-data-sm uppercase tracking-wider">More</span>
+</div>
+</nav>
+<!-- Main Workspace -->
+<div class="flex flex-1 pt-12 h-screen w-full">
+<!-- Local Context Sidebar -->
+<aside class="w-64 bg-graphite-surface border-r border-border-subtle flex flex-col z-40 flex-shrink-0">
+<div class="p-4 border-b border-border-subtle">
+<button class="w-full flex items-center justify-center gap-2 bg-graphite-raised border border-primary-fixed-dim text-primary-fixed-dim hover:bg-primary-fixed-dim hover:text-oled-black transition-colors py-2 rounded-DEFAULT font-data-sm text-data-sm uppercase tracking-wider">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                    New Context
+                </button>
+</div>
+<nav class="flex-1 overflow-y-auto py-2">
+<div class="px-4 py-2 font-label-caps text-label-caps text-on-surface-variant uppercase tracking-widest mb-1">Storage Vault</div>
+<a class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low border-l-2 border-transparent font-body-sm text-body-sm transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[18px]">music_note</span>
+<span>Music</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low border-l-2 border-transparent font-body-sm text-body-sm transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[18px]">movie</span>
+<span>Videos</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low border-l-2 border-transparent font-body-sm text-body-sm transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[18px]">download</span>
+<span>Downloads</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 bg-surface-container-high text-primary-fixed-dim border-l-2 border-primary-fixed-dim font-body-sm text-body-sm transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">description</span>
+<span>Documents</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low border-l-2 border-transparent font-body-sm text-body-sm transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[18px]">backup</span>
+<span>Backups</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low border-l-2 border-transparent font-body-sm text-body-sm transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[18px]">dataset</span>
+<span>RAG</span>
+</a>
+</nav>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col min-w-0 bg-background relative">
+<!-- Toolbar -->
+<header class="h-14 flex items-center justify-between px-6 border-b border-border-subtle bg-background flex-shrink-0">
+<div class="flex items-center gap-4">
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-on-surface-variant text-[18px]">search</span>
+<input class="bg-graphite-raised border border-border-subtle focus:border-primary-fixed-dim outline-none text-on-surface pl-9 pr-3 py-1.5 w-80 text-data-sm font-data-sm rounded-DEFAULT transition-colors placeholder:text-on-surface-variant" placeholder="QUERY FILE SYSTEM..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<button class="flex items-center gap-2 border border-border-subtle px-3 py-1.5 rounded-DEFAULT text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors font-data-sm text-data-sm">
+<span class="material-symbols-outlined text-[16px]">filter_list</span>
+                        FILTER
+                    </button>
+<button class="flex items-center gap-2 border border-border-subtle px-3 py-1.5 rounded-DEFAULT text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors font-data-sm text-data-sm">
+<span class="material-symbols-outlined text-[16px]">sort</span>
+                        SORT
+                    </button>
+<div class="w-px h-5 bg-border-subtle mx-1"></div>
+<button class="flex items-center gap-2 border border-border-subtle px-3 py-1.5 rounded-DEFAULT text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors font-data-sm text-data-sm" title="Grid View">
+<span class="material-symbols-outlined text-[16px]">grid_view</span>
+</button>
+<button class="flex items-center gap-2 border border-primary-fixed-dim bg-surface-container-low px-3 py-1.5 rounded-DEFAULT text-primary-fixed-dim transition-colors font-data-sm text-data-sm" title="List View">
+<span class="material-symbols-outlined text-[16px]">view_list</span>
+</button>
+</div>
+</header>
+<!-- High-Density Data Table -->
+<div class="flex-1 overflow-auto bg-background">
+<table class="w-full text-left border-collapse whitespace-nowrap">
+<thead class="sticky top-0 bg-graphite-surface z-10 border-b border-border-subtle font-label-caps text-label-caps text-on-surface-variant uppercase tracking-widest shadow-sm">
+<tr>
+<th class="py-3 px-4 w-12 text-center">
+<input class="tech-checkbox" id="selectAll" type="checkbox"/>
+</th>
+<th class="py-3 px-4 font-normal cursor-pointer hover:text-on-surface">NAME <span class="material-symbols-outlined text-[12px] align-middle ml-1">arrow_downward</span></th>
+<th class="py-3 px-4 font-normal cursor-pointer hover:text-on-surface w-32">SIZE</th>
+<th class="py-3 px-4 font-normal cursor-pointer hover:text-on-surface w-40">TYPE</th>
+<th class="py-3 px-4 font-normal cursor-pointer hover:text-on-surface w-48">MODIFIED</th>
+<th class="py-3 px-4 font-normal w-32 text-right">ACTIONS</th>
+</tr>
+</thead>
+<tbody class="font-data-md text-data-md text-on-surface divide-y divide-border-subtle" id="fileTableBody">
+<!-- Row 1: Folder -->
+<tr class="hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="py-1.5 px-4 text-center" onclick="event.stopPropagation()">
+<input class="tech-checkbox row-checkbox" type="checkbox"/>
+</td>
+<td class="py-1.5 px-4 flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-fixed-dim" style="font-variation-settings: 'FILL' 1;">folder</span>
+<span class="font-body-md text-body-md font-medium text-on-surface">Financial Reports</span>
+</td>
+<td class="py-1.5 px-4 text-on-surface-variant font-data-md">--</td>
+<td class="py-1.5 px-4 text-on-surface-variant text-data-sm font-data-sm">DIR</td>
+<td class="py-1.5 px-4 text-on-surface-variant text-data-sm font-data-sm">2023-10-24 14:32:01</td>
+<td class="py-1.5 px-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Share">share</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Download">download</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-status-critical" title="Delete">delete</span>
+</div>
+</td>
+</tr>
+<!-- Row 2: Folder -->
+<tr class="hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="py-1.5 px-4 text-center" onclick="event.stopPropagation()">
+<input class="tech-checkbox row-checkbox" type="checkbox"/>
+</td>
+<td class="py-1.5 px-4 flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-fixed-dim" style="font-variation-settings: 'FILL' 1;">folder</span>
+<span class="font-body-md text-body-md font-medium text-on-surface">Legal Contracts</span>
+</td>
+<td class="py-1.5 px-4 text-on-surface-variant font-data-md">--</td>
+<td class="py-1.5 px-4 text-on-surface-variant text-data-sm font-data-sm">DIR</td>
+<td class="py-1.5 px-4 text-on-surface-variant text-data-sm font-data-sm">2023-10-22 09:15:44</td>
+<td class="py-1.5 px-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Share">share</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Download">download</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-status-critical" title="Delete">delete</span>
+</div>
+</td>
+</tr>
+<!-- Row 3: File -->
+<tr class="hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="py-1.5 px-4 text-center" onclick="event.stopPropagation()">
+<input class="tech-checkbox row-checkbox" type="checkbox"/>
+</td>
+<td class="py-1.5 px-4 flex items-center gap-3">
+<span class="material-symbols-outlined text-outline">description</span>
+<span class="font-body-md text-body-md text-on-surface">Q3_Earnings_Deck.pdf</span>
+</td>
+<td class="py-1.5 px-4 font-data-md">4.2 MB</td>
+<td class="py-1.5 px-4 text-on-surface-variant text-data-sm font-data-sm">PDF</td>
+<td class="py-1.5 px-4 text-on-surface-variant text-data-sm font-data-sm">2023-10-21 23:59:59</td>
+<td class="py-1.5 px-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Play">play_arrow</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Share">share</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Download">download</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-status-critical" title="Delete">delete</span>
+</div>
+</td>
+</tr>
+<!-- Row 4: File -->
+<tr class="hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="py-1.5 px-4 text-center" onclick="event.stopPropagation()">
+<input class="tech-checkbox row-checkbox" type="checkbox"/>
+</td>
+<td class="py-1.5 px-4 flex items-center gap-3">
+<span class="material-symbols-outlined text-outline">movie</span>
+<span class="font-body-md text-body-md text-on-surface">Product_Demo_Final.mp4</span>
+</td>
+<td class="py-1.5 px-4 font-data-md">450.5 MB</td>
+<td class="py-1.5 px-4 text-on-surface-variant text-data-sm font-data-sm">MP4</td>
+<td class="py-1.5 px-4 text-on-surface-variant text-data-sm font-data-sm">2023-10-20 11:05:12</td>
+<td class="py-1.5 px-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Play">play_arrow</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Share">share</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Download">download</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-status-critical" title="Delete">delete</span>
+</div>
+</td>
+</tr>
+<!-- Row 5: File -->
+<tr class="hover:bg-surface-container-low transition-colors group cursor-pointer">
+<td class="py-1.5 px-4 text-center" onclick="event.stopPropagation()">
+<input class="tech-checkbox row-checkbox" type="checkbox"/>
+</td>
+<td class="py-1.5 px-4 flex items-center gap-3">
+<span class="material-symbols-outlined text-outline">music_note</span>
+<span class="font-body-md text-body-md text-on-surface">Ambient_Background_01.mp3</span>
+</td>
+<td class="py-1.5 px-4 font-data-md">8.4 MB</td>
+<td class="py-1.5 px-4 text-on-surface-variant text-data-sm font-data-sm">MP3</td>
+<td class="py-1.5 px-4 text-on-surface-variant text-data-sm font-data-sm">2023-10-18 04:11:00</td>
+<td class="py-1.5 px-4 text-right">
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Play">play_arrow</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Share">share</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-primary-fixed-dim" title="Download">download</span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-status-critical" title="Delete">delete</span>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Multi-Select Floating Footer (Hidden by default, shown via JS) -->
+<div class="absolute bottom-8 left-1/2 -translate-x-1/2 bg-graphite-raised border border-primary-fixed-dim px-6 py-3 flex items-center gap-8 z-30 rounded-DEFAULT shadow-2xl opacity-0 pointer-events-none transition-all duration-200 transform translate-y-4" id="multiSelectFooter">
+<div class="flex items-center gap-2">
+<span class="font-data-lg text-data-lg text-primary-fixed-dim font-bold" id="selectedCount">0</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant uppercase tracking-wider">ITEMS SELECTED</span>
+</div>
+<div class="w-px h-6 bg-border-subtle"></div>
+<div class="flex items-center gap-4">
+<button class="flex items-center gap-2 text-on-surface hover:text-primary-fixed-dim transition-colors font-data-sm text-data-sm">
+<span class="material-symbols-outlined text-[18px]">share</span> SHARE
+                    </button>
+<button class="flex items-center gap-2 text-on-surface hover:text-primary-fixed-dim transition-colors font-data-sm text-data-sm">
+<span class="material-symbols-outlined text-[18px]">download</span> DOWNLOAD
+                    </button>
+<button class="flex items-center gap-2 text-on-surface hover:text-status-critical transition-colors font-data-sm text-data-sm">
+<span class="material-symbols-outlined text-[18px]">delete</span> DELETE
+                    </button>
+</div>
+<button class="ml-4 material-symbols-outlined text-on-surface-variant hover:text-on-surface text-[20px]" id="clearSelection">close</button>
+</div>
+</main>
+</div>
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const selectAllCheckbox = document.getElementById('selectAll');
+            const rowCheckboxes = document.querySelectorAll('.row-checkbox');
+            const multiSelectFooter = document.getElementById('multiSelectFooter');
+            const selectedCountDisplay = document.getElementById('selectedCount');
+            const clearSelectionBtn = document.getElementById('clearSelection');
+            const tableRows = document.querySelectorAll('tbody tr');
+
+            function updateFooterVisibility() {
+                const checkedCount = document.querySelectorAll('.row-checkbox:checked').length;
+                if (checkedCount > 0) {
+                    multiSelectFooter.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+                    multiSelectFooter.classList.add('opacity-100', 'translate-y-0');
+                    selectedCountDisplay.textContent = checkedCount;
+                } else {
+                    multiSelectFooter.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
+                    multiSelectFooter.classList.remove('opacity-100', 'translate-y-0');
+                }
+                
+                // Update select all indeterminate state
+                selectAllCheckbox.checked = checkedCount === rowCheckboxes.length && rowCheckboxes.length > 0;
+                selectAllCheckbox.indeterminate = checkedCount > 0 && checkedCount < rowCheckboxes.length;
+            }
+
+            // Select All logic
+            selectAllCheckbox.addEventListener('change', (e) => {
+                rowCheckboxes.forEach(cb => {
+                    cb.checked = e.target.checked;
+                    updateRowStyle(cb);
+                });
+                updateFooterVisibility();
+            });
+
+            // Individual row checkbox logic
+            rowCheckboxes.forEach(cb => {
+                cb.addEventListener('change', (e) => {
+                    updateRowStyle(e.target);
+                    updateFooterVisibility();
+                });
+            });
+
+            // Row click to toggle checkbox
+            tableRows.forEach(row => {
+                row.addEventListener('click', (e) => {
+                    // Prevent double firing if clicking directly on checkbox
+                    if(e.target.tagName !== 'INPUT') {
+                        const cb = row.querySelector('.row-checkbox');
+                        if (cb) {
+                            cb.checked = !cb.checked;
+                            updateRowStyle(cb);
+                            updateFooterVisibility();
+                        }
+                    }
+                });
+            });
+
+            // Clear selection logic
+            clearSelectionBtn.addEventListener('click', () => {
+                rowCheckboxes.forEach(cb => {
+                    cb.checked = false;
+                    updateRowStyle(cb);
+                });
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+                updateFooterVisibility();
+            });
+
+            function updateRowStyle(checkbox) {
+                const row = checkbox.closest('tr');
+                if (checkbox.checked) {
+                    row.classList.add('bg-surface-container-high');
+                    row.classList.remove('hover:bg-surface-container-low');
+                } else {
+                    row.classList.remove('bg-surface-container-high');
+                    row.classList.add('hover:bg-surface-container-low');
+                }
+            }
+        });
+    </script>
+</body></html>

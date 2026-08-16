@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>NexusNode Diagnostics</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface": "#e5e2e1",
+                        "on-primary-fixed-variant": "#004f58",
+                        "surface-container-high": "#2a2a2a",
+                        "on-surface-variant": "#bac9cc",
+                        "primary-fixed-dim": "#00daf3",
+                        "graphite-surface": "#121212",
+                        "on-tertiary-fixed": "#1b1b1c",
+                        "background": "#131313",
+                        "inverse-on-surface": "#313030",
+                        "surface-dim": "#131313",
+                        "secondary-fixed": "#f4d9ff",
+                        "on-tertiary": "#303030",
+                        "border-subtle": "#333333",
+                        "surface-container-lowest": "#0e0e0e",
+                        "secondary-container": "#ab08ff",
+                        "on-secondary-container": "#fef0ff",
+                        "primary-container": "#00e5ff",
+                        "graphite-raised": "#1E1E1E",
+                        "tertiary": "#efeceb",
+                        "oled-black": "#000000",
+                        "on-secondary-fixed-variant": "#6f00a9",
+                        "on-tertiary-container": "#5a5959",
+                        "surface-container": "#201f1f",
+                        "on-error": "#690005",
+                        "on-secondary": "#4e0078",
+                        "tertiary-container": "#d2d0cf",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "surface-bright": "#393939",
+                        "primary": "#c3f5ff",
+                        "primary-fixed": "#9cf0ff",
+                        "surface-container-low": "#1c1b1b",
+                        "status-healthy": "#00C853",
+                        "surface": "#131313",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "error-container": "#93000a",
+                        "on-primary-container": "#00626e",
+                        "on-primary": "#00363d",
+                        "on-secondary-fixed": "#2f004b",
+                        "surface-tint": "#00daf3",
+                        "status-critical": "#D50000",
+                        "outline-variant": "#3b494c",
+                        "surface-variant": "#353534",
+                        "secondary-fixed-dim": "#e4b5ff",
+                        "inverse-primary": "#006875",
+                        "inverse-surface": "#e5e2e1",
+                        "tertiary-fixed": "#e5e2e1",
+                        "surface-container-highest": "#353534",
+                        "error": "#ffb4ab",
+                        "on-error-container": "#ffdad6",
+                        "secondary": "#e4b5ff",
+                        "on-primary-fixed": "#001f24",
+                        "on-background": "#e5e2e1",
+                        "status-warning": "#FFD600",
+                        "outline": "#849396"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "margin-mobile": "16px",
+                        "touch-target": "44px",
+                        "margin-desktop": "24px",
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "stack-gap": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Inter", "sans-serif"],
+                        "label-caps": ["Inter", "sans-serif"],
+                        "data-md": ["JetBrains Mono", "monospace"],
+                        "body-sm": ["Inter", "sans-serif"],
+                        "body-md": ["Inter", "sans-serif"],
+                        "data-lg": ["JetBrains Mono", "monospace"],
+                        "data-sm": ["JetBrains Mono", "monospace"],
+                        "headline-md": ["Inter", "sans-serif"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700" }],
+                        "data-md": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "data-lg": ["16px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "data-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: theme('colors.oled-black'); color: theme('colors.on-surface'); padding-bottom: calc(env(safe-area-inset-bottom) + 60px); padding-top: env(safe-area-inset-top); }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .border-critical { border-color: theme('colors.status-critical'); }
+        .border-warning { border-color: theme('colors.status-warning'); }
+        .text-critical { color: theme('colors.status-critical'); }
+        .text-warning { color: theme('colors.status-warning'); }
+    </style>
+</head>
+<body class="bg-oled-black text-on-surface antialiased w-[390px] mx-auto overflow-x-hidden min-h-screen flex flex-col relative">
+<!-- Header Section (Suppressed Navigation Shell for Intent) -->
+<header class="px-margin-mobile pt-margin-mobile pb-gutter flex flex-col gap-unit sticky top-0 bg-oled-black z-30 border-b border-border-subtle">
+<div class="flex justify-between items-center w-full">
+<h1 class="font-headline-lg text-headline-lg text-primary-fixed-dim">Diagnostics</h1>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer" data-icon="close">close</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">System Analysis Complete: 3 Issues Found</p>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 px-margin-mobile py-gutter flex flex-col gap-stack-gap">
+<!-- Summary Cards Row -->
+<div class="grid grid-cols-2 gap-stack-gap w-full">
+<div class="bg-graphite-surface border border-border-subtle p-3 flex flex-col gap-1 rounded-DEFAULT">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider">Health Score</span>
+<span class="font-data-lg text-data-lg text-status-warning">72/100</span>
+</div>
+<div class="bg-graphite-surface border border-border-subtle p-3 flex flex-col gap-1 rounded-DEFAULT">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider">Uptime</span>
+<span class="font-data-lg text-data-lg text-on-surface">99.98%</span>
+</div>
+</div>
+<!-- Alert List -->
+<div class="flex flex-col gap-stack-gap mt-unit">
+<!-- Critical Alert Card -->
+<article class="bg-graphite-surface border border-critical p-4 rounded-DEFAULT flex flex-col gap-3 relative overflow-hidden group">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-critical" data-icon="warning" style="font-variation-settings: 'FILL' 1;">warning</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Database Sync Failure</h2>
+<span class="ml-auto font-label-caps text-label-caps bg-error-container text-on-error px-2 py-1 rounded-DEFAULT">CRITICAL</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+                    Primary node failed to synchronize with Replica-03. Check network latency or replication lag on the secondary instance.
+                </p>
+<div class="bg-oled-black border border-border-subtle p-2 rounded-DEFAULT mt-1">
+<code class="font-data-sm text-data-sm text-on-surface-variant block whitespace-pre">
+ERR_REPLICATION_TIMEOUT
+node: primary-db-01
+target: replica-db-03
+latency: &gt;5000ms
+                    </code>
+</div>
+<div class="flex gap-2 mt-2">
+<button class="flex-1 h-touch-target border border-critical text-critical font-body-md text-body-md rounded-DEFAULT flex items-center justify-center hover:bg-error-container transition-colors focus:outline-none focus:ring-1 focus:ring-critical">
+                        RESTART SYNC
+                    </button>
+</div>
+</article>
+<!-- Warning Alert Card -->
+<article class="bg-graphite-surface border border-warning p-4 rounded-DEFAULT flex flex-col gap-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-warning" data-icon="error_outline">error_outline</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">High Memory Usage</h2>
+<span class="ml-auto font-label-caps text-label-caps bg-surface-container-high text-status-warning px-2 py-1 rounded-DEFAULT border border-warning">WARNING</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+                    Cache layer is approaching eviction threshold. Consider scaling up the instance or optimizing query patterns.
+                </p>
+<div class="flex items-center gap-2 mt-1">
+<div class="flex-1 bg-border-subtle h-2 rounded-full overflow-hidden">
+<div class="bg-status-warning h-full w-[88%]"></div>
+</div>
+<span class="font-data-md text-data-md text-status-warning w-12 text-right">88%</span>
+</div>
+<div class="bg-oled-black border border-border-subtle p-2 rounded-DEFAULT mt-1">
+<code class="font-data-sm text-data-sm text-on-surface-variant block whitespace-pre">
+WARN_MEMORY_THRESHOLD
+layer: redis-cache
+usage: 14.2GB / 16.0GB
+                    </code>
+</div>
+<div class="flex gap-2 mt-2">
+<button class="flex-1 h-touch-target border border-primary-fixed-dim text-primary-fixed-dim font-body-md text-body-md rounded-DEFAULT flex items-center justify-center hover:bg-surface-container-low transition-colors focus:outline-none focus:ring-1 focus:ring-primary-fixed-dim">
+                        FLUSH CACHE
+                    </button>
+</div>
+</article>
+<!-- Secondary Warning Card -->
+<article class="bg-graphite-surface border border-border-subtle p-4 rounded-DEFAULT flex flex-col gap-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="dns">dns</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Stale DNS Records</h2>
+<span class="ml-auto font-label-caps text-label-caps bg-surface-container-high text-on-surface-variant px-2 py-1 rounded-DEFAULT border border-border-subtle">NOTICE</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+                    Found 4 orphaned A records pointing to decommissioned instances.
+                </p>
+<div class="flex gap-2 mt-2">
+<button class="flex-1 h-touch-target border border-border-subtle text-on-surface font-body-md text-body-md rounded-DEFAULT flex items-center justify-center hover:bg-surface-container-low transition-colors focus:outline-none">
+                        VIEW RECORDS
+                    </button>
+</div>
+</article>
+</div>
+</main>
+<!-- Bottom Navigation Shell (Mobile) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-touch-target px-margin-mobile bg-surface-container-lowest border-t border-border-subtle pb-[env(safe-area-inset-bottom)] h-[calc(44px+env(safe-area-inset-bottom))]">
+<div class="flex flex-col items-center justify-center text-on-surface-variant touch-none select-none active:scale-95 transition-transform w-12 cursor-pointer">
+<span class="material-symbols-outlined text-[24px]" data-icon="dashboard">dashboard</span>
+<span class="font-label-caps text-label-caps mt-[2px]">Dash</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant touch-none select-none active:scale-95 transition-transform w-12 cursor-pointer">
+<span class="material-symbols-outlined text-[24px]" data-icon="storage">storage</span>
+<span class="font-label-caps text-label-caps mt-[2px]">Vault</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant touch-none select-none active:scale-95 transition-transform w-12 cursor-pointer">
+<span class="material-symbols-outlined text-[24px]" data-icon="movie">movie</span>
+<span class="font-label-caps text-label-caps mt-[2px]">Media</span>
+</div>
+<!-- Active Tab -->
+<div class="flex flex-col items-center justify-center text-primary-fixed-dim touch-none select-none active:scale-95 transition-transform w-12 cursor-pointer">
+<span class="material-symbols-outlined text-[24px]" data-icon="psychology" style="font-variation-settings: 'FILL' 1;">psychology</span>
+<span class="font-label-caps text-label-caps mt-[2px]">AI</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant touch-none select-none active:scale-95 transition-transform w-12 cursor-pointer">
+<span class="material-symbols-outlined text-[24px]" data-icon="menu">menu</span>
+<span class="font-label-caps text-label-caps mt-[2px]">More</span>
+</div>
+</nav>
+</body></html>

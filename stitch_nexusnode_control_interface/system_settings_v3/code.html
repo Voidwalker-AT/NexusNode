@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusNode - Settings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-error": "#690005",
+                      "surface-tint": "#00daf3",
+                      "error": "#ffb4ab",
+                      "on-secondary-fixed": "#2a0053",
+                      "surface-variant": "#2e3638",
+                      "error-container": "#93000a",
+                      "surface-container-high": "#242b2d",
+                      "on-secondary": "#460283",
+                      "on-surface": "#dce4e5",
+                      "on-tertiary-container": "#6f5500",
+                      "on-secondary-fixed-variant": "#5e289b",
+                      "tertiary-fixed-dim": "#f3bf26",
+                      "on-tertiary": "#3e2e00",
+                      "on-background": "#dce4e5",
+                      "surface-bright": "#333a3c",
+                      "on-tertiary-fixed": "#251a00",
+                      "on-error-container": "#ffdad6",
+                      "inverse-on-surface": "#2a3233",
+                      "primary-fixed-dim": "#00daf3",
+                      "tertiary-fixed": "#ffdf96",
+                      "outline-variant": "#3b494c",
+                      "on-surface-variant": "#bac9cc",
+                      "surface-container-lowest": "#080f11",
+                      "outline": "#849396",
+                      "inverse-primary": "#006875",
+                      "on-tertiary-fixed-variant": "#594400",
+                      "surface": "#0d1516",
+                      "on-primary-fixed-variant": "#004f58",
+                      "primary-fixed": "#9cf0ff",
+                      "on-secondary-container": "#cfa7ff",
+                      "on-primary-container": "#00626e",
+                      "on-primary-fixed": "#001f24",
+                      "primary": "#c3f5ff",
+                      "surface-container": "#192122",
+                      "tertiary": "#ffeac0",
+                      "surface-dim": "#0d1516",
+                      "background": "#0d1516",
+                      "surface-container-low": "#151d1e",
+                      "surface-container-highest": "#2e3638",
+                      "primary-container": "#00e5ff",
+                      "secondary": "#dab9ff",
+                      "inverse-surface": "#dce4e5",
+                      "tertiary-container": "#fec931",
+                      "on-primary": "#00363d",
+                      "secondary-fixed": "#eedbff",
+                      "secondary-container": "#602b9d",
+                      "secondary-fixed-dim": "#dab9ff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "stack-gap": "8px",
+                      "container-padding": "16px",
+                      "element-gap": "4px",
+                      "section-margin": "24px",
+                      "unit": "4px"
+              },
+              "fontFamily": {
+                      "body-sm": ["Inter"],
+                      "label-caps": ["Inter"],
+                      "headline-md": ["Inter"],
+                      "data-md": ["JetBrains Mono"],
+                      "data-lg": ["JetBrains Mono"],
+                      "headline-lg": ["Inter"],
+                      "data-sm": ["JetBrains Mono"],
+                      "body-md": ["Inter"]
+              },
+              "fontSize": {
+                      "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                      "label-caps": ["10px", {"lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700"}],
+                      "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "data-md": ["13px", {"lineHeight": "18px", "fontWeight": "500"}],
+                      "data-lg": ["16px", {"lineHeight": "20px", "fontWeight": "600"}],
+                      "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "data-sm": ["11px", {"lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                      "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        /* Custom styling for precise toggle switches matching technical aesthetic */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: theme('colors.primary');
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: theme('colors.primary-container');
+        }
+        .toggle-checkbox:checked + .toggle-label:after {
+            transform: translateX(100%);
+            background-color: theme('colors.on-primary-container');
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface h-screen flex flex-col font-body-md antialiased overflow-hidden selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar -->
+<header class="bg-surface hidden md:flex justify-between items-center px-container-padding h-16 w-full max-w-none border-b border-outline-variant flat no shadows flex-shrink-0 z-40">
+<div class="flex items-center gap-6">
+<div class="font-headline-lg text-headline-lg font-bold text-primary tracking-tighter">
+                NexusNode
+            </div>
+<nav class="flex items-center gap-2 h-full ml-4">
+<a class="h-16 flex items-center px-3 font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 uppercase tracking-widest" href="#">Dashboard</a>
+<a class="h-16 flex items-center px-3 font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 uppercase tracking-widest" href="#">Vault</a>
+<a class="h-16 flex items-center px-3 font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 uppercase tracking-widest" href="#">Media</a>
+<a class="h-16 flex items-center px-3 font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 uppercase tracking-widest" href="#">Tasks</a>
+<a class="h-16 flex items-center px-3 font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors scale-95 duration-100 uppercase tracking-widest" href="#">AI Studio</a>
+</nav>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-variant transition-colors flex items-center justify-center scale-95 duration-100">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">sensors</span>
+</button>
+<button class="p-2 rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-variant transition-colors flex items-center justify-center scale-95 duration-100">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">notifications</span>
+</button>
+<button class="p-2 rounded-full text-primary border border-primary transition-colors flex items-center justify-center scale-95 duration-100 ml-2">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Main Layout -->
+<div class="flex flex-1 overflow-hidden relative">
+<!-- Settings Sidebar Navigation -->
+<aside class="w-64 border-r border-outline-variant bg-surface-container-lowest flex-shrink-0 hidden md:flex flex-col">
+<div class="p-container-padding border-b border-outline-variant">
+<h1 class="font-headline-md text-headline-md text-on-surface">Settings</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">System Configuration</p>
+</div>
+<nav class="flex-1 overflow-y-auto py-2">
+<a class="flex items-center px-container-padding py-3 gap-3 border-l-2 border-primary bg-surface-container text-primary font-body-md text-body-md transition-colors hover:bg-surface-variant" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">tune</span>
+                    General
+                </a>
+<a class="flex items-center px-container-padding py-3 gap-3 border-l-2 border-transparent text-on-surface-variant font-body-md text-body-md transition-colors hover:bg-surface-container hover:text-on-surface" href="#">
+<span class="material-symbols-outlined text-[20px]">router</span>
+                    Network
+                </a>
+<a class="flex items-center px-container-padding py-3 gap-3 border-l-2 border-transparent text-on-surface-variant font-body-md text-body-md transition-colors hover:bg-surface-container hover:text-on-surface" href="#">
+<span class="material-symbols-outlined text-[20px]">psychology</span>
+                    AI Configuration
+                </a>
+<a class="flex items-center px-container-padding py-3 gap-3 border-l-2 border-transparent text-on-surface-variant font-body-md text-body-md transition-colors hover:bg-surface-container hover:text-on-surface" href="#">
+<span class="material-symbols-outlined text-[20px]">storage</span>
+                    Storage
+                </a>
+<a class="flex items-center px-container-padding py-3 gap-3 border-l-2 border-transparent text-on-surface-variant font-body-md text-body-md transition-colors hover:bg-surface-container hover:text-on-surface" href="#">
+<span class="material-symbols-outlined text-[20px]">security</span>
+                    Security
+                </a>
+<a class="flex items-center px-container-padding py-3 gap-3 border-l-2 border-transparent text-on-surface-variant font-body-md text-body-md transition-colors hover:bg-surface-container hover:text-on-surface mt-4 border-t border-outline-variant pt-5" href="#">
+<span class="material-symbols-outlined text-[20px]">terminal</span>
+                    Advanced (Termux)
+                </a>
+</nav>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 overflow-y-auto bg-background p-4 md:p-section-margin custom-scrollbar relative">
+<div class="max-w-4xl mx-auto space-y-section-margin">
+<!-- Section Header -->
+<div class="flex justify-between items-end border-b border-outline-variant pb-2">
+<div>
+<h2 class="font-headline-md text-headline-md text-primary">General Configuration</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Manage core appliance identity and operational parameters.</p>
+</div>
+<button class="bg-surface-container border border-outline-variant text-on-surface px-4 py-2 font-data-sm text-data-sm rounded-DEFAULT hover:border-primary transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">save</span>
+                        Commit Changes
+                    </button>
+</div>
+<!-- Settings Block: Identity -->
+<section class="bg-surface-container-low border border-outline-variant rounded-DEFAULT overflow-hidden">
+<div class="bg-surface-container px-container-padding py-3 border-b border-outline-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-primary">badge</span>
+<h3 class="font-data-md text-data-md text-on-surface uppercase tracking-wider">Node Identity</h3>
+</div>
+<div class="p-container-padding space-y-4">
+<div class="grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-4 items-center">
+<div>
+<label class="font-body-md text-body-md text-on-surface block">Appliance Hostname</label>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Network identification string.</span>
+</div>
+<input class="w-full bg-surface-container border border-outline-variant text-on-surface font-data-md text-data-md rounded-DEFAULT px-3 py-2 focus:outline-none focus:border-primary transition-colors focus:ring-1 focus:ring-primary shadow-none h-10" type="text" value="nx-node-core-01"/>
+</div>
+<hr class="border-outline-variant"/>
+<div class="grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-4 items-center">
+<div>
+<label class="font-body-md text-body-md text-on-surface block">Environment Type</label>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Sets logging and error verbosity.</span>
+</div>
+<div class="relative w-full md:w-64">
+<select class="appearance-none w-full bg-surface-container border border-outline-variant text-on-surface font-data-md text-data-md rounded-DEFAULT px-3 py-2 pr-10 focus:outline-none focus:border-primary transition-colors h-10">
+<option value="prod">Production</option>
+<option value="staging">Staging</option>
+<option value="dev">Development</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-2.5 text-on-surface-variant pointer-events-none">expand_more</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Settings Block: Power & Telemetry -->
+<section class="bg-surface-container-low border border-outline-variant rounded-DEFAULT overflow-hidden">
+<div class="bg-surface-container px-container-padding py-3 border-b border-outline-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-primary">analytics</span>
+<h3 class="font-data-md text-data-md text-on-surface uppercase tracking-wider">Telemetry &amp; Power</h3>
+</div>
+<div class="divide-y divide-outline-variant">
+<div class="flex items-center justify-between p-container-padding hover:bg-surface-container transition-colors">
+<div class="pr-4">
+<label class="font-body-md text-body-md text-on-surface block">Detailed Analytics</label>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Transmit anonymized usage metrics.</span>
+</div>
+<div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in flex-shrink-0">
+<input checked="" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-on-surface border-4 appearance-none cursor-pointer border-outline-variant z-10 transition-transform duration-200 ease-in-out left-0" id="toggle1" name="toggle" style="top: 2px;" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-7 rounded-full bg-surface-container-highest cursor-pointer border border-outline-variant relative after:content-[''] after:absolute after:w-6 after:h-6 after:bg-on-surface-variant after:rounded-full after:left-[2px] after:top-[1px] after:transition-all after:duration-200" for="toggle1"></label>
+</div>
+</div>
+<div class="flex items-center justify-between p-container-padding hover:bg-surface-container transition-colors">
+<div class="pr-4">
+<label class="font-body-md text-body-md text-on-surface block">Automated Power Saving</label>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Throttle CPU frequency during low-demand periods.</span>
+</div>
+<div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in flex-shrink-0">
+<input class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-on-surface border-4 appearance-none cursor-pointer border-outline-variant z-10 transition-transform duration-200 ease-in-out left-0" id="toggle2" name="toggle" style="top: 2px;" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-7 rounded-full bg-surface-container-highest cursor-pointer border border-outline-variant relative after:content-[''] after:absolute after:w-6 after:h-6 after:bg-on-surface-variant after:rounded-full after:left-[2px] after:top-[1px] after:transition-all after:duration-200" for="toggle2"></label>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex md:hidden justify-around items-center h-16 px-2 border-t border-outline-variant bg-surface flat no shadows">
+<a class="flex flex-col items-center justify-center text-on-surface-variant transition-transform duration-200 active:scale-90 active:bg-surface-variant w-16 h-full rounded-lg" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">dashboard</span>
+<span class="font-label-caps text-label-caps mt-1">Dash</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant transition-transform duration-200 active:scale-90 active:bg-surface-variant w-16 h-full rounded-lg" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">storage</span>
+<span class="font-label-caps text-label-caps mt-1">Vault</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant transition-transform duration-200 active:scale-90 active:bg-surface-variant w-16 h-full rounded-lg" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">perm_media</span>
+<span class="font-label-caps text-label-caps mt-1">Media</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant transition-transform duration-200 active:scale-90 active:bg-surface-variant w-16 h-full rounded-lg" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">checklist</span>
+<span class="font-label-caps text-label-caps mt-1">Tasks</span>
+</a>
+<!-- Settings (Active) -->
+<a class="flex flex-col items-center justify-center text-primary transition-transform duration-200 active:scale-90 active:bg-surface-variant w-16 h-full rounded-lg" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">menu</span>
+<span class="font-label-caps text-label-caps mt-1">More</span>
+</a>
+</nav>
+</body></html>

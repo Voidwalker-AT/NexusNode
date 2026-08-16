@@ -3,11 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>NexusNode — Personal Mobile Server Appliance</title>
+  <title>NexusNode — 24/7 Personal Mobile Server Appliance</title>
   
+  <!-- Canonical Fonts: Inter for UI, JetBrains Mono for Metrics, Material Symbols for Technical Icons -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  
+  <!-- Canonical Design System (nexusnode/DESIGN.md) -->
   <link rel="stylesheet" href="./static/css/index.css">
 </head>
 <body>
@@ -15,13 +18,43 @@
   <!-- Toast Notification System -->
   <div id="toastContainer" class="toast-container"></div>
 
+  <!-- ========================================================================= -->
+  <!-- TOP DEVICE STATUS STRIP (Canonical Mobile/Desktop Hardware Identity)     -->
+  <!-- ========================================================================= -->
+  <div class="top-status-strip" id="topStatusStrip">
+    <div class="status-strip-left">
+      <div class="status-strip-item">
+        <span class="material-symbols-outlined">memory</span>
+        <span id="stripHostName">TECNO BG6</span>
+      </div>
+      <div class="status-strip-item">
+        <span>Android 13</span>
+      </div>
+      <div class="status-strip-item">
+        <span>UP: <span id="stripUptime">--</span></span>
+      </div>
+    </div>
+    <div class="status-strip-right">
+      <div class="status-strip-item">
+        <div class="status-dot" id="stripStatusDot"></div>
+        <span id="stripConnStatus">ONLINE (LAN)</span>
+      </div>
+      <div class="status-strip-item">
+        <span class="material-symbols-outlined">battery_charging_full</span>
+        <span id="stripBattery">--%</span>
+      </div>
+    </div>
+  </div>
+
   <div class="app-container" id="appContainer">
     
-    <!-- DESKTOP / MAIN HEADER -->
+    <!-- ======================================================================= -->
+    <!-- DESKTOP APP BAR                                                         -->
+    <!-- ======================================================================= -->
     <header class="app-header">
       <div class="brand-section">
         <div class="brand-logo">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span class="material-symbols-outlined fill-icon" style="font-size: 24px;">hub</span>
         </div>
         <div class="brand-info">
           <h1>NexusNode <span class="node-badge" id="hostNodeBadge">TECNO BG6</span></h1>
@@ -30,50 +63,66 @@
 
       <!-- Center Primary Navigation (5 destinations + More) -->
       <nav class="desktop-nav-tabs" role="tablist">
-        <button class="nav-tab active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
-        <button class="nav-tab" data-tab="storage" onclick="switchTab('storage')">Vault</button>
-        <button class="nav-tab" data-tab="media" onclick="switchTab('media')">Media</button>
-        <button class="nav-tab" id="desktopTasksTab" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
-        <button class="nav-tab" data-tab="ai-studio" onclick="switchTab('ai-studio')">AI Studio</button>
+        <button class="nav-tab active" data-tab="dashboard" onclick="switchTab('dashboard')">
+          <span class="material-symbols-outlined">dashboard</span>
+          <span>Dashboard</span>
+        </button>
+        <button class="nav-tab" data-tab="storage" onclick="switchTab('storage')">
+          <span class="material-symbols-outlined">storage</span>
+          <span>Vault</span>
+        </button>
+        <button class="nav-tab" data-tab="media" onclick="switchTab('media')">
+          <span class="material-symbols-outlined">movie</span>
+          <span>Media</span>
+        </button>
+        <button class="nav-tab" id="desktopTasksTab" data-tab="tasks" onclick="switchTab('tasks')">
+          <span class="material-symbols-outlined">checklist</span>
+          <span>Tasks</span>
+        </button>
+        <button class="nav-tab" data-tab="ai-studio" onclick="switchTab('ai-studio')">
+          <span class="material-symbols-outlined">psychology</span>
+          <span>AI Studio</span>
+        </button>
         
         <!-- Desktop Collapsible "More" Menu Dropdown -->
         <div class="desktop-more-wrapper">
           <button class="nav-tab more-toggle-btn" id="desktopMoreToggleBtn" onclick="toggleDesktopMoreMenu(event)">
-            <span>☰ More</span>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+            <span class="material-symbols-outlined">menu</span>
+            <span>More</span>
+            <span class="material-symbols-outlined" style="font-size: 16px;">expand_more</span>
           </button>
           <div class="desktop-more-menu" id="desktopMoreMenu">
             <button class="more-menu-item" onclick="switchTab('network'); closeAllMoreMenus()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></svg>
+              <span class="material-symbols-outlined">lan</span>
               <span>Network Center</span>
             </button>
             <button class="more-menu-item" onclick="switchTab('events'); closeAllMoreMenus()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              <span class="material-symbols-outlined">event_note</span>
               <span>Events & Logs</span>
             </button>
             <button class="more-menu-item" onclick="switchTab('storage-intel'); closeAllMoreMenus()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              <span class="material-symbols-outlined">analytics</span>
               <span>Storage Intelligence</span>
             </button>
             <button class="more-menu-item perm-backups" onclick="switchTab('backups'); closeAllMoreMenus()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              <span class="material-symbols-outlined">backup</span>
               <span>System Backups</span>
             </button>
             <button class="more-menu-item perm-automation" onclick="switchTab('automation'); closeAllMoreMenus()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+              <span class="material-symbols-outlined">settings_input_component</span>
               <span>Automation Engine</span>
             </button>
             <button class="more-menu-item perm-settings" onclick="switchTab('settings'); closeAllMoreMenus()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span class="material-symbols-outlined">settings</span>
               <span>System Settings</span>
             </button>
             <div class="menu-divider admin-only"></div>
             <button class="more-menu-item admin-only" id="desktopDiagnosticsBtn" onclick="switchTab('diagnostics'); closeAllMoreMenus()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              <span class="material-symbols-outlined">terminal</span>
               <span>System Diagnostics</span>
             </button>
             <button class="more-menu-item admin-only" id="desktopAdminMenuBtn" onclick="switchTab('admin'); closeAllMoreMenus()">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span class="material-symbols-outlined">admin_panel_settings</span>
               <span>Admin Hub</span>
             </button>
           </div>
@@ -83,973 +132,1002 @@
       <!-- Right Header Actions (User Pill, Connection Status, Logout) -->
       <div class="header-actions">
         <div class="connection-status-pill" id="headerConnectionPill" title="Connection Mode">
-          <span class="status-dot online" id="headerConnDot"></span>
+          <span class="status-dot" id="headerConnDot"></span>
           <span class="status-label" id="headerConnLabel">LAN</span>
         </div>
         <div class="user-pill" id="headerUserPill" title="Current Active Session">
           <div class="user-avatar" id="headerUserAvatar">A</div>
-          <span id="headerUsername">admin</span>
+          <span id="headerUsername" class="font-data-sm">admin</span>
           <span class="role-badge admin" id="headerRoleBadge">ADMIN</span>
         </div>
         <button class="icon-btn logout-btn" title="Sign Out" onclick="handleLogout()">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          <span class="material-symbols-outlined" style="font-size: 18px;">logout</span>
         </button>
       </div>
     </header>
 
     <!-- ======================================================================= -->
-    <!-- TAB 1: SERVER CONTROL CENTER DASHBOARD                                  -->
+    <!-- MAIN WORKSPACE                                                          -->
     <!-- ======================================================================= -->
-    <main class="tab-pane active" id="tab-dashboard">
+    <div class="main-workspace">
       
-      <!-- APPLIANCE STATUS BANNER -->
-      <section class="glass-card status-banner-card">
-        <div class="banner-main-row">
-          <div class="server-ident-group">
-            <div class="pulse-node-ring" id="nodeGlobalPulse"></div>
-            <div>
-              <div class="banner-title-row">
-                <h2>NexusNode Core</h2>
-                <span class="node-state-pill online" id="serverStatePill">● ONLINE</span>
+      <!-- ===================================================================== -->
+      <!-- TAB: DASHBOARD (nexusnode_dashboard_desktop_v3 & mobile_v3)           -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane active" id="tab-dashboard">
+        <div class="grid-12">
+          
+          <!-- Left Column (Span 7): System Health, Active Task, Directives -->
+          <div class="col-span-7" style="display: flex; flex-direction: column; gap: var(--gap-gutter);">
+            
+            <!-- System Health Card (Meters) -->
+            <section class="tech-card">
+              <div class="tech-card-header">
+                <h2 class="tech-card-title">
+                  <span class="material-symbols-outlined">monitor_heart</span>
+                  <span>System Resources</span>
+                </h2>
+                <span class="font-label-caps" style="color: var(--on-surface-variant);">TECNO BG6 • ~4 GB RAM</span>
               </div>
-              <p class="card-subtitle font-mono" id="serverApplianceSub">TECNO BG6 • Termux Android 13 • Uptime: --</p>
+              
+              <div class="meters-grid">
+                <!-- RAM Meter -->
+                <div class="meter-unit">
+                  <div class="meter-header">
+                    <span>RAM (PSS + OLLAMA)</span>
+                    <span id="ramMeterVal" style="color: var(--primary);">--%</span>
+                  </div>
+                  <div class="meter-track">
+                    <div class="meter-fill" id="ramMeterFill" style="width: 0%;"></div>
+                  </div>
+                  <span class="font-data-sm" id="ramDetailText" style="color: var(--on-surface-muted);">-- / -- MB</span>
+                </div>
+
+                <!-- Swap Meter -->
+                <div class="meter-unit">
+                  <div class="meter-header">
+                    <span>ZRAM / SWAP</span>
+                    <span id="swapMeterVal">--%</span>
+                  </div>
+                  <div class="meter-track">
+                    <div class="meter-fill" id="swapMeterFill" style="width: 0%;"></div>
+                  </div>
+                  <span class="font-data-sm" id="swapDetailText" style="color: var(--on-surface-muted);">-- / -- MB</span>
+                </div>
+
+                <!-- Storage Meter -->
+                <div class="meter-unit">
+                  <div class="meter-header">
+                    <span>INTERNAL STORAGE</span>
+                    <span id="storageMeterVal">--%</span>
+                  </div>
+                  <div class="meter-track">
+                    <div class="meter-fill" id="storageMeterFill" style="width: 0%;"></div>
+                  </div>
+                  <span class="font-data-sm" id="storageDetailText" style="color: var(--on-surface-muted);">-- / -- GB</span>
+                </div>
+
+                <!-- CPU / Core Load -->
+                <div class="meter-unit">
+                  <div class="meter-header">
+                    <span>CPU LOAD</span>
+                    <span id="cpuMeterVal">--%</span>
+                  </div>
+                  <div class="meter-track">
+                    <div class="meter-fill" id="cpuMeterFill" style="width: 0%;"></div>
+                  </div>
+                  <span class="font-data-sm" id="cpuDetailText" style="color: var(--on-surface-muted);">8 Cores (aarch64)</span>
+                </div>
+              </div>
+
+              <!-- Thermal & Battery Telemetry Strip -->
+              <div class="device-telemetry-row">
+                <div class="telemetry-chip">
+                  <div class="telemetry-chip-left">
+                    <span class="material-symbols-outlined" style="color: var(--primary);">battery_charging_full</span>
+                    <span id="dashBatteryLevel">--%</span>
+                  </div>
+                  <span class="telemetry-chip-status" id="dashBatteryStatus">CHARGING</span>
+                </div>
+                <div class="telemetry-chip">
+                  <div class="telemetry-chip-left">
+                    <span class="material-symbols-outlined" style="color: var(--status-warning);">thermostat</span>
+                    <span id="dashThermalLevel">--°C</span>
+                  </div>
+                  <span class="telemetry-chip-status" id="dashThermalStatus">NORMAL</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- Active Task Supervision Card -->
+            <section class="active-task-container" id="activeTaskCard">
+              <div class="tech-card-header" style="margin-bottom: 8px;">
+                <h3 class="tech-card-title">
+                  <span class="material-symbols-outlined" style="color: var(--primary);">sync</span>
+                  <span id="activeTaskTitle">No Active Operations</span>
+                </h3>
+                <span class="font-label-caps" id="activeTaskStatus" style="color: var(--on-surface-muted);">IDLE</span>
+              </div>
+              <div class="active-task-inner">
+                <div class="task-progress-box">
+                  <div class="meter-track" style="height: 6px;">
+                    <div class="meter-fill" id="activeTaskMeterFill" style="width: 0%;"></div>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span class="font-data-sm" id="activeTaskStepText" style="color: var(--on-surface-variant);">System standby</span>
+                    <span class="font-data-sm" id="activeTaskPercent" style="color: var(--primary);">0%</span>
+                  </div>
+                </div>
+                <div class="task-stat-box" id="activeTaskActions">
+                  <button class="btn btn-danger" id="activeTaskCancelBtn" style="display: none; width: 100%;" onclick="cancelCurrentActiveTask()">
+                    <span class="material-symbols-outlined" style="font-size: 16px;">cancel</span>
+                    <span>Abort</span>
+                  </button>
+                  <span class="font-data-sm" id="activeTaskIdText" style="color: var(--on-surface-dim);">TASK: NONE</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- Quick Directives (Thumb-friendly on mobile, clean on desktop) -->
+            <section class="tech-card">
+              <div class="tech-card-header">
+                <h3 class="font-label-caps" style="color: var(--on-surface-variant);">QUICK DIRECTIVES</h3>
+              </div>
+              <div class="directives-grid">
+                <button class="directive-btn" onclick="switchTab('storage')">
+                  <span class="material-symbols-outlined" style="color: var(--primary);">storage</span>
+                  <span class="font-label-caps">Vault</span>
+                </button>
+                <button class="directive-btn" onclick="switchTab('media')">
+                  <span class="material-symbols-outlined" style="color: var(--primary);">download</span>
+                  <span class="font-label-caps">Media</span>
+                </button>
+                <button class="directive-btn" onclick="switchTab('ai-studio')">
+                  <span class="material-symbols-outlined" style="color: var(--secondary);">psychology</span>
+                  <span class="font-label-caps">AI Studio</span>
+                </button>
+                <button class="directive-btn perm-backups" onclick="switchTab('backups')">
+                  <span class="material-symbols-outlined" style="color: var(--primary);">backup</span>
+                  <span class="font-label-caps">Backup</span>
+                </button>
+                <button class="directive-btn admin-only" onclick="switchTab('diagnostics')">
+                  <span class="material-symbols-outlined" style="color: var(--status-warning);">terminal</span>
+                  <span class="font-label-caps">Diagnostics</span>
+                </button>
+              </div>
+            </section>
+
+          </div>
+
+          <!-- Right Column (Span 5): Core Services & Live Event Stream -->
+          <div class="col-span-5" style="display: flex; flex-direction: column; gap: var(--gap-gutter);">
+            
+            <!-- Core Services Supervision -->
+            <section class="tech-card">
+              <div class="tech-card-header">
+                <h3 class="tech-card-title">
+                  <span class="material-symbols-outlined">dns</span>
+                  <span>Core Services</span>
+                </h3>
+                <span class="font-label-caps" id="coreServicesCount" style="color: var(--primary);">4 MODULES</span>
+              </div>
+              
+              <div class="services-list" id="servicesListContainer">
+                <!-- NexusNode Core -->
+                <div class="service-row">
+                  <div class="service-left">
+                    <div class="service-dot online" id="svcDotNexus"></div>
+                    <div>
+                      <div class="service-name">NexusNode</div>
+                      <div class="service-detail" id="svcDetailNexus">PID -- • Port 5000</div>
+                    </div>
+                  </div>
+                  <span class="service-badge" id="svcBadgeNexus">RUNNING</span>
+                </div>
+
+                <!-- OpenSSH -->
+                <div class="service-row">
+                  <div class="service-left">
+                    <div class="service-dot online" id="svcDotSsh"></div>
+                    <div>
+                      <div class="service-name">OpenSSH (sshd)</div>
+                      <div class="service-detail" id="svcDetailSsh">PID -- • Port 8022</div>
+                    </div>
+                  </div>
+                  <span class="service-badge" id="svcBadgeSsh">RUNNING</span>
+                </div>
+
+                <!-- LocalToNet -->
+                <div class="service-row">
+                  <div class="service-left">
+                    <div class="service-dot online" id="svcDotL2n"></div>
+                    <div>
+                      <div class="service-name">LocalToNet Tunnel</div>
+                      <div class="service-detail" id="svcDetailL2n">WAN Ingress</div>
+                    </div>
+                  </div>
+                  <span class="service-badge" id="svcBadgeL2n">CONNECTED</span>
+                </div>
+
+                <!-- Ollama -->
+                <div class="service-row">
+                  <div class="service-left">
+                    <div class="service-dot online" id="svcDotOllama"></div>
+                    <div>
+                      <div class="service-name">Ollama Engine</div>
+                      <div class="service-detail" id="svcDetailOllama">PID -- • Port 11434</div>
+                    </div>
+                  </div>
+                  <span class="service-badge" id="svcBadgeOllama">STANDBY</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- Live Event Stream Feed -->
+            <section class="tech-card">
+              <div class="tech-card-header">
+                <h3 class="tech-card-title">
+                  <span class="material-symbols-outlined">receipt_long</span>
+                  <span>System Event Feed</span>
+                </h3>
+                <div style="display: flex; gap: 6px;">
+                  <button class="btn btn-primary" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="clearEventFeed()">Clear</button>
+                </div>
+              </div>
+              <div class="event-log-container" id="eventLogFeed">
+                <div class="log-entry">
+                  <span class="log-time">[SYSTEM]</span>
+                  <span class="log-level INFO">INFO</span>
+                  <span class="log-msg">SSE Stream Initialized. Monitoring telemetry...</span>
+                </div>
+              </div>
+            </section>
+
+          </div>
+
+        </div>
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: VAULT (vault_file_manager_2 & vault_mobile)                     -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane" id="tab-storage">
+        <div class="vault-layout">
+          
+          <!-- Locations Sidebar -->
+          <aside class="vault-sidebar">
+            <div class="font-label-caps" style="color: var(--on-surface-muted); margin-bottom: 6px;">LOCATIONS</div>
+            <button class="vault-nav-item active" onclick="filterVaultLocation('all', this)">
+              <span class="material-symbols-outlined">folder</span>
+              <span>All Storage</span>
+            </button>
+            <button class="vault-nav-item" onclick="filterVaultLocation('documents', this)">
+              <span class="material-symbols-outlined">description</span>
+              <span>Documents</span>
+            </button>
+            <button class="vault-nav-item" onclick="filterVaultLocation('media', this)">
+              <span class="material-symbols-outlined">movie</span>
+              <span>Media</span>
+            </button>
+            <button class="vault-nav-item" onclick="filterVaultLocation('downloads', this)">
+              <span class="material-symbols-outlined">download</span>
+              <span>Downloads</span>
+            </button>
+            <button class="vault-nav-item perm-backups" onclick="filterVaultLocation('backups', this)">
+              <span class="material-symbols-outlined">backup</span>
+              <span>Backups</span>
+            </button>
+            <button class="vault-nav-item" onclick="filterVaultLocation('rag', this)">
+              <span class="material-symbols-outlined">psychology</span>
+              <span>RAG Vault</span>
+            </button>
+
+            <div class="font-label-caps" style="color: var(--on-surface-muted); margin-top: 16px; margin-bottom: 6px;">ACTIONS</div>
+            <input type="file" id="vaultFileInput" style="display: none;" onchange="handleVaultUpload(event)">
+            <button class="btn btn-primary" style="width: 100%; margin-bottom: 6px;" onclick="document.getElementById('vaultFileInput').click()">
+              <span class="material-symbols-outlined">upload</span>
+              <span>Upload File</span>
+            </button>
+            <button class="btn btn-secondary" style="width: 100%;" onclick="handleCleanTempFiles()">
+              <span class="material-symbols-outlined">cleaning_services</span>
+              <span>Clean Temp</span>
+            </button>
+          </aside>
+
+          <!-- Main File Table Area -->
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div class="tech-card" style="padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+              <div style="display: flex; align-items: center; gap: 10px; width: 60%;">
+                <span class="material-symbols-outlined" style="color: var(--on-surface-muted);">search</span>
+                <input class="form-input" id="vaultSearchInput" placeholder="QUERY VAULT SYSTEM..." style="border: none; background: transparent; padding: 0; min-height: 28px;" oninput="handleVaultSearch(this.value)">
+              </div>
+              <span class="font-data-sm" id="vaultFileCount" style="color: var(--on-surface-variant);">0 OBJECTS</span>
+            </div>
+
+            <div class="vault-table-container">
+              <table class="tech-table">
+                <thead>
+                  <tr>
+                    <th>NAME</th>
+                    <th>EXT</th>
+                    <th>SIZE</th>
+                    <th>MODIFIED</th>
+                    <th style="text-align: right;">ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody id="vaultTableBody">
+                  <tr>
+                    <td colspan="5" style="text-align: center; color: var(--on-surface-muted); padding: 24px;">Loading Vault Objects...</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
-          <div class="banner-quick-meta">
-            <div class="meta-pill"><span class="meta-label">Thermal:</span> <strong id="metaThermalState" class="font-mono" style="color: var(--accent-emerald);">NORMAL</strong></div>
-            <div class="meta-pill"><span class="meta-label">Battery:</span> <strong id="metaBatteryPct" class="font-mono">--%</strong></div>
-            <div class="meta-pill"><span class="meta-label">WAN Ingress:</span> <strong id="metaTunnelStatus" class="font-mono" style="color: var(--accent-cyan);">Active</strong></div>
+
+        </div>
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: MEDIA (media_downloads_control_2 & media_center_mobile)          -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane" id="tab-media">
+        <div class="media-layout">
+          
+          <!-- Left Panel: Acquisition Engine -->
+          <section class="tech-card">
+            <div class="tech-card-header">
+              <h2 class="tech-card-title">
+                <span class="material-symbols-outlined">download</span>
+                <span>Acquisition Engine</span>
+              </h2>
+              <span class="font-label-caps" style="color: var(--primary);">YT-DLP CORE</span>
+            </div>
+
+            <form id="mediaDownloadForm" onsubmit="handleMediaDownloadSubmit(event)">
+              <div class="form-group">
+                <label class="form-label" for="mediaUrlInput">TARGET URI (URL OR MULTI-LINE)</label>
+                <textarea class="form-textarea" id="mediaUrlInput" rows="3" placeholder="https://www.youtube.com/watch?v=..." required></textarea>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="form-group">
+                  <label class="form-label" for="mediaFormatSelect">FORMAT</label>
+                  <select class="form-select" id="mediaFormatSelect">
+                    <option value="mp3">Audio Only (MP3)</option>
+                    <option value="m4a">Audio Only (M4A)</option>
+                    <option value="opus">Audio Only (OPUS)</option>
+                    <option value="flac">Audio Only (FLAC)</option>
+                    <option value="mp4" selected>Video + Audio (MP4)</option>
+                    <option value="mkv">Video + Audio (MKV)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="mediaQualitySelect">QUALITY</label>
+                  <select class="form-select" id="mediaQualitySelect">
+                    <option value="best" selected>Best Available</option>
+                    <option value="1080p">1080p HD</option>
+                    <option value="720p">720p HD</option>
+                    <option value="480p">480p SD</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="mediaDestSelect">DESTINATION</label>
+                <select class="form-select" id="mediaDestSelect">
+                  <option value="media/videos">vault/media/videos</option>
+                  <option value="media/music">vault/media/music</option>
+                  <option value="media/podcasts">vault/media/podcasts</option>
+                  <option value="downloads">vault/downloads</option>
+                </select>
+              </div>
+
+              <div style="display: flex; gap: 12px; margin-bottom: 14px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                  <input type="checkbox" id="mediaEmbedMeta" checked>
+                  <span>Embed Meta</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                  <input type="checkbox" id="mediaSubs">
+                  <span>Subtitles</span>
+                </label>
+              </div>
+
+              <button class="btn btn-primary" type="submit" style="width: 100%;">
+                <span class="material-symbols-outlined">add_task</span>
+                <span>QUEUE DOWNLOAD</span>
+              </button>
+            </form>
+          </section>
+
+          <!-- Right Panel: Queue & Library -->
+          <div style="display: flex; flex-direction: column; gap: var(--gap-gutter);">
+            
+            <!-- Active Queue -->
+            <section class="tech-card">
+              <div class="tech-card-header">
+                <h3 class="tech-card-title">
+                  <span class="material-symbols-outlined">sync</span>
+                  <span>Active Operations Queue</span>
+                </h3>
+                <span class="font-label-caps" id="mediaQueueCount" style="color: var(--on-surface-variant);">0 ACTIVE</span>
+              </div>
+              <div id="mediaQueueContainer" style="display: flex; flex-direction: column; gap: 8px;">
+                <div class="font-data-sm" style="color: var(--on-surface-muted); text-align: center; padding: 16px;">Queue is currently empty.</div>
+              </div>
+            </section>
+
+            <!-- Media Library -->
+            <section class="tech-card">
+              <div class="tech-card-header">
+                <h3 class="tech-card-title">
+                  <span class="material-symbols-outlined">perm_media</span>
+                  <span>Vault Media Library</span>
+                </h3>
+                <div style="display: flex; gap: 6px;">
+                  <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="loadMediaLibrary()">Refresh</button>
+                </div>
+              </div>
+              
+              <div class="media-library-grid" id="mediaLibraryGrid">
+                <!-- Media cards injected by app.js -->
+              </div>
+            </section>
+
+            <!-- Embedded Secondary Player Overlay -->
+            <section class="tech-card" id="mediaPlayerBox" style="display: none;">
+              <div class="tech-card-header">
+                <h3 class="tech-card-title" id="nowPlayingTitle">Now Streaming</h3>
+                <button class="icon-btn" onclick="closeMediaPlayer()"><span class="material-symbols-outlined">close</span></button>
+              </div>
+              <audio id="globalAudioPlayer" controls style="width: 100%; display: none;"></audio>
+              <video id="globalVideoPlayer" controls style="width: 100%; max-height: 360px; display: none; border-radius: var(--radius-xs);"></video>
+            </section>
+
+          </div>
+
+        </div>
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: TASKS (task_queue_supervision_2 & task_queue_mobile)            -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane" id="tab-tasks">
+        <div style="display: flex; flex-direction: column; gap: var(--gap-gutter);">
+          
+          <div class="tech-card">
+            <div class="tech-card-header">
+              <h2 class="tech-card-title">
+                <span class="material-symbols-outlined">checklist</span>
+                <span>Task Queue & Operations Supervision</span>
+              </h2>
+              <div style="display: flex; gap: 6px;">
+                <button class="btn btn-primary" style="padding: 2px 10px; font-size: 11px; min-height: 28px;" onclick="loadTasksList()">Refresh</button>
+              </div>
+            </div>
+
+            <div class="vault-table-container">
+              <table class="tech-table">
+                <thead>
+                  <tr>
+                    <th>STATUS</th>
+                    <th>TYPE</th>
+                    <th>TITLE</th>
+                    <th>PROGRESS</th>
+                    <th>OWNER</th>
+                    <th>CREATED</th>
+                    <th style="text-align: right;">ACTION</th>
+                  </tr>
+                </thead>
+                <tbody id="tasksTableBody">
+                  <tr>
+                    <td colspan="7" style="text-align: center; color: var(--on-surface-muted); padding: 24px;">Loading Supervised Tasks...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: AI STUDIO (ai_studio_control_console_v3 & ai_studio_mobile)      -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane" id="tab-ai-studio">
+        
+        <!-- Dual Model Distinction Banner (Selected vs Loaded vs Telemetry) -->
+        <div class="ai-dual-model-banner">
+          
+          <!-- Selected Model Card -->
+          <div class="ai-model-box">
+            <div class="font-label-caps" style="color: var(--secondary);">SELECTED FOR INFERENCE</div>
+            <select class="form-select" id="aiModelSelect" style="margin-top: 4px;">
+              <option value="">Loading installed models...</option>
+            </select>
+            <button class="btn btn-secondary" id="aiSelectModelBtn" style="margin-top: 6px; padding: 4px 8px; min-height: 32px;" onclick="handleSelectAiModel()">
+              <span>Apply Selection</span>
+            </button>
+          </div>
+
+          <!-- Loaded Model Card (Active Residency in Memory) -->
+          <div class="ai-model-box">
+            <div class="font-label-caps" style="color: var(--primary);">ACTIVE RESIDENT MODEL</div>
+            <div class="font-data-md" id="aiLoadedModelName" style="color: var(--primary-bright); margin-top: 4px;">None (Unloaded)</div>
+            <div class="font-data-sm" id="aiLoadedModelMemory" style="color: var(--on-surface-variant);">Resident RAM: 0 MB</div>
+            <button class="btn btn-danger" id="aiUnloadModelBtn" style="margin-top: 6px; padding: 4px 8px; min-height: 32px; display: none;" onclick="handleUnloadAiModel()">
+              <span>Unload Residency</span>
+            </button>
+          </div>
+
+          <!-- Inference Telemetry Card -->
+          <div class="ai-model-box">
+            <div class="font-label-caps" style="color: var(--on-surface-muted);">INFERENCE TELEMETRY</div>
+            <div class="font-data-sm" id="aiPromptSpeed" style="color: var(--on-surface); margin-top: 4px;">Prompt Speed: -- tok/s</div>
+            <div class="font-data-sm" id="aiGenSpeed" style="color: var(--secondary);">Generation: -- tok/s</div>
+            <div class="font-data-sm" id="aiGovernorState" style="color: var(--status-healthy);">Governor: NORMAL</div>
+          </div>
+
+        </div>
+
+        <!-- Chat Workspace Layout -->
+        <div class="ai-chat-layout">
+          
+          <!-- Parameters & System Prompt Sidebar -->
+          <aside class="tech-card" style="display: flex; flex-direction: column; gap: 10px;">
+            <h3 class="font-label-caps" style="color: var(--secondary);">CONTEXT & SYSTEM PROMPT</h3>
+            
+            <div class="form-group">
+              <label class="form-label">SYSTEM PROMPT</label>
+              <textarea class="form-textarea" id="aiSystemPrompt" rows="5" placeholder="You are NexusNode assistant..."></textarea>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">KEEP-ALIVE DURATION</label>
+              <select class="form-select" id="aiKeepAliveSelect">
+                <option value="5m" selected>5 Minutes</option>
+                <option value="0">0 (Unload Immediately)</option>
+                <option value="15m">15 Minutes</option>
+                <option value="30m">30 Minutes</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">RAG CONTEXT INJECTION</label>
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+                <input type="checkbox" id="aiRagEnabled" checked>
+                <span>Query Vault FTS5 Index</span>
+              </label>
+            </div>
+          </aside>
+
+          <!-- Chat Stream Box -->
+          <div style="display: flex; flex-direction: column;">
+            <div class="chat-messages-box" id="aiChatBox">
+              <div class="chat-bubble assistant">
+                <strong>NexusNode AI:</strong> Model server initialized on TECNO BG6. Select an installed model to start local neural inference.
+              </div>
+            </div>
+
+            <form class="chat-input-bar" onsubmit="handleSendAiChat(event)">
+              <input class="form-input" id="aiChatInput" placeholder="ENTER INFERENCE PROMPT..." required style="flex: 1;">
+              <button class="btn btn-secondary" type="submit" id="aiChatSendBtn">
+                <span class="material-symbols-outlined">send</span>
+                <span>Send</span>
+              </button>
+            </form>
+          </div>
+
+        </div>
+
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: DIAGNOSTICS (system_admin_diagnostics_v3 & diagnostics_mobile)   -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane admin-only" id="tab-diagnostics" style="display: none;">
+        
+        <!-- Diagnostics Action Banner -->
+        <div class="diagnostics-banner">
+          <div>
+            <h2 class="font-headline-md" style="color: var(--primary);">System Diagnostics & Root-Cause Analysis</h2>
+            <p class="font-data-sm" style="color: var(--on-surface-variant); margin-top: 2px;">Hardware Appliance: TECNO BG6 • Termux Subsystem</p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-primary" onclick="loadDiagnosticsReport()">
+              <span class="material-symbols-outlined">refresh</span>
+              <span>Run Diagnostics</span>
+            </button>
+            <button class="btn btn-secondary" onclick="handleCaptureProfileSnapshot()">
+              <span class="material-symbols-outlined">camera</span>
+              <span>Capture Profile</span>
+            </button>
           </div>
         </div>
-      </section>
 
-      <!-- SYSTEM HEALTH & HARDWARE GOVERNOR -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
-            <div><h2>System Health & Memory Governor</h2><p class="card-subtitle">4 GB RAM hardware thresholds & bounded heavy execution</p></div>
-          </div>
-          <span class="governor-badge normal" id="governorStateBadge">● HEALTHY</span>
-        </div>
-
-        <div class="resource-meters-stack">
-          <!-- RAM Track -->
-          <div class="resource-meter-block">
-            <div class="meter-meta">
-              <span class="meter-title">System RAM (4 GB)</span>
-              <span class="meter-stat font-mono" id="ramStatText">-- MB / -- MB (--%)</span>
-            </div>
-            <div class="progress-track-bg">
-              <div class="progress-fill-cyan" id="ramProgressBar" style="width: 0%;"></div>
-            </div>
-            <div class="threshold-indicator-row font-mono">
-              <span>Thresholds: Crit &lt; <strong id="metaRamCrit">600MB</strong></span>
-              <span id="ramAvailableDetail" style="color: var(--accent-cyan);">Available: -- MB</span>
-              <span>Normal &gt; <strong id="metaRamNorm">1000MB</strong></span>
-            </div>
+        <!-- Automated Findings List -->
+        <section class="tech-card" style="margin-bottom: var(--gap-gutter);">
+          <div class="tech-card-header">
+            <h3 class="tech-card-title">
+              <span class="material-symbols-outlined">troubleshoot</span>
+              <span>Automated Root-Cause Findings</span>
+            </h3>
+            <span class="font-label-caps" id="diagFindingsCount" style="color: var(--status-healthy);">0 ANOMALIES</span>
           </div>
 
-          <!-- Disk Storage Track -->
-          <div class="resource-meter-block">
-            <div class="meter-meta">
-              <span class="meter-title">Storage Partition</span>
-              <span class="meter-stat font-mono" id="diskStatText">-- GB / -- GB (--%)</span>
-            </div>
-            <div class="progress-track-bg">
-              <div class="progress-fill-emerald" id="diskProgressBar" style="width: 0%;"></div>
-            </div>
-            <div class="threshold-indicator-row font-mono">
-              <span id="diskFreeDetail">Free: -- GB</span>
-              <span id="diskTotalDetail">Capacity: -- GB</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- SUPERVISED SERVICES QUAD -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M9 21V9"/></svg></div>
-            <div><h2>Supervised Services</h2><p class="card-subtitle">runit managed appliance daemons</p></div>
-          </div>
-        </div>
-
-        <div class="services-quad-grid">
-          <!-- NexusNode -->
-          <div class="service-status-card online" id="svcCardNexus">
-            <div class="svc-head">
-              <span class="svc-name">NexusNode</span>
-              <span class="svc-state-pill online" id="svcPillNexus">ONLINE</span>
-            </div>
-            <p class="svc-detail font-mono">WSGI :5000</p>
-            <div class="svc-foot"><span class="font-mono">PID:</span> <strong id="svcPidNexus" class="font-mono">--</strong></div>
-          </div>
-
-          <!-- LocalToNet Tunnel -->
-          <div class="service-status-card" id="svcCardTunnel">
-            <div class="svc-head">
-              <span class="svc-name">LocalToNet</span>
-              <span class="svc-state-pill" id="svcPillTunnel">OFFLINE</span>
-            </div>
-            <p class="svc-detail font-mono">WAN Ingress</p>
-            <div class="svc-foot"><span class="font-mono">PID:</span> <strong id="svcPidTunnel" class="font-mono">--</strong></div>
-          </div>
-
-          <!-- OpenSSH -->
-          <div class="service-status-card" id="svcCardSsh">
-            <div class="svc-head">
-              <span class="svc-name">OpenSSH</span>
-              <span class="svc-state-pill" id="svcPillSsh">OFFLINE</span>
-            </div>
-            <p class="svc-detail font-mono">SSH :8022</p>
-            <div class="svc-foot"><span class="font-mono">PID:</span> <strong id="svcPidSsh" class="font-mono">--</strong></div>
-          </div>
-
-          <!-- Ollama Engine -->
-          <div class="service-status-card" id="svcCardOllama">
-            <div class="svc-head">
-              <span class="svc-name">Ollama Engine</span>
-              <span class="svc-state-pill" id="svcPillOllama">STANDBY</span>
-            </div>
-            <p class="svc-detail font-mono">Local AI :11434</p>
-            <div class="svc-foot">
-              <span class="font-mono">Model:</span> <strong id="svcLoadedModel" class="font-mono">None</strong>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ACTIVE TASK STREAM -->
-      <section class="glass-card" id="activeTaskStreamCard">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-            <div><h2>Active Heavy Execution</h2><p class="card-subtitle">Bounded Task Worker Channel (N=1)</p></div>
-          </div>
-        </div>
-        <div id="activeJobContainer">
-          <p class="empty-state-muted">No background tasks currently executing.</p>
-        </div>
-      </section>
-
-      <!-- DASHBOARD RECENT EVENTS & QUICK ACTIONS -->
-      <div class="dashboard-split-grid">
-        <section class="glass-card">
-          <div class="card-header">
-            <div class="card-title-group">
-              <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
-              <div><h2>Recent Events</h2><p class="card-subtitle">Live audit stream</p></div>
-            </div>
-            <button class="ghost-btn" onclick="switchTab('events')">All Logs</button>
-          </div>
-          <div class="recent-events-feed" id="recentEventsFeed">
-            <p class="empty-state-muted">No recent events.</p>
+          <div class="findings-list" id="diagFindingsContainer">
+            <div class="font-data-sm" style="color: var(--on-surface-muted); text-align: center; padding: 16px;">Running diagnostics evaluation...</div>
           </div>
         </section>
 
-        <section class="glass-card">
-          <div class="card-header">
-            <div class="card-title-group">
-              <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
-              <div><h2>Quick Actions</h2><p class="card-subtitle">Common server operations</p></div>
+        <!-- Process Memory Inspection -->
+        <section class="tech-card" style="margin-bottom: var(--gap-gutter);">
+          <div class="tech-card-header">
+            <h3 class="tech-card-title">
+              <span class="material-symbols-outlined">memory</span>
+              <span>Process Memory Inspection</span>
+            </h3>
+          </div>
+
+          <div class="vault-table-container">
+            <table class="tech-table">
+              <thead>
+                <tr>
+                  <th>PROCESS / COMPONENT</th>
+                  <th>PID</th>
+                  <th>RSS</th>
+                  <th>PSS</th>
+                  <th>THREADS</th>
+                  <th>OPEN FDS</th>
+                </tr>
+              </thead>
+              <tbody id="diagProcessTableBody">
+                <!-- Injected by app.js -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- RAG Inverted Index Deep Diagnostics -->
+        <section class="tech-card">
+          <div class="tech-card-header">
+            <h3 class="tech-card-title">
+              <span class="material-symbols-outlined">psychology</span>
+              <span>RAG Inverted Index (SQLite FTS5)</span>
+            </h3>
+            <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 10px; min-height: 24px;" onclick="handleCompactRagIndex()">
+              <span>Compact Index</span>
+            </button>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px;" id="ragDiagnosticsMetrics">
+            <div class="telemetry-chip">
+              <span class="font-data-sm">DOCUMENT COUNT</span>
+              <span class="font-data-md" id="ragDocCount">--</span>
+            </div>
+            <div class="telemetry-chip">
+              <span class="font-data-sm">INDEX SIZE</span>
+              <span class="font-data-md" id="ragIndexSize">-- KB</span>
+            </div>
+            <div class="telemetry-chip">
+              <span class="font-data-sm">WAL JOURNAL</span>
+              <span class="font-data-md" id="ragWalSize">-- KB</span>
             </div>
           </div>
-          <div class="quick-actions-grid">
-            <button class="action-card-btn perm-upload" onclick="switchTab('storage')">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-              <span>Upload Files</span>
-            </button>
-            <button class="action-card-btn perm-download-media" onclick="switchTab('media')">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-              <span>Download Media</span>
-            </button>
-            <button class="action-card-btn perm-rag" onclick="triggerRagRebuild()">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>
-              <span>Rebuild RAG</span>
-            </button>
-            <button class="action-card-btn perm-backups" onclick="triggerQuickBackup()">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/></svg>
+        </section>
+
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: NETWORK CENTER                                                   -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane" id="tab-network">
+        <section class="tech-card">
+          <div class="tech-card-header">
+            <h2 class="tech-card-title">
+              <span class="material-symbols-outlined">lan</span>
+              <span>Network Ingress & Tunnel Interfaces</span>
+            </h2>
+          </div>
+          <div class="services-list" id="networkInterfacesList">
+            <!-- Injected by app.js -->
+          </div>
+        </section>
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: EVENTS & LOGS                                                    -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane" id="tab-events">
+        <section class="tech-card">
+          <div class="tech-card-header">
+            <h2 class="tech-card-title">
+              <span class="material-symbols-outlined">event_note</span>
+              <span>Audit & Execution Log Archive</span>
+            </h2>
+            <button class="btn btn-primary" onclick="loadEventsArchive()">Refresh</button>
+          </div>
+          <div class="event-log-container" id="fullEventLogContainer" style="height: 500px;">
+            <!-- Injected by app.js -->
+          </div>
+        </section>
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: AUTOMATION ENGINE                                                -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane" id="tab-automation">
+        <section class="tech-card">
+          <div class="tech-card-header">
+            <h2 class="tech-card-title">
+              <span class="material-symbols-outlined">settings_input_component</span>
+              <span>Automation Engine & Cron Schedules</span>
+            </h2>
+          </div>
+          <div class="services-list" id="automationJobsList">
+            <!-- Injected by app.js -->
+          </div>
+        </section>
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: SYSTEM BACKUPS                                                   -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane" id="tab-backups">
+        <section class="tech-card">
+          <div class="tech-card-header">
+            <h2 class="tech-card-title">
+              <span class="material-symbols-outlined">backup</span>
+              <span>Appliance Backups & Disaster Recovery</span>
+            </h2>
+            <button class="btn btn-primary" onclick="handleCreateBackup()">
+              <span class="material-symbols-outlined">add</span>
               <span>Create Backup</span>
             </button>
           </div>
+          <div class="vault-table-container">
+            <table class="tech-table">
+              <thead>
+                <tr>
+                  <th>BACKUP ARCHIVE</th>
+                  <th>SIZE</th>
+                  <th>CREATED</th>
+                  <th style="text-align: right;">ACTION</th>
+                </tr>
+              </thead>
+              <tbody id="backupsTableBody">
+                <!-- Injected by app.js -->
+              </tbody>
+            </table>
+          </div>
         </section>
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: STORAGE INTELLIGENCE                                             -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane" id="tab-storage-intel">
+        <section class="tech-card">
+          <div class="tech-card-header">
+            <h2 class="tech-card-title">
+              <span class="material-symbols-outlined">analytics</span>
+              <span>Storage Intelligence & Directory Footprint</span>
+            </h2>
+          </div>
+          <div class="services-list" id="storageIntelBreakdown">
+            <!-- Injected by app.js -->
+          </div>
+        </section>
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: ADMIN HUB (Admin Only)                                           -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane admin-only" id="tab-admin" style="display: none;">
+        <section class="tech-card" style="margin-bottom: var(--gap-gutter);">
+          <div class="tech-card-header">
+            <h2 class="tech-card-title">
+              <span class="material-symbols-outlined">admin_panel_settings</span>
+              <span>User & Role Governance</span>
+            </h2>
+            <button class="btn btn-primary" onclick="openAddUserModal()">Add User</button>
+          </div>
+          <div class="vault-table-container">
+            <table class="tech-table">
+              <thead>
+                <tr>
+                  <th>USERNAME</th>
+                  <th>ROLE</th>
+                  <th>CREATED</th>
+                  <th style="text-align: right;">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody id="adminUserTableBody">
+                <!-- Injected by app.js -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
+      <!-- ===================================================================== -->
+      <!-- TAB: SETTINGS (system_settings_v3)                                    -->
+      <!-- ===================================================================== -->
+      <main class="tab-pane" id="tab-settings">
+        <div class="tech-card">
+          <div class="tech-card-header">
+            <h2 class="tech-card-title">
+              <span class="material-symbols-outlined">settings</span>
+              <span>Appliance Configuration</span>
+            </h2>
+            <button class="btn btn-primary" onclick="handleSaveSettings()">Save Configuration</button>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label class="form-label">DEVICE HOSTNAME</label>
+              <input class="form-input" id="settingHostname" value="TECNO BG6">
+            </div>
+            <div class="form-group">
+              <label class="form-label">HTTP LISTEN PORT</label>
+              <input class="form-input" id="settingPort" type="number" value="5000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">RAM PRESSURE THRESHOLD (%)</label>
+              <input class="form-input" id="settingRamPressure" type="number" value="82">
+            </div>
+            <div class="form-group">
+              <label class="form-label">RAM CRITICAL THRESHOLD (%)</label>
+              <input class="form-input" id="settingRamCritical" type="number" value="92">
+            </div>
+            <div class="form-group">
+              <label class="form-label">DEFAULT OLLAMA KEEP-ALIVE</label>
+              <select class="form-select" id="settingOllamaKeepAlive">
+                <option value="5m">5 Minutes</option>
+                <option value="0">0 (Immediate Unload)</option>
+                <option value="15m">15 Minutes</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">AUDIT LOG RETENTION (DAYS)</label>
+              <input class="form-input" id="settingLogRetention" type="number" value="30">
+            </div>
+          </div>
+        </div>
+      </main>
+
+    </div><!-- /.main-workspace -->
+
+    <!-- ======================================================================= -->
+    <!-- MOBILE BOTTOM NAVIGATION (Canonical Mobile Sticky Footer)               -->
+    <!-- ======================================================================= -->
+    <nav class="mobile-bottom-nav">
+      <button class="mobile-nav-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">
+        <span class="material-symbols-outlined">dashboard</span>
+        <span class="label">Dash</span>
+      </button>
+      <button class="mobile-nav-btn" data-tab="storage" onclick="switchTab('storage')">
+        <span class="material-symbols-outlined">storage</span>
+        <span class="label">Vault</span>
+      </button>
+      <button class="mobile-nav-btn" data-tab="media" onclick="switchTab('media')">
+        <span class="material-symbols-outlined">movie</span>
+        <span class="label">Media</span>
+      </button>
+      <button class="mobile-nav-btn" data-tab="tasks" onclick="switchTab('tasks')">
+        <span class="material-symbols-outlined">checklist</span>
+        <span class="label">Tasks</span>
+      </button>
+      <button class="mobile-nav-btn" data-tab="ai-studio" onclick="switchTab('ai-studio')">
+        <span class="material-symbols-outlined">psychology</span>
+        <span class="label">AI</span>
+      </button>
+      <button class="mobile-nav-btn" onclick="openMobileMoreDrawer()">
+        <span class="material-symbols-outlined">menu</span>
+        <span class="label">More</span>
+      </button>
+    </nav>
+
+    <!-- ======================================================================= -->
+    <!-- MOBILE SLIDE-UP UTILITIES DRAWER (system_utilities_drawer_2)            -->
+    <!-- ======================================================================= -->
+    <div class="drawer-overlay closed" id="moreDrawerOverlay" onclick="closeMobileMoreDrawer()"></div>
+    <div class="drawer-content closed" id="moreDrawer">
+      <div class="drawer-handle" onclick="closeMobileMoreDrawer()">
+        <div class="drawer-handle-bar"></div>
       </div>
-
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 2: STORAGE VAULT                                                    -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane" id="tab-storage">
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg></div>
-            <div><h2>Storage Vault</h2><p class="card-subtitle">Encrypted, authenticated storage and archive manager</p></div>
-          </div>
-          <div class="header-tools-row">
-            <button class="ghost-btn perm-files" onclick="triggerCleanTemp()">Sweep Temp</button>
-            <button class="ghost-btn" onclick="fetchVaultFiles()">Refresh</button>
-          </div>
-        </div>
-
-        <div class="vault-filter-bar">
-          <input type="text" id="vaultSearchInput" class="custom-input font-mono" placeholder="Search filenames..." oninput="filterVaultFiles()">
-          <select id="vaultTypeFilter" class="custom-select" onchange="filterVaultFiles()">
-            <option value="all">All File Types</option>
-            <option value="audio">Audio (mp3, m4a, opus, wav)</option>
-            <option value="video">Video (mp4, mkv, webm)</option>
-            <option value="documents">Documents (pdf, txt, md, py)</option>
-            <option value="archives">Archives (zip, tar, 7z)</option>
-            <option value="models">Models (gguf, bin)</option>
-          </select>
-        </div>
-
-        <div class="dropzone-area perm-upload" id="vaultDropzone" onclick="document.getElementById('vaultFileInput').click()">
-          <input type="file" id="vaultFileInput" style="display: none;" onchange="handleFileUpload(this.files[0])">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-          <span>Tap to upload or drag files here</span>
-        </div>
-
-        <div class="vault-files-table-wrapper" id="vaultFilesContainer">
-          <p class="empty-state-muted">Loading vault contents...</p>
-        </div>
-      </section>
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 3: MEDIA CENTER                                                     -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane" id="tab-media">
-      
-      <!-- Media Downloader Form -->
-      <section class="glass-card perm-download-media">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></div>
-            <div><h2>Media Grabber</h2><p class="card-subtitle">yt-dlp batch extraction across 7 formats</p></div>
-          </div>
-        </div>
-
-        <form id="mediaDownloadForm" onsubmit="handleMediaDownloadSubmit(event)">
-          <div class="form-group">
-            <label>Media URLs (One per line for batch downloads)</label>
-            <textarea id="mediaUrlInput" class="custom-textarea font-mono" rows="2" placeholder="https://youtube.com/watch?v=..." required></textarea>
-          </div>
-
-          <div class="form-grid-3" style="margin-top: 0.5rem;">
-            <div class="form-group">
-              <label>Target Format</label>
-              <select id="mediaFormatSelect" class="custom-select">
-                <option value="mp3">Audio: MP3 (Standard)</option>
-                <option value="m4a">Audio: M4A (Apple AAC)</option>
-                <option value="opus">Audio: OPUS (High Efficiency)</option>
-                <option value="wav">Audio: WAV (Lossless)</option>
-                <option value="mp4" selected>Video: MP4 (Universal H.264)</option>
-                <option value="mkv">Video: MKV (Matroska)</option>
-                <option value="webm">Video: WebM</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Quality Target</label>
-              <select id="mediaQualitySelect" class="custom-select">
-                <option value="best">Best Available</option>
-                <option value="1080p">1080p Full HD</option>
-                <option value="720p">720p HD</option>
-                <option value="480p">480p SD</option>
-                <option value="audio_only">Audio Only (320kbps)</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Vault Category</label>
-              <select id="mediaDestSelect" class="custom-select">
-                <option value="Downloads">Downloads</option>
-                <option value="Music">Music</option>
-                <option value="Videos">Videos</option>
-                <option value="Podcasts">Podcasts</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-grid-2" style="margin-top: 0.5rem;">
-            <div class="form-group">
-              <label>Subtitles</label>
-              <select id="mediaSubtitlesSelect" class="custom-select">
-                <option value="none">None</option>
-                <option value="embed">Embed English Subtitles</option>
-                <option value="auto">Auto-Generated English</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Custom Filename (Optional)</label>
-              <input type="text" id="mediaCustomFilename" class="custom-input font-mono" placeholder="my_favorite_track">
-            </div>
-          </div>
-
-          <button type="submit" class="primary-action-btn full-width" style="margin-top: 0.75rem;">Enqueue Media Download</button>
-        </form>
-      </section>
-
-      <!-- Media Stream Player Mount -->
-      <section class="glass-card" id="mediaPlayerCard" style="display: none;">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg></div>
-            <div><h2 id="playerMediaTitle">Streaming Media</h2><p class="card-subtitle font-mono" id="playerMediaSub">--</p></div>
-          </div>
-          <button class="ghost-btn danger" onclick="closeMediaPlayer()">Close</button>
-        </div>
-        <div class="player-mount-container" id="playerMountContainer"></div>
-      </section>
-
-      <!-- Media Library Grid -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
-            <div><h2>Media Library</h2><p class="card-subtitle">Zero-memory chunked HTTP 206 streaming</p></div>
-          </div>
-          <div class="tab-pill-group">
-            <button class="tab-pill active" onclick="switchMediaCat('all', this)">All</button>
-            <button class="tab-pill" onclick="switchMediaCat('music', this)">Music</button>
-            <button class="tab-pill" onclick="switchMediaCat('videos', this)">Videos</button>
-            <button class="tab-pill" onclick="switchMediaCat('podcasts', this)">Podcasts</button>
-          </div>
-        </div>
-        <div class="media-grid" id="mediaLibraryContainer">
-          <p class="empty-state-muted">Loading media items...</p>
-        </div>
-      </section>
-
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 4: TASK RUNNER QUEUE                                                -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane" id="tab-tasks">
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-            <div><h2>Task Runner Queue</h2><p class="card-subtitle">Deterministic serialized background execution</p></div>
-          </div>
-          <button class="ghost-btn" onclick="fetchTasks()">Refresh</button>
-        </div>
-        <div class="tasks-stack" id="tasksListContainer">
-          <p class="empty-state-muted">No background tasks found.</p>
-        </div>
-      </section>
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 5: AI STUDIO & LOCAL LLM                                            -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane" id="tab-ai-studio">
-      
-      <!-- AI Engine Supervision -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg></div>
-            <div><h2>AI Engine & Model Serving</h2><p class="card-subtitle">Ollama runtime with dynamic memory governance</p></div>
-          </div>
-          <div class="header-tools-row perm-services" style="display: none;">
-            <button class="primary-action-btn" id="startEngineBtn" onclick="toggleEngine('start')">Start</button>
-            <button class="ghost-btn danger" id="stopEngineBtn" onclick="toggleEngine('stop')">Stop</button>
-          </div>
-        </div>
-
-        <div class="form-grid-2" style="margin-top: 0.75rem;">
-          <div class="form-group">
-            <label>Selected Chat Model</label>
-            <select id="aiModelSelect" class="custom-select" onchange="handleModelSelectChange(this.value)">
-              <option value="qwen2.5:0.5b">Loading installed models...</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Model Resource Pre-Check</label>
-            <div class="model-resource-badge safe" id="modelResourceBadge">
-              <span>Checking memory requirements...</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Distinct Model Status Grid -->
-        <div class="threshold-indicator-row font-mono" style="padding-top: 0.5rem;">
-          <span>Selected: <strong id="aiSelectedModelText" style="color: var(--accent-cyan);">--</strong></span>
-          <span>Loaded: <strong id="aiLoadedModelText" style="color: var(--accent-emerald);">None</strong></span>
-          <span>Throughput: <strong id="aiThroughputText" style="color: var(--text-main);">-- t/s</strong></span>
-        </div>
-      </section>
-
-      <!-- Knowledge Base & SQLite FTS5 RAG -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10"/></svg></div>
-            <div><h2>Storage-Backed Document RAG (SQLite FTS5)</h2><p class="card-subtitle">BM25 ranked knowledge base without RAM spikes</p></div>
-          </div>
-          <button class="ghost-btn perm-rag" onclick="triggerRagRebuild()">Rebuild Index</button>
-        </div>
-        <div class="threshold-indicator-row font-mono" style="padding: 0.5rem 0;">
-          <span id="ragDocsStat">Documents: --</span>
-          <span id="ragChunksStat">Chunks: --</span>
-          <span id="ragUpdatedStat">Synced: --</span>
-        </div>
-      </section>
-
-      <!-- AI Chat Stream Window -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
-            <div><h2>AI Studio Chat</h2><p class="card-subtitle">Real-time SSE token stream with vault citations</p></div>
-          </div>
-          <button class="ghost-btn danger" onclick="clearChat()">Clear</button>
-        </div>
-
-        <div class="chat-messages-scroll" id="chatMessagesContainer">
-          <div class="chat-message assistant">
-            <div class="chat-bubble">NexusNode AI Studio ready. How can I assist you with your vault documents today?</div>
-          </div>
-        </div>
-
-        <form id="chatInputForm" class="chat-input-bar" onsubmit="handleChatSubmit(event)">
-          <input type="text" id="chatPromptInput" class="custom-input" placeholder="Ask AI about your files..." required>
-          <button type="submit" class="primary-action-btn">Send</button>
-        </form>
-      </section>
-
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 6: NETWORK CENTER & DIAGNOSTICS                                     -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane" id="tab-network">
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></svg></div>
-            <div><h2>Network Center Diagnostics</h2><p class="card-subtitle">Unprivileged connectivity probes & latency audit</p></div>
-          </div>
-          <button class="primary-action-btn" onclick="runAllNetworkTests()">Run Probes</button>
-        </div>
-
-        <div class="network-grid-cards">
-          <div class="net-diag-card">
-            <div class="diag-head"><span>WAN Ingress (Tunnel)</span><span class="badge-pill" id="diagBadgeTunnel">PROBING</span></div>
-            <p class="diag-detail font-mono" id="diagTunnelUrl">--</p>
-            <div class="diag-foot"><span>Latency:</span><strong id="diagLatTunnel" class="font-mono">-- ms</strong></div>
-          </div>
-          <div class="net-diag-card">
-            <div class="diag-head"><span>Core NexusNode</span><span class="badge-pill available" id="diagBadgeNexus">ONLINE</span></div>
-            <p class="diag-detail font-mono">127.0.0.1:5000</p>
-            <div class="diag-foot"><span>Latency:</span><strong id="diagLatNexus" class="font-mono">0.5 ms</strong></div>
-          </div>
-          <div class="net-diag-card">
-            <div class="diag-head"><span>Internet DNS / HTTP</span><span class="badge-pill" id="diagBadgeInternet">PROBING</span></div>
-            <p class="diag-detail font-mono">1.1.1.1</p>
-            <div class="diag-foot"><span>Latency:</span><strong id="diagLatInternet" class="font-mono">-- ms</strong></div>
-          </div>
-          <div class="net-diag-card">
-            <div class="diag-head"><span>Ollama Local API</span><span class="badge-pill" id="diagBadgeOllama">PROBING</span></div>
-            <p class="diag-detail font-mono">127.0.0.1:11434</p>
-            <div class="diag-foot"><span>Latency:</span><strong id="diagLatOllama" class="font-mono">-- ms</strong></div>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 7: AUDIT EVENTS & LOGS                                              -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane" id="tab-events">
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
-            <div><h2>System Audit & Incident Log</h2><p class="card-subtitle">Single-daemon bounded event log with SSE broadcasting</p></div>
-          </div>
-          <div class="event-filter-chips" id="eventFilterChips">
-            <button class="chip active" onclick="filterEventsCategory('ALL', this)">ALL</button>
-            <button class="chip" onclick="filterEventsCategory('AUTH', this)">AUTH</button>
-            <button class="chip" onclick="filterEventsCategory('TASK', this)">TASK</button>
-            <button class="chip" onclick="filterEventsCategory('STORAGE', this)">STORAGE</button>
-            <button class="chip" onclick="filterEventsCategory('OLLAMA', this)">OLLAMA</button>
-            <button class="chip" onclick="filterEventsCategory('RAG', this)">RAG</button>
-          </div>
-        </div>
-        <div class="events-log-terminal font-mono" id="eventsTerminalContainer">
-          <p class="empty-state-muted">Connecting to event stream...</p>
-        </div>
-      </section>
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 8: SCHEDULED AUTOMATION                                             -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane" id="tab-automation">
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg></div>
-            <div><h2>Scheduled Automation Engine</h2><p class="card-subtitle">Recurring background jobs & retention sweepers</p></div>
-          </div>
-        </div>
-        <div class="automation-jobs-stack" id="automationJobsContainer">
-          <p class="empty-state-muted">Loading scheduled jobs...</p>
-        </div>
-      </section>
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 9: SYSTEM BACKUPS                                                   -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane" id="tab-backups">
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></div>
-            <div><h2>Atomic System Backups</h2><p class="card-subtitle">Resource-checked SQLite snapshots & SHA-256 validation</p></div>
-          </div>
-          <button class="primary-action-btn" onclick="triggerQuickBackup()">Create Backup</button>
-        </div>
-        <div class="backups-list-stack" id="backupsListContainer">
-          <p class="empty-state-muted">Loading backups...</p>
-        </div>
-      </section>
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 10: STORAGE INTELLIGENCE                                            -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane" id="tab-storage-intel">
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div>
-            <div><h2>Storage Intelligence</h2><p class="card-subtitle">Volume breakdown by media category</p></div>
-          </div>
-        </div>
-
-        <div class="storage-breakdown-wrapper">
-          <div class="storage-bar-multi" id="storageMultiBar"></div>
-          <div class="breakdown-legend-grid" id="storageBreakdownLegend"></div>
-        </div>
-      </section>
-
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></div>
-            <div><h2>Large Files (&gt; 50 MB)</h2><p class="card-subtitle">Top storage consumers</p></div>
-          </div>
-        </div>
-        <div id="largeFilesContainer" class="vault-files-table-wrapper">
-          <p class="empty-state-muted">Scanning for large files...</p>
-        </div>
-      </section>
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 11: TECHNICAL SYSTEM DIAGNOSTICS & ROOT CAUSE (ADMIN ONLY)          -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane admin-only" id="tab-diagnostics" style="display: none;">
-      
-      <!-- Diagnostic Overview & Actions Banner -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
-            <div><h2>Technical Diagnostics & Root-Cause Engine</h2><p class="card-subtitle">Comprehensive memory budget, process introspection, and automated findings</p></div>
-          </div>
-          <div class="header-tools-row">
-            <button class="ghost-btn" onclick="captureProfileSnapshot()">Capture Snapshot</button>
-            <button class="primary-action-btn" onclick="runFullDiagnosticReport()">Run Full Diagnostic</button>
-          </div>
-        </div>
-
-        <div class="threshold-indicator-row font-mono" style="padding-top: 0.5rem;">
-          <span>Diagnostics Health: <strong id="diagOverallHealthPill" style="color: var(--accent-emerald);">● HEALTHY</strong></span>
-          <span>Last Analyzed: <strong id="diagLastTimestamp">--</strong></span>
-          <span>Findings Detected: <strong id="diagFindingsCount">0</strong></span>
-        </div>
-      </section>
-
-      <!-- Automated Root-Cause Findings Cards -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-            <div><h2>Root-Cause Diagnostic Findings</h2><p class="card-subtitle">Deterministic problem detection and actionable recommendations</p></div>
-          </div>
-        </div>
-        <div id="diagFindingsContainer" class="diag-findings-stack">
-          <p class="empty-state-muted">Tap 'Run Full Diagnostic' to analyze appliance state.</p>
-        </div>
-      </section>
-
-      <!-- Process Introspection & Top Memory Procs -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M9 21V9"/></svg></div>
-            <div><h2>Process Introspection (/proc)</h2><p class="card-subtitle">Unprivileged memory footprint & thread counts</p></div>
-          </div>
-        </div>
-        <div class="network-grid-cards" id="diagProcessCards">
-          <div class="net-diag-card">
-            <div class="diag-head"><span>NexusNode RSS</span></div>
-            <strong id="diagNexusRss" class="font-mono" style="font-size: 1.1rem; color: var(--accent-cyan);">-- MB</strong>
-            <div class="diag-foot"><span>PSS:</span><strong id="diagNexusPss" class="font-mono">-- MB</strong></div>
-          </div>
-          <div class="net-diag-card">
-            <div class="diag-head"><span>Thread Count</span></div>
-            <strong id="diagNexusThreads" class="font-mono" style="font-size: 1.1rem; color: var(--accent-emerald);">--</strong>
-            <div class="diag-foot"><span>Open FDs:</span><strong id="diagNexusFds" class="font-mono">--</strong></div>
-          </div>
-          <div class="net-diag-card">
-            <div class="diag-head"><span>Log Queue Depth</span></div>
-            <strong id="diagLogQueueDepth" class="font-mono" style="font-size: 1.1rem; color: var(--accent-amber);">--</strong>
-            <div class="diag-foot"><span>Dropped:</span><strong id="diagLogDropped" class="font-mono">0</strong></div>
-          </div>
-          <div class="net-diag-card">
-            <div class="diag-head"><span>Task Channel</span></div>
-            <strong id="diagTaskChannelStatus" class="font-mono" style="font-size: 1.1rem; color: var(--text-main);">IDLE</strong>
-            <div class="diag-foot"><span>Queue:</span><strong id="diagTaskQueueDepth" class="font-mono">0</strong></div>
-          </div>
-        </div>
-      </section>
-
-      <!-- RAG Inverted Index & SQLite FTS5 Diagnostics -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg></div>
-            <div><h2>RAG Index Deep Diagnostics</h2><p class="card-subtitle">SQLite FTS5 persistence, chunk tokens, and memory footprint</p></div>
-          </div>
-          <div class="header-tools-row">
-            <button class="ghost-btn" onclick="compactRagIndex()">Compact Index</button>
-            <button class="ghost-btn perm-rag" onclick="triggerRagRebuild()">Rebuild</button>
-          </div>
-        </div>
-        <div class="network-grid-cards">
-          <div class="net-diag-card">
-            <div class="diag-head"><span>Backend</span></div>
-            <strong class="font-mono" style="color: var(--accent-cyan); font-size: 0.82rem;">SQLite FTS5 (BM25)</strong>
-            <div class="diag-foot"><span>DB Size:</span><strong id="diagRagDbSize" class="font-mono">-- KB</strong></div>
-          </div>
-          <div class="net-diag-card">
-            <div class="diag-head"><span>Total Chunks</span></div>
-            <strong id="diagRagTotalChunks" class="font-mono" style="font-size: 1.1rem; color: var(--accent-emerald);">--</strong>
-            <div class="diag-foot"><span>Docs:</span><strong id="diagRagTotalDocs" class="font-mono">--</strong></div>
-          </div>
-          <div class="net-diag-card">
-            <div class="diag-head"><span>Avg Chunk Tokens</span></div>
-            <strong id="diagRagAvgTokens" class="font-mono" style="font-size: 1.1rem; color: var(--text-main);">--</strong>
-            <div class="diag-foot"><span>Largest:</span><strong id="diagRagLargestDoc" class="font-mono" style="font-size:0.7rem; max-width:120px; overflow:hidden; text-overflow:ellipsis;">--</strong></div>
-          </div>
-          <div class="net-diag-card">
-            <div class="diag-head"><span>Memory Footprint</span></div>
-            <strong id="diagRagEstRam" class="font-mono" style="font-size: 1.1rem; color: var(--accent-cyan);">&lt; 4 MB</strong>
-            <div class="diag-foot"><span>Rebuild Duration:</span><strong id="diagRagRebuildDuration" class="font-mono">-- ms</strong></div>
-          </div>
-        </div>
-      </section>
-
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 12: ADMIN HUB & RBAC (ISOLATED)                                     -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane admin-only" id="tab-admin" style="display: none;">
-      
-      <!-- Users & Granular RBAC -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-            <div><h2>User Accounts & RBAC Privileges</h2><p class="card-subtitle">Granular capability authorization</p></div>
-          </div>
-          <button class="primary-action-btn" onclick="openCreateUserModal()">New User</button>
-        </div>
-        <div id="adminUsersContainer" class="admin-users-list">
-          <p class="empty-state-muted">Loading users...</p>
-        </div>
-      </section>
-
-      <!-- Active Share Links Inspector -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/></svg></div>
-            <div><h2>Temporary Secure Shares</h2><p class="card-subtitle">Active and expired scoped download links</p></div>
-          </div>
-          <button class="ghost-btn" onclick="fetchSharesList()">Refresh</button>
-        </div>
-        <div id="adminSharesContainer" class="shares-list-stack">
-          <p class="empty-state-muted">Loading active shares...</p>
-        </div>
-      </section>
-
-      <!-- SQLite Inspector -->
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></div>
-            <div><h2>SQLite Database Inspector</h2><p class="card-subtitle">Tables, row count & safe record inspection</p></div>
-          </div>
-        </div>
-        <div class="form-grid-2">
-          <div class="form-group">
-            <label>Select Table</label>
-            <select id="dbTableSelect" class="custom-select" onchange="inspectDbTable(this.value)">
-              <option value="users">users</option>
-              <option value="background_tasks">background_tasks</option>
-              <option value="system_logs">system_logs</option>
-              <option value="shares">shares</option>
-              <option value="backups">backups</option>
-              <option value="scheduled_jobs">scheduled_jobs</option>
-              <option value="incidents">incidents</option>
-              <option value="ai_inference_metrics">ai_inference_metrics</option>
-              <option value="user_chats">user_chats</option>
-            </select>
-          </div>
-        </div>
-        <div id="dbRowsContainer" class="db-inspector-table-wrapper">
-          <p class="empty-state-muted">Select table to view records.</p>
-        </div>
-      </section>
-
-    </main>
-
-    <!-- ======================================================================= -->
-    <!-- TAB 13: SYSTEM SETTINGS                                                 -->
-    <!-- ======================================================================= -->
-    <main class="tab-pane" id="tab-settings">
-      <section class="glass-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <div class="card-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
-            <div><h2>System Settings</h2><p class="card-subtitle">Resource Governor thresholds</p></div>
-          </div>
-        </div>
+      <div class="drawer-body">
         
-        <form id="settingsForm" onsubmit="handleSettingsSave(event)">
-          <div class="form-grid-2">
-            <div class="form-group">
-              <label>Normal Threshold (MB)</label>
-              <input type="number" id="settingRamNorm" class="custom-input font-mono" required>
-            </div>
-            <div class="form-group">
-              <label>Pressure Threshold (MB)</label>
-              <input type="number" id="settingRamPressure" class="custom-input font-mono" required>
-            </div>
-          </div>
-          <button type="submit" class="primary-action-btn perm-settings" style="margin-top: 0.75rem;">Save Settings</button>
-        </form>
-      </section>
-    </main>
+        <!-- SYSTEM Category -->
+        <div class="drawer-section-title">SYSTEM</div>
+        <div class="drawer-grid">
+          <a class="drawer-item" onclick="switchTab('network'); closeMobileMoreDrawer()">
+            <span class="material-symbols-outlined" style="color: var(--primary);">lan</span>
+            <span class="item-label">Network</span>
+          </a>
+          <a class="drawer-item" onclick="switchTab('events'); closeMobileMoreDrawer()">
+            <span class="material-symbols-outlined" style="color: var(--primary);">event_note</span>
+            <span class="item-label">Events</span>
+          </a>
+          <a class="drawer-item admin-only" onclick="switchTab('diagnostics'); closeMobileMoreDrawer()">
+            <span class="material-symbols-outlined" style="color: var(--status-warning);">terminal</span>
+            <span class="item-label">Diagnostics</span>
+          </a>
+        </div>
 
-  </div> <!-- /appContainer -->
+        <!-- STORAGE Category -->
+        <div class="drawer-section-title">STORAGE & COMPUTE</div>
+        <div class="drawer-grid">
+          <a class="drawer-item" onclick="switchTab('storage-intel'); closeMobileMoreDrawer()">
+            <span class="material-symbols-outlined" style="color: var(--primary);">analytics</span>
+            <span class="item-label">Storage Intel</span>
+          </a>
+          <a class="drawer-item perm-backups" onclick="switchTab('backups'); closeMobileMoreDrawer()">
+            <span class="material-symbols-outlined" style="color: var(--primary);">backup</span>
+            <span class="item-label">Backups</span>
+          </a>
+          <a class="drawer-item perm-automation" onclick="switchTab('automation'); closeMobileMoreDrawer()">
+            <span class="material-symbols-outlined" style="color: var(--primary);">settings_input_component</span>
+            <span class="item-label">Automation</span>
+          </a>
+        </div>
 
-  <!-- ========================================================================= -->
-  <!-- MOBILE BOTTOM NAVIGATION DOCK (TOUCH TARGETS >= 44PX)                     -->
-  <!-- ========================================================================= -->
-  <nav class="mobile-bottom-dock" id="mobileBottomDock">
-    <button class="dock-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-      <span>Dash</span>
-    </button>
-    <button class="dock-btn" data-tab="storage" onclick="switchTab('storage')">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
-      <span>Vault</span>
-    </button>
-    <button class="dock-btn" data-tab="media" onclick="switchTab('media')">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-      <span>Media</span>
-    </button>
-    <button class="dock-btn" data-tab="tasks" onclick="switchTab('tasks')">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      <span>Tasks</span>
-    </button>
-    <button class="dock-btn" data-tab="ai-studio" onclick="switchTab('ai-studio')">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/></svg>
-      <span>AI</span>
-    </button>
-    <button class="dock-btn" id="mobileMoreDockBtn" onclick="toggleMobileMoreSheet(true)">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
-      <span>More</span>
-    </button>
-  </nav>
+        <!-- ADMIN & SETTINGS Category -->
+        <div class="drawer-section-title">GOVERNANCE & SETTINGS</div>
+        <div class="drawer-grid">
+          <a class="drawer-item perm-settings" onclick="switchTab('settings'); closeMobileMoreDrawer()">
+            <span class="material-symbols-outlined" style="color: var(--primary);">settings</span>
+            <span class="item-label">Settings</span>
+          </a>
+          <a class="drawer-item admin-only" onclick="switchTab('admin'); closeMobileMoreDrawer()">
+            <span class="material-symbols-outlined" style="color: var(--primary);">admin_panel_settings</span>
+            <span class="item-label">Admin Hub</span>
+          </a>
+        </div>
 
-  <!-- MOBILE "MORE" ACTION SHEET DRAWER -->
-  <div class="more-sheet-overlay" id="moreSheetOverlay" onclick="toggleMobileMoreSheet(false)">
-    <div class="more-sheet-drawer" onclick="event.stopPropagation()">
-      <div class="sheet-grabber"></div>
-      <div class="sheet-header-row">
-        <span class="sheet-title">Appliance Tools</span>
-        <button class="icon-btn" onclick="toggleMobileMoreSheet(false)">&times;</button>
-      </div>
-      <div class="more-sheet-grid">
-        <button class="sheet-item-btn" onclick="switchTab('network'); toggleMobileMoreSheet(false)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></svg>
-          <span>Network</span>
-        </button>
-        <button class="sheet-item-btn" onclick="switchTab('events'); toggleMobileMoreSheet(false)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-          <span>Events</span>
-        </button>
-        <button class="sheet-item-btn" onclick="switchTab('storage-intel'); toggleMobileMoreSheet(false)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-          <span>Storage Intel</span>
-        </button>
-        <button class="sheet-item-btn perm-backups" onclick="switchTab('backups'); toggleMobileMoreSheet(false)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-          <span>Backups</span>
-        </button>
-        <button class="sheet-item-btn perm-automation" onclick="switchTab('automation'); toggleMobileMoreSheet(false)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
-          <span>Automation</span>
-        </button>
-        <button class="sheet-item-btn perm-settings" onclick="switchTab('settings'); toggleMobileMoreSheet(false)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          <span>Settings</span>
-        </button>
-        <button class="sheet-item-btn admin-only" onclick="switchTab('diagnostics'); toggleMobileMoreSheet(false)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-          <span>Diagnostics</span>
-        </button>
-        <button class="sheet-item-btn admin-only" onclick="switchTab('admin'); toggleMobileMoreSheet(false)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          <span>Admin</span>
-        </button>
       </div>
     </div>
-  </div>
+
+  </div><!-- /.app-container -->
 
   <!-- ========================================================================= -->
-  <!-- MODALS (LOGIN, USER MANAGEMENT, SHARES, CHECKSUMS)                        -->
+  <!-- AUTHENTICATION / LOGIN OVERLAY (system_login_v2)                          -->
   <!-- ========================================================================= -->
-
-  <!-- 1. Login Gateway Modal -->
-  <div class="modal-overlay" id="loginModal">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>NexusNode Authentication</h3>
+  <div class="login-overlay" id="loginScreen" style="display: none;">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="brand-logo" style="justify-content: center; margin-bottom: 8px;">
+          <span class="material-symbols-outlined fill-icon" style="font-size: 32px; color: var(--primary);">hub</span>
+        </div>
+        <h2>NexusNode</h2>
+        <p>TECNO BG6 • Mobile Server Appliance</p>
       </div>
+
+      <div class="lockout-alert" id="lockoutAlert">
+        <span class="material-symbols-outlined" style="font-size: 16px;">lock</span>
+        <span>Account Locked. Try again in <span id="lockoutCountdown">60</span>s</span>
+      </div>
+
       <form id="loginForm" onsubmit="handleLoginSubmit(event)">
         <div class="form-group">
-          <label>User ID</label>
-          <input type="text" id="loginUserId" class="custom-input" required autocomplete="username" autofocus>
+          <label class="form-label" for="loginUsername">OPERATOR IDENTITY</label>
+          <input class="form-input" id="loginUsername" type="text" autocomplete="username" placeholder="admin / user" required>
         </div>
-        <div class="form-group" style="margin-top: 0.5rem;">
-          <label>Password</label>
-          <input type="password" id="loginPassword" class="custom-input" required autocomplete="current-password">
+
+        <div class="form-group">
+          <label class="form-label" for="loginPassword">PASSPHRASE</label>
+          <input class="form-input" id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••" required>
         </div>
-        <div id="loginErrorMsg" class="form-error-msg" style="display: none; margin-top: 0.5rem;"></div>
-        <button type="submit" class="primary-action-btn full-width" style="margin-top: 0.85rem;">Sign In</button>
+
+        <button class="btn btn-primary" type="submit" id="loginSubmitBtn" style="width: 100%; margin-top: 12px;">
+          <span class="material-symbols-outlined">login</span>
+          <span>AUTHENTICATE</span>
+        </button>
       </form>
     </div>
   </div>
 
-  <!-- 2. Create User Modal -->
-  <div class="modal-overlay" id="createUserModal">
-    <div class="modal-card modal-lg">
-      <div class="modal-header">
-        <h3>Create User Account</h3>
-        <button class="icon-btn" onclick="closeModal('createUserModal')">&times;</button>
-      </div>
-      <form id="createUserForm" onsubmit="handleCreateUserSubmit(event)">
-        <div class="form-grid-2">
-          <div class="form-group">
-            <label>User ID</label>
-            <input type="text" id="newUserId" class="custom-input" required>
-          </div>
-          <div class="form-group">
-            <label>Password</label>
-            <input type="password" id="newUserPassword" class="custom-input" required>
-          </div>
-        </div>
-        <div class="form-group" style="margin-top: 0.75rem;">
-          <label>Assign Privileges (Least Privilege by default)</label>
-          <div class="privileges-checkbox-grid" id="newPrivilegesGrid"></div>
-        </div>
-        <button type="submit" class="primary-action-btn full-width" style="margin-top: 0.85rem;">Create User</button>
-      </form>
-    </div>
-  </div>
-
-  <!-- 3. Edit Privileges Modal -->
-  <div class="modal-overlay" id="editPrivilegesModal">
-    <div class="modal-card modal-lg">
-      <div class="modal-header">
-        <h3 id="editPrivilegesTitle">Edit User Privileges</h3>
-        <button class="icon-btn" onclick="closeModal('editPrivilegesModal')">&times;</button>
-      </div>
-      <form id="editPrivilegesForm" onsubmit="handleSavePrivilegesSubmit(event)">
-        <input type="hidden" id="editPrivUserId">
-        <div class="privileges-checkbox-grid" id="editPrivilegesGrid" style="margin-top: 0.5rem;"></div>
-        <button type="submit" class="primary-action-btn full-width" style="margin-top: 0.85rem;">Save Privileges</button>
-      </form>
-    </div>
-  </div>
-
-  <!-- 4. Create Share Link Modal -->
-  <div class="modal-overlay" id="createShareModal">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>Create Temporary Share Link</h3>
-        <button class="icon-btn" onclick="closeModal('createShareModal')">&times;</button>
-      </div>
-      <form id="createShareForm" onsubmit="handleCreateShareSubmit(event)">
-        <input type="hidden" id="shareFilenameInput">
-        <p id="shareFilenameDisplay" class="font-mono" style="font-size: 0.82rem; color: var(--accent-cyan);">Target: --</p>
-        
-        <div class="form-grid-2" style="margin-top: 0.5rem;">
-          <div class="form-group">
-            <label>Expiration</label>
-            <select id="shareDurationSelect" class="custom-select">
-              <option value="1h">1 Hour</option>
-              <option value="24h" selected>24 Hours</option>
-              <option value="7d">7 Days</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Max Downloads (0 = ∞)</label>
-            <input type="number" id="shareMaxDownloads" class="custom-input font-mono" value="0" min="0">
-          </div>
-        </div>
-
-        <button type="submit" class="primary-action-btn full-width" style="margin-top: 0.75rem;">Generate Share Link</button>
-
-        <div id="shareResultBox" style="display: none; margin-top: 0.75rem;">
-          <label style="font-size: 0.75rem; color: var(--text-muted);">Shareable Public Link</label>
-          <div style="display: flex; gap: 0.4rem; margin-top: 0.25rem;">
-            <input type="text" id="shareResultUrl" class="custom-input font-mono" readonly>
-            <button type="button" class="primary-action-btn" onclick="copyShareUrl()">Copy</button>
-          </div>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- 5. Checksum Modal -->
-  <div class="modal-overlay" id="checksumModal">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>File Integrity & Checksum</h3>
-        <button class="icon-btn" onclick="closeModal('checksumModal')">&times;</button>
-      </div>
-      <div id="checksumContent" class="font-mono" style="font-size: 0.8rem; word-break: break-all;">
-        Calculating SHA-256 and MD5...
-      </div>
-    </div>
-  </div>
-
-  <!-- MAIN SCRIPT -->
+  <!-- Primary Application Script -->
   <script src="./static/js/app.js"></script>
 </body>
 </html>

@@ -1,0 +1,336 @@
+<!DOCTYPE html><html class="dark" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>NexusNode - Diagnostics</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-surface": "#e5e2e1",
+                      "on-primary-fixed-variant": "#004f58",
+                      "surface-container-high": "#2a2a2a",
+                      "on-surface-variant": "#bac9cc",
+                      "primary-fixed-dim": "#00daf3",
+                      "graphite-surface": "#121212",
+                      "on-tertiary-fixed": "#1b1b1c",
+                      "background": "#131313",
+                      "inverse-on-surface": "#313030",
+                      "surface-dim": "#131313",
+                      "secondary-fixed": "#f4d9ff",
+                      "on-tertiary": "#303030",
+                      "border-subtle": "#333333",
+                      "surface-container-lowest": "#0e0e0e",
+                      "secondary-container": "#ab08ff",
+                      "on-secondary-container": "#fef0ff",
+                      "primary-container": "#00e5ff",
+                      "graphite-raised": "#1E1E1E",
+                      "tertiary": "#efeceb",
+                      "oled-black": "#000000",
+                      "on-secondary-fixed-variant": "#6f00a9",
+                      "on-tertiary-container": "#5a5959",
+                      "surface-container": "#201f1f",
+                      "on-error": "#690005",
+                      "on-secondary": "#4e0078",
+                      "tertiary-container": "#d2d0cf",
+                      "on-tertiary-fixed-variant": "#474746",
+                      "surface-bright": "#393939",
+                      "primary": "#c3f5ff",
+                      "primary-fixed": "#9cf0ff",
+                      "surface-container-low": "#1c1b1b",
+                      "status-healthy": "#00C853",
+                      "surface": "#131313",
+                      "tertiary-fixed-dim": "#c8c6c5",
+                      "error-container": "#93000a",
+                      "on-primary-container": "#00626e",
+                      "on-primary": "#00363d",
+                      "on-secondary-fixed": "#2f004b",
+                      "surface-tint": "#00daf3",
+                      "status-critical": "#D50000",
+                      "outline-variant": "#3b494c",
+                      "surface-variant": "#353534",
+                      "secondary-fixed-dim": "#e4b5ff",
+                      "inverse-primary": "#006875",
+                      "inverse-surface": "#e5e2e1",
+                      "tertiary-fixed": "#e5e2e1",
+                      "surface-container-highest": "#353534",
+                      "error": "#ffb4ab",
+                      "on-error-container": "#ffdad6",
+                      "secondary": "#e4b5ff",
+                      "on-primary-fixed": "#001f24",
+                      "on-background": "#e5e2e1",
+                      "status-warning": "#FFD600",
+                      "outline": "#849396"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "margin-mobile": "16px",
+                      "touch-target": "44px",
+                      "margin-desktop": "24px",
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "stack-gap": "8px"
+              },
+              "fontFamily": {
+                      "headline-lg": ["Inter"],
+                      "label-caps": ["Inter"],
+                      "data-md": ["JetBrains Mono"],
+                      "body-sm": ["Inter"],
+                      "body-md": ["Inter"],
+                      "data-lg": ["JetBrains Mono"],
+                      "data-sm": ["JetBrains Mono"],
+                      "headline-md": ["Inter"]
+              },
+              "fontSize": {
+                      "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "label-caps": ["10px", {"lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "700"}],
+                      "data-md": ["13px", {"lineHeight": "18px", "fontWeight": "500"}],
+                      "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                      "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "data-lg": ["16px", {"lineHeight": "20px", "fontWeight": "600"}],
+                      "data-sm": ["11px", {"lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                      "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        /* Hide default details marker */
+        details > summary {
+            list-style: none;
+        }
+        details > summary::-webkit-details-marker {
+            display: none;
+        }
+        details[open] summary .expand-icon {
+            transform: rotate(90deg);
+        }
+    </style>
+</head>
+<body class="bg-oled-black text-on-surface font-body-md min-h-screen overflow-x-hidden selection:bg-primary-fixed-dim selection:text-oled-black">
+<!-- TopNavBar -->
+<header class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-margin-desktop h-12 bg-background border-b border-border-subtle hidden md:flex">
+<div class="flex items-center gap-gutter">
+<span class="font-headline-lg text-headline-lg font-bold text-primary-fixed-dim tracking-tight">NexusNode</span>
+<div class="h-6 w-[1px] bg-border-subtle mx-2"></div>
+<nav class="flex items-center gap-stack-gap">
+<!-- None are explicitly active on this page, highlighting none to defer to SideNav -->
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-3 py-1 cursor-pointer active:opacity-80" href="#">Dashboard</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-3 py-1 cursor-pointer active:opacity-80" href="#">Vault</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-3 py-1 cursor-pointer active:opacity-80" href="#">Media</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-3 py-1 cursor-pointer active:opacity-80" href="#">Tasks</a>
+<a class="text-on-surface-variant font-body-md text-body-md hover:text-primary hover:bg-surface-container-low transition-colors px-3 py-1 cursor-pointer active:opacity-80" href="#">AI Studio</a>
+</nav>
+</div>
+<div class="flex items-center gap-stack-gap">
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 flex items-center justify-center cursor-pointer active:opacity-80" data-icon="sensors">
+<span class="material-symbols-outlined">sensors</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 flex items-center justify-center cursor-pointer active:opacity-80" data-icon="dns">
+<span class="material-symbols-outlined">dns</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 flex items-center justify-center cursor-pointer active:opacity-80 relative" data-icon="notifications">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-status-warning"></span>
+</button>
+<div class="h-6 w-[1px] bg-border-subtle mx-2"></div>
+<button class="text-on-surface-variant font-body-sm text-body-sm hover:text-primary transition-colors px-2 cursor-pointer active:opacity-80">More</button>
+</div>
+</header>
+<!-- SideNavBar -->
+<aside class="fixed inset-y-0 left-0 z-40 flex flex-col w-64 bg-graphite-surface border-r border-border-subtle pt-12 hidden md:flex">
+<div class="p-gutter border-b border-border-subtle">
+<h2 class="font-headline-md text-headline-md text-on-surface">NexusNode</h2>
+<p class="font-data-sm text-data-sm text-on-surface-variant mt-1">System Controller</p>
+</div>
+<nav class="flex-1 overflow-y-auto py-stack-gap">
+<a class="flex items-center gap-3 px-gutter py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="lan">lan</span>
+<span class="font-body-md text-body-md">Network</span>
+</a>
+<a class="flex items-center gap-3 px-gutter py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="event_note">event_note</span>
+<span class="font-body-md text-body-md">Events</span>
+</a>
+<a class="flex items-center gap-3 px-gutter py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="hard_drive">hard_drive</span>
+<span class="font-body-md text-body-md">Storage</span>
+</a>
+<a class="flex items-center gap-3 px-gutter py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="backup">backup</span>
+<span class="font-body-md text-body-md">Backups</span>
+</a>
+<a class="flex items-center gap-3 px-gutter py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="settings_input_component">settings_input_component</span>
+<span class="font-body-md text-body-md">Automation</span>
+</a>
+<!-- Active Tab -->
+<a class="flex items-center gap-3 px-gutter py-2 bg-surface-container-high text-primary-fixed-dim border-l-2 border-primary-fixed-dim transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+<span class="font-body-md text-body-md font-medium">Diagnostics</span>
+</a>
+<a class="flex items-center gap-3 px-gutter py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-body-md text-body-md">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-gutter py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-all duration-150 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="admin_panel_settings">admin_panel_settings</span>
+<span class="font-body-md text-body-md">Admin</span>
+</a>
+</nav>
+<div class="p-gutter border-t border-border-subtle flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div aria-label="System Administrator" class="w-8 h-8 rounded-full bg-surface-container-high border border-border-subtle flex items-center justify-center overflow-hidden">
+<span class="material-symbols-outlined text-on-surface-variant text-sm">person</span>
+</div>
+<span class="font-data-sm text-data-sm text-on-surface-variant truncate">System Administrator</span>
+</div>
+<button class="text-on-surface-variant hover:text-on-surface p-1 transition-colors" title="Log Out">
+<span class="material-symbols-outlined text-sm">logout</span>
+</button>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="md:ml-64 pt-12 min-h-screen flex flex-col p-margin-desktop gap-margin-desktop">
+<!-- Header Section -->
+<header class="flex flex-col md:flex-row md:items-end justify-between gap-gutter border-b border-border-subtle pb-gutter">
+<div class="flex flex-col gap-2">
+<h1 class="font-headline-lg text-headline-lg text-status-warning flex items-center gap-3 uppercase tracking-wider">
+<span class="material-symbols-outlined text-[32px] font-bold">warning</span>
+                    System State: WARNING
+                </h1>
+<p class="font-data-md text-data-md text-on-surface-variant">Diagnostics routine flagged (1) high-priority anomaly.</p>
+</div>
+<button class="h-touch-target px-6 bg-surface-container-high border border-border-subtle text-on-surface font-data-md text-data-md uppercase tracking-wide hover:bg-surface-container-highest transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+                Run Full Diagnostic
+            </button>
+</header>
+<!-- Key Metrics Grid -->
+<section class="grid grid-cols-1 md:grid-cols-2 gap-gutter">
+<!-- CPU Metric -->
+<div class="bg-graphite-surface border border-border-subtle p-gutter flex flex-col gap-stack-gap relative overflow-hidden">
+<div class="flex justify-between items-baseline">
+<span class="font-body-md text-body-md text-on-surface-variant uppercase tracking-wider">Core CPU Load</span>
+<span class="font-data-lg text-data-lg text-status-healthy">18%</span>
+</div>
+<div class="w-full h-2 bg-surface-container-high rounded-none overflow-hidden border border-border-subtle/50">
+<div class="h-full bg-status-healthy w-[18%] transition-all duration-500 ease-out"></div>
+</div>
+<div class="flex justify-between mt-1">
+<span class="font-data-sm text-data-sm text-on-surface-variant">0%</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant">100%</span>
+</div>
+</div>
+<!-- RAM Metric -->
+<div class="bg-graphite-surface border border-status-warning/50 p-gutter flex flex-col gap-stack-gap relative overflow-hidden shadow-[inset_0_0_20px_rgba(255,214,0,0.05)]">
+<div class="flex justify-between items-baseline">
+<span class="font-body-md text-body-md text-on-surface-variant uppercase tracking-wider">Memory Allocation</span>
+<span class="font-data-lg text-data-lg text-status-warning animate-pulse">87% Used</span>
+</div>
+<div class="w-full h-2 bg-surface-container-high rounded-none overflow-hidden border border-border-subtle/50">
+<div class="h-full bg-status-warning w-[87%] transition-all duration-500 ease-out"></div>
+</div>
+<div class="flex justify-between mt-1">
+<span class="font-data-sm text-data-sm text-on-surface-variant">0GB</span>
+<span class="font-data-sm text-data-sm text-status-warning font-bold">111.4GB / 128GB</span>
+</div>
+</div>
+</section>
+<!-- Diagnostic Items List -->
+<section class="flex flex-col border border-border-subtle bg-graphite-surface">
+<!-- Item 1: Memory Pressure (Warning) -->
+<details class="group border-b border-border-subtle last:border-b-0" open="">
+<summary class="flex items-center justify-between p-gutter cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+<div class="flex items-center gap-gutter">
+<span class="material-symbols-outlined text-status-warning" data-icon="memory">memory</span>
+<span class="font-data-lg text-data-lg text-on-surface uppercase">Memory Pressure</span>
+<span class="px-2 py-0.5 bg-status-warning/10 border border-status-warning text-status-warning font-label-caps text-label-caps rounded-sm">WARNING</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant expand-icon transition-transform duration-200" data-icon="chevron_right">chevron_right</span>
+</summary>
+<div class="p-gutter pt-0 border-t border-border-subtle/50 bg-background/50">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-gutter mt-gutter">
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Problem Detected</span>
+<p class="font-body-md text-body-md text-on-surface">Ollama runtime memory reservation exceeding available system overhead; potential swap thrashing detected.</p>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Evidence</span>
+<div class="bg-surface-container-lowest border border-border-subtle p-2 font-data-sm text-data-sm text-on-surface-variant font-mono">
+                                &gt; top -b -n 1 | grep "Mem"<br>
+                                MiB Mem : 128000.0 total, 111400.5 free, 16500.5 used<br>
+                                &gt; System log: OOM killer threshold approaching.
+                            </div>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Likely Cause</span>
+<p class="font-body-md text-body-md text-on-surface">Ollama runtime failed to release VRAM/RAM after large model inference; Localtonet tunnel overhead increasing.</p>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Recommendation</span>
+<p class="font-body-md text-body-md text-primary-fixed-dim">Restart 'Localtonet' tunnel service and clear Ollama model cache. Monitor RAM allocation for 15 minutes to ensure baseline stability.</p>
+</div>
+</div>
+</div>
+</details>
+<!-- Item 2: Network -->
+<details class="group border-b border-border-subtle last:border-b-0">
+<summary class="flex items-center justify-between p-gutter cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+<div class="flex items-center gap-gutter">
+<span class="material-symbols-outlined text-status-healthy" data-icon="public">public</span>
+<span class="font-data-lg text-data-lg text-on-surface uppercase">Network Interface</span>
+<span class="px-2 py-0.5 border border-status-healthy text-status-healthy font-label-caps text-label-caps rounded-sm">HEALTHY</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant expand-icon transition-transform duration-200" data-icon="chevron_right">chevron_right</span>
+</summary>
+<div class="p-gutter pt-0 border-t border-border-subtle/50 bg-background/50">
+<p class="font-body-md text-body-md text-on-surface mt-gutter">All network interfaces operating within expected parameters. Latency normal (&lt; 20ms).</p>
+</div>
+</details>
+<!-- Item 3: Database -->
+<details class="group border-b border-border-subtle last:border-b-0">
+<summary class="flex items-center justify-between p-gutter cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+<div class="flex items-center gap-gutter">
+<span class="material-symbols-outlined text-status-healthy" data-icon="database">database</span>
+<span class="font-data-lg text-data-lg text-on-surface uppercase">Database Cluster</span>
+<span class="px-2 py-0.5 border border-status-healthy text-status-healthy font-label-caps text-label-caps rounded-sm">HEALTHY</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant expand-icon transition-transform duration-200" data-icon="chevron_right">chevron_right</span>
+</summary>
+<div class="p-gutter pt-0 border-t border-border-subtle/50 bg-background/50">
+<p class="font-body-md text-body-md text-on-surface mt-gutter">Read/Write operations stable. Replication lag at 0.0s. Connection pool utilization at 12%.</p>
+</div>
+</details>
+<!-- Item 4: Process -->
+<details class="group border-b border-border-subtle last:border-b-0">
+<summary class="flex items-center justify-between p-gutter cursor-pointer hover:bg-surface-container-high transition-colors select-none">
+<div class="flex items-center gap-gutter">
+<span class="material-symbols-outlined text-status-healthy" data-icon="account_tree">account_tree</span>
+<span class="font-data-lg text-data-lg text-on-surface uppercase">Process Threads</span>
+<span class="px-2 py-0.5 border border-status-healthy text-status-healthy font-label-caps text-label-caps rounded-sm">HEALTHY</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant expand-icon transition-transform duration-200" data-icon="chevron_right">chevron_right</span>
+</summary>
+<div class="p-gutter pt-0 border-t border-border-subtle/50 bg-background/50">
+<p class="font-body-md text-body-md text-on-surface mt-gutter">Total active threads: 1,402. No zombie processes detected. Context switching rate normal.</p>
+</div>
+</details>
+</section>
+</main>
+
+
+</body></html>
