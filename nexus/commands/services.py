@@ -54,22 +54,23 @@ def cmd_services_status(client: NexusClient, args, as_json: bool = False) -> int
         is_running = bool(sdata.get("running") or sdata.get("online") or str(sdata.get("status", "")).lower() in ["online", "running"])
         if is_running:
             online_count += 1
-            state_str = "RUNNING"
+            state_str = output.green("RUNNING", bold=True)
         else:
-            state_str = "STOPPED"
+            state_str = output.red("STOPPED", bold=False)
 
         raw_stat = sdata.get("status") or sdata.get("state") or "N/A"
         pid_val = sdata.get("pid") or "-"
 
         rows.append([
-            sname,
+            output.cyan(sname),
             state_str,
             str(raw_stat),
             str(pid_val),
-            "YES" if sdata.get("supervised", True) else "NO"
+            output.green("YES") if sdata.get("supervised", True) else output.dim("NO")
         ])
 
-    print(f"\n--- MANAGED SYSTEM SERVICES ({online_count}/{total_count} active) ---")
+    count_str = output.green(f"{online_count}/{total_count}") if online_count == total_count else output.yellow(f"{online_count}/{total_count}")
+    print(f"\n--- MANAGED SYSTEM SERVICES ({count_str} active) ---")
     output.print_table(headers, rows)
     return 0
 
@@ -97,7 +98,7 @@ def cmd_services_start(client: NexusClient, args, as_json: bool = False) -> int:
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
     else:
-        output.print_success(f"Service '{service}' started successfully.")
+        output.print_success(f"Service '{output.cyan(service)}' started successfully.")
     return 0
 
 
@@ -124,7 +125,7 @@ def cmd_services_stop(client: NexusClient, args, as_json: bool = False) -> int:
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
     else:
-        output.print_success(f"Service '{service}' stopped successfully.")
+        output.print_success(f"Service '{output.cyan(service)}' stopped successfully.")
     return 0
 
 
@@ -134,21 +135,5 @@ def cmd_services_restart(client: NexusClient, args, as_json: bool = False) -> in
         output.print_error("Service name is required.")
         return 1
 
-    print(f"Restarting service '{service}' via runit supervisor...")
-    try:
-        client.post("/stop", data={"service": service})
-        status_code, resp = client.post("/start", data={"service": service})
-    except NexusConnectionError as e:
-        output.print_error(str(e))
-        return 1
-
-    if status_code in [200, 201, 202]:
-        if as_json or getattr(args, "json", False):
-            output.print_json(resp)
-        else:
-            output.print_success(f"Service '{service}' restarted successfully.")
-        return 0
-    else:
-        err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
-        output.print_error(f"Restart failed: {err}")
-        return 1
+    cmd_services_stop(client, args, as_json=as_json)
+    return cmd_services_start(client, args, as_json=as_json)

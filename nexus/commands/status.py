@@ -36,34 +36,39 @@ def cmd_status(client: NexusClient, args, as_json: bool = False) -> int:
     process = norm.get("process", {})
     cpu = norm.get("cpu", {})
 
-    print("\n" + "=" * 60)
-    print("NEXUSNODE APPLIANCE STATUS")
-    print("=" * 60)
-    print(f"  Appliance State:     {appliance.get('state', 'NORMAL')}")
+    app_state = appliance.get("state", "HEALTHY")
+
+    print("\n" + output.dim("=" * 60))
+    print(output.cyan("NEXUSNODE APPLIANCE STATUS", bold=True))
+    print(output.dim("=" * 60))
+    print(f"  Appliance State:     {output.colorize_status(app_state)}")
 
     # CPU
     cpu_pct = cpu.get("percent")
     if cpu_pct is not None:
-        print(f"  CPU Usage:           {cpu_pct:.1f}%")
+        cpu_col = output.green(f"{cpu_pct:.1f}%") if cpu_pct < 75 else output.yellow(f"{cpu_pct:.1f}%")
+        print(f"  CPU Usage:           {cpu_col}")
     else:
-        print(f"  CPU Usage:           UNAVAILABLE")
+        print(f"  CPU Usage:           {output.dim('UNAVAILABLE')}")
 
     # Thermal & Battery
     temp_c = thermal.get("temp_c")
     therm_stat = thermal.get("status", appliance.get("state", "NORMAL"))
     if temp_c is not None:
-        print(f"  Thermal State:       {therm_stat} ({temp_c:.1f} °C)")
+        temp_col = output.green(f"{temp_c:.1f} °C") if temp_c < 45 else (output.yellow(f"{temp_c:.1f} °C") if temp_c < 55 else output.red(f"{temp_c:.1f} °C", bold=True))
+        print(f"  Thermal State:       {output.colorize_status(therm_stat)} ({temp_col})")
     else:
-        print(f"  Thermal State:       {therm_stat} (UNAVAILABLE)")
+        print(f"  Thermal State:       {output.colorize_status(therm_stat)} ({output.dim('UNAVAILABLE')})")
 
     bat_lvl = battery.get("level")
     bat_stat = battery.get("status", "STANDBY")
     if bat_lvl is not None:
-        print(f"  Battery:             {bat_lvl}% ({bat_stat})")
+        bat_col = output.green(f"{bat_lvl}%") if bat_lvl > 20 else output.red(f"{bat_lvl}%", bold=True)
+        print(f"  Battery:             {bat_col} ({bat_stat})")
     else:
-        print(f"  Battery:             UNAVAILABLE ({bat_stat})")
+        print(f"  Battery:             {output.dim('UNAVAILABLE')} ({bat_stat})")
 
-    print("-" * 60)
+    print(output.dim("-" * 60))
 
     # Memory / RAM
     ram_used = memory.get("used_mb")
@@ -72,9 +77,10 @@ def cmd_status(client: NexusClient, args, as_json: bool = False) -> int:
     if ram_used is not None and ram_total is not None:
         pct_val = ram_pct if ram_pct is not None else ((ram_used / ram_total * 100) if ram_total else 0.0)
         tier_val = appliance.get("tier") or memory.get("ram_tier", "NORMAL")
-        print(f"  RAM Usage:           {ram_used} MB / {ram_total} MB ({pct_val:.1f}%) [Tier: {tier_val}]")
+        tier_col = output.colorize_status(tier_val)
+        print(f"  RAM Usage:           {output.cyan(str(ram_used))} MB / {output.cyan(str(ram_total))} MB ({pct_val:.1f}%) [Tier: {tier_col}]")
     else:
-        print(f"  RAM Usage:           UNAVAILABLE")
+        print(f"  RAM Usage:           {output.dim('UNAVAILABLE')}")
 
     # Process Memory
     rss_mb = process.get("rss_mb")
@@ -84,9 +90,9 @@ def cmd_status(client: NexusClient, args, as_json: bool = False) -> int:
     elif rss_mb is not None:
         print(f"  Process Memory:      {rss_mb} MB RSS")
     else:
-        print(f"  Process Memory:      UNAVAILABLE")
+        print(f"  Process Memory:      {output.dim('UNAVAILABLE')}")
 
-    print("-" * 60)
+    print(output.dim("-" * 60))
 
     # Vault Storage / Disk
     free_gb = disk.get("free_gb")
@@ -94,31 +100,33 @@ def cmd_status(client: NexusClient, args, as_json: bool = False) -> int:
     disk_pct = disk.get("percent")
     if free_gb is not None and total_gb is not None:
         pct_str = f" ({disk_pct:.1f}% used)" if disk_pct is not None else ""
-        print(f"  Vault Storage:       {free_gb:.1f} GB free of {total_gb:.1f} GB{pct_str}")
+        print(f"  Vault Storage:       {output.green(f'{free_gb:.1f} GB', bold=True)} free of {total_gb:.1f} GB{pct_str}")
     elif disk.get("free_bytes") is not None and disk.get("total_bytes") is not None:
         f_b = output.format_bytes(disk.get("free_bytes"))
         t_b = output.format_bytes(disk.get("total_bytes"))
-        print(f"  Vault Storage:       {f_b} free of {t_b}")
+        print(f"  Vault Storage:       {output.green(f_b, bold=True)} free of {t_b}")
     else:
-        print(f"  Vault Storage:       UNAVAILABLE")
+        print(f"  Vault Storage:       {output.dim('UNAVAILABLE')}")
 
     # Services
     svcs_dict = normalize.normalize_services(services)
     if svcs_dict:
         online_count = sum(1 for s in svcs_dict.values() if s.get("running") or s.get("online") or s.get("status") in ["online", "running"])
         total_count = len(svcs_dict)
-        print(f"  Services Online:     {online_count} / {total_count} services active")
+        count_col = output.green(f"{online_count} / {total_count}", bold=True) if online_count == total_count else output.yellow(f"{online_count} / {total_count}", bold=True)
+        print(f"  Services Online:     {count_col} services active")
     else:
-        print(f"  Services Online:     UNAVAILABLE")
+        print(f"  Services Online:     {output.dim('UNAVAILABLE')}")
 
     # Active Tasks
     active_cnt = tasks.get("active_count")
     if active_cnt is None and "active_tasks" in tasks and isinstance(tasks["active_tasks"], list):
         active_cnt = len(tasks["active_tasks"])
     if active_cnt is not None:
-        print(f"  Active Tasks:        {active_cnt} active")
+        act_col = output.green(str(active_cnt)) if active_cnt == 0 else output.yellow(str(active_cnt), bold=True)
+        print(f"  Active Tasks:        {act_col} active")
     else:
-        print(f"  Active Tasks:        UNAVAILABLE")
+        print(f"  Active Tasks:        {output.dim('UNAVAILABLE')}")
 
-    print("=" * 60 + "\n")
+    print(output.dim("=" * 60) + "\n")
     return 0

@@ -87,9 +87,11 @@ def login(client: NexusClient, username: str = None, password: str = None, as_js
                 print()
                 output.print_success("Authentication successful.")
                 print()
-                print(f"User        : {user_id}")
-                print(f"Role        : {role.upper()}")
-                print(f"Session     : ACTIVE")
+                role_upper = role.upper()
+                role_col = output.magenta(role_upper, bold=True) if role.lower() == "admin" else output.cyan(role_upper, bold=True)
+                print(f"User        : {output.cyan(user_id, bold=True)}")
+                print(f"Role        : {role_col}")
+                print(f"Session     : {output.green('ACTIVE', bold=True)}")
                 print()
             return True
 
@@ -202,8 +204,8 @@ def connect_sequence(client: NexusClient, server_url: str = None, username: str 
         ("Name", probe.get("name", "NexusNode Mobile Appliance")),
         ("Device", probe.get("device", "TECNO BG6")),
         ("Version", probe.get("version", "2.3.2")),
-        ("Status", probe.get("status", "HEALTHY")),
-        ("Latency", f"{probe.get('latency_ms', 0)} ms"),
+        ("Status", output.colorize_status(probe.get("status", "HEALTHY"))),
+        ("Latency", output.cyan(f"{probe.get('latency_ms', 0)} ms")),
     ])
 
     # 5. Authenticate
@@ -256,12 +258,14 @@ def whoami(client: NexusClient, as_json: bool = False) -> dict | None:
         if as_json:
             output.print_json(resp)
         else:
+            role_upper = role.upper()
+            role_col = output.magenta(role_upper, bold=True) if role.lower() == "admin" else output.cyan(role_upper, bold=True)
             output.print_panel("NexusNode Authenticated Session", [
                 ("Server URL", client.server_url),
-                ("User ID", user_id),
-                ("Role", role.upper()),
+                ("User ID", output.cyan(user_id, bold=True)),
+                ("Role", role_col),
                 ("Session Age", output.format_duration(time.time() - resp.get("created_at", time.time())) if resp.get("created_at") else "Active"),
-                ("Privileges", f"{len([k for k, v in privs.items() if v])} enabled"),
+                ("Privileges", output.green(f"{len([k for k, v in privs.items() if v])} enabled")),
             ])
         return {
             "user_id": user_id,

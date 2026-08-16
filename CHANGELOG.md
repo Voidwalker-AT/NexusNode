@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.6] - 2026-08-16
+
+### 🎨 Universal CLI Terminal Color Engine & Resilient yt-dlp/FFmpeg Engine
+
+#### Added & Enhanced
+- **Centralized Zero-Dependency Terminal Color Engine (`nexus/output.py`)**:
+  - Implemented standard 16-color ANSI terminal palette with Windows Virtual Terminal Processing (`SetConsoleMode(ENABLE_VIRTUAL_TERMINAL_PROCESSING)`).
+  - Semantic color palette:
+    - **NEXUS BRAND**: Cyan (`\033[96m` / `\033[36m`) for titles, branding, active prompt, and highlights.
+    - **HEALTH & SUCCESS**: Green (`\033[92m`) for `HEALTHY`, `RUNNING`, `ONLINE`, `COMPLETED`, `[OK]`.
+    - **WARNING & TRANSITION**: Yellow (`\033[93m`) for `QUEUED`, `POST_PROCESSING`, `DEGRADED`, `[WARN]`.
+    - **ERROR & FAILURE**: Red (`\033[91m`) for `FAILED`, `CANCELLED`, `CRITICAL`, `STOPPED`, `[ERROR]`.
+    - **AI / LLM INFERENCE**: Magenta (`\033[95m`) for AI subsystem headers and model specifications.
+    - **METADATA & BORDERS**: Dim Gray (`\033[2m` / `\033[90m`) for table borders, dividers, timestamps, and secondary info.
+  - TTY Auto-Detection with `--no-color` flag, `NO_COLOR` / `NEXUS_NO_COLOR` environment variable support, and automatic raw clean JSON output in `--json` mode.
+  - ANSI-safe `print_table()` with `visible_len()` and `strip_ansi()` calculation to prevent ANSI escape sequence padding distortion.
+  - Colored interactive application prompt `nexus> ` with fallback on non-color terminals.
+- **Resilient yt-dlp & FFmpeg Android Execution Engine (`app.py`)**:
+  - Added automated `find_ffmpeg_location()` searching `PATH`, Termux bins (`/data/data/com.termux/files/usr/bin`, `$PREFIX/bin`, `~/.termux/bin`), and Android binaries.
+  - Automatic fallback chain:
+    - When `ffmpeg` is available: passes `--ffmpeg-location <dir>`, `-f bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b`, and `--merge-output-format mp4`.
+    - When `ffmpeg` is unavailable: gracefully falls back to direct single-stream progressive MP4 (`-f b[ext=mp4]/b/best`) or direct audio (`-f ba/b`) without failing at the 99% merger stage.
+  - Added `--no-mtime` and `--extractor-args "youtube:player_client=android,web"` for reliable downloads on Android storage and mobile networks.
+  - Enhanced multi-line error capture persisting full diagnostics into `task['metadata']['diagnostic_lines']`.
+- **Test Suite Expansion (179 Total Tests Passing - 100% OK)**:
+  - Added 12 new comprehensive unit tests in `tests/test_nexus_client.py` and `tests/test_server.py` verifying color palette mappings, TTY/non-TTY modes, table alignment, FFmpeg discovery, and error diagnostics persistence.
+
+---
+
 ## [2.3.5] - 2026-08-16
 
 ### 🛡️ Task Database Integrity & Media Lifecycle Verification

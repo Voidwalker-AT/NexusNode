@@ -46,6 +46,10 @@ class NexusShell(cmd.Cmd):
         self.user_id = self.session_info.get("user_id", "user")
         self.role = (self.session_info.get("role") or "user").lower()
         self.intro = ""
+        if output.is_color_enabled():
+            self.prompt = output.cyan("nexus>", bold=True) + " "
+        else:
+            self.prompt = "nexus> "
 
     def get_names(self):
         """Filters available command names by user role for tab completion and help."""

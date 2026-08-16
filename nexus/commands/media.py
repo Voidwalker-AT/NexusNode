@@ -71,11 +71,11 @@ def cmd_media_download(client: NexusClient, args, as_json: bool = False) -> int:
         task_id = resp["task_ids"][0]
 
     output.print_success("Download task submitted to server queue.")
-    print(f"  Task ID:     {task_id or 'unknown'}")
+    print(f"  Task ID:     {output.cyan(task_id or 'unknown', bold=True)}")
     print(f"  Format:      {fmt.upper()} ({quality})")
     print(f"  Destination: Vault -> {dest}/")
-    print(f"  Status:      {str(resp.get('status', 'QUEUED')).upper()}")
-    print("Use 'nexus media queue' or 'nexus tasks' to track progress.\n")
+    print(f"  Status:      {output.colorize_status(resp.get('status', 'QUEUED'))}")
+    print(f"Use '{output.cyan('nexus media queue')}' or '{output.cyan('nexus tasks status ' + (task_id or ''))}' to track progress.\n")
     return 0
 
 
@@ -114,7 +114,7 @@ def cmd_media_library(client: NexusClient, args, as_json: bool = False) -> int:
         cat = (item.get("category") or "other").upper()
         fmt = (item.get("format") or "").upper()
         sz = output.format_bytes(item.get("size", item.get("size_bytes", 0)))
-        rows.append([fname[:35], cat, fmt, sz])
+        rows.append([output.cyan(fname[:35]), cat, fmt, sz])
 
     print(f"\n--- MEDIA LIBRARY ({len(items)} items, {total_size}) ---")
     output.print_table(headers, rows)
@@ -153,51 +153,59 @@ def cmd_media_queue(client: NexusClient, args, as_json: bool = False) -> int:
 
     print()
     if active_tasks:
-        print("ACTIVE")
+        print(output.cyan("ACTIVE", bold=True))
         try:
-            print("─" * 40)
+            print(output.dim("─" * 40))
         except UnicodeEncodeError:
-            print("-" * 40)
+            print(output.dim("-" * 40))
         for t in active_tasks:
             title = t.get("title") or "Media Download"
-            stage_str = f" / {t['stage']}" if t.get("stage") and t["stage"] != t["status"] else ""
-            print(f"Download: {title}")
-            print(f"{t['status']}{stage_str}")
+            status_col = output.colorize_status(t["status"])
+            stage_col = f" / {output.colorize_status(t['stage'])}" if t.get("stage") and t["stage"] != t["status"] else ""
+            print(f"Download: {output.white(title, bold=True)}")
+            print(f"{status_col}{stage_col}")
             if t.get("progress") is not None:
-                print(f"Progress:        {t['progress']:.0f}%")
+                prog_val = t['progress']
+                prog_col = output.green(f"{prog_val:.0f}%", bold=True) if prog_val >= 99 else output.yellow(f"{prog_val:.0f}%")
+                print(f"Progress:        {prog_col}")
             if t.get("speed_bps"):
                 spd_mb = round(t["speed_bps"] / (1024 * 1024), 2)
-                print(f"Speed:           {spd_mb} MB/s")
+                print(f"Speed:           {output.cyan(f'{spd_mb} MB/s')}")
             if t.get("eta_seconds") is not None:
-                print(f"ETA:             {t['eta_seconds']}s")
+                eta_val = t["eta_seconds"]
+                print(f"ETA:             {output.yellow(f'{eta_val}s')}")
             if t.get("output_path"):
-                print(f"Output:          {t['output_path']}")
+                print(f"Output:          {output.green(str(t['output_path']))}")
             print()
 
     if queued_tasks:
-        print("QUEUED")
+        print(output.yellow("QUEUED", bold=True))
         try:
-            print("─" * 40)
+            print(output.dim("─" * 40))
         except UnicodeEncodeError:
-            print("-" * 40)
+            print(output.dim("-" * 40))
         for t in queued_tasks:
             title = t.get("title") or "Media Download"
             print(f"Download: {title}")
-            print("QUEUED\n")
+            print(f"{output.yellow('QUEUED')}\n")
 
     if not active_tasks and not queued_tasks and terminal_tasks:
         headers = ["TASK ID", "STATUS", "STAGE", "TITLE", "ERROR", "CREATED"]
         rows = []
         for t in terminal_tasks[:10]:
+            status_col = output.colorize_status(t["status"])
+            stage_col = output.colorize_status(t["stage"]) if t.get("stage") else output.dim("--")
+            err_raw = str(t.get("error")) if t.get("error") else "--"
+            err_col = output.red(err_raw[:24]) if t.get("error") else output.dim("--")
             rows.append([
-                t["task_id"][:14],
-                t["status"],
-                t["stage"] or "--",
+                output.cyan(t["task_id"][:14]),
+                status_col,
+                stage_col,
                 t.get("title", "Media Download")[:30],
-                str(t.get("error"))[:24] if t.get("error") else "--",
+                err_col,
                 output.format_timestamp(t.get("created_at"))
             ])
-        print("RECENT MEDIA TASKS")
+        print(output.cyan("RECENT MEDIA TASKS", bold=True))
         output.print_table(headers, rows)
 
     return 0

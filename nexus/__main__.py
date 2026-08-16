@@ -35,10 +35,11 @@ from .commands import (
 
 def create_parser() -> argparse.ArgumentParser:
     common_parser = argparse.ArgumentParser(add_help=False)
-    common_parser.add_argument("--server", help="NexusNode remote server URL (e.g. https://...)", default=None)
-    common_parser.add_argument("--user", help="NexusNode username / user ID", default=None)
-    common_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON format")
-    common_parser.add_argument("--debug", action="store_true", help="Enable verbose debug exception logs")
+    common_parser.add_argument("--server", help="NexusNode remote server URL (e.g. https://...)", default=argparse.SUPPRESS)
+    common_parser.add_argument("--user", help="NexusNode username / user ID", default=argparse.SUPPRESS)
+    common_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON format", default=argparse.SUPPRESS)
+    common_parser.add_argument("--no-color", action="store_true", help="Disable ANSI color output", default=argparse.SUPPRESS)
+    common_parser.add_argument("--debug", action="store_true", help="Enable verbose debug exception logs", default=argparse.SUPPRESS)
 
     parser = argparse.ArgumentParser(
         prog="nexus",
@@ -185,10 +186,14 @@ def main(argv=None) -> int:
         target_server = args.url
 
     debug = getattr(args, "debug", False)
+    as_json = getattr(args, "json", False)
+    no_color = getattr(args, "no_color", False)
+
+    if as_json or no_color:
+        output.set_color_enabled(False)
+
     server_url = config.resolve_server_url(cli_server=target_server, prompt_if_missing=(args.command is None or args.command == "connect" or args.command == "login"))
     client = NexusClient(server_url=server_url, debug=debug)
-
-    as_json = getattr(args, "json", False)
 
     try:
         # 2. If no command specified, default to interactive session/connect

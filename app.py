@@ -3191,6 +3191,27 @@ def enqueue_media_download():
     })
 
 
+def find_ffmpeg_location() -> str | None:
+    """Discovers ffmpeg directory across system PATH and Android/Termux environments."""
+    w = shutil.which("ffmpeg")
+    if w:
+        return os.path.dirname(w)
+
+    termux_bins = [
+        os.environ.get("PREFIX", "") + "/bin" if os.environ.get("PREFIX") else "",
+        "/data/data/com.termux/files/usr/bin",
+        os.path.expanduser("~/.termux/bin"),
+        "/system/bin",
+        "/system/xbin"
+    ]
+    for b in termux_bins:
+        if b and os.path.isdir(b):
+            fp = os.path.join(b, "ffmpeg")
+            if os.path.isfile(fp) and (os.access(fp, os.X_OK) or os.name == 'nt'):
+                return b
+    return None
+
+
 def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, destination: str, custom_name: str):
     """
     Authoritative yt-dlp media downloader execution with lifecycle stages:
@@ -3209,18 +3230,35 @@ def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, des
 
     out_tmpl = os.path.join(dest_dir, f"{custom_name}.%(ext)s" if custom_name else "%(title)s.%(ext)s")
 
+    ffmpeg_dir = find_ffmpeg_location()
+
     cmd = [
         "yt-dlp",
         "--newline",
         "--no-warnings",
         "--no-playlist",
+        "--no-mtime",
+        "--extractor-args", "youtube:player_client=android,web",
         "--progress-template", "download:%(progress._percent_str)s %(progress._speed_str)s %(progress._eta_str)s",
         "-o", out_tmpl
     ]
+
+    if ffmpeg_dir:
+        cmd.extend(["--ffmpeg-location", ffmpeg_dir])
+
     if fmt in ['mp3', 'm4a', 'opus', 'wav', 'flac']:
-        cmd.extend(["-x", "--audio-format", fmt])
+        if ffmpeg_dir:
+            cmd.extend(["-x", "--audio-format", fmt])
+        else:
+            task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] ffmpeg not found: falling back to best direct audio stream.")
+            cmd.extend(["-f", "ba/b"])
     else:
-        cmd.extend(["-f", "bv*+ba/b", "--merge-output-format", fmt])
+        if ffmpeg_dir:
+            cmd.extend(["-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b", "--merge-output-format", fmt])
+        else:
+            task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] ffmpeg not found: falling back to progressive single-stream MP4.")
+            cmd.extend(["-f", "b[ext=mp4]/b/best"])
+
     cmd.append(url)
 
     task_obj['logs'].append(f"[{datetime.now().strftime('%H:%M:%S')}] Spawning yt-dlp download: {url}")
@@ -3257,7 +3295,7 @@ def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, des
         if len(task_obj['logs']) > 150:
             task_obj['logs'] = task_obj['logs'][-150:]
 
-        if "ERROR:" in line_str or "[error]" in line_str.lower():
+        if "ERROR:" in line_str or "[error]" in line_str.lower() or "postprocessing:" in line_str.lower():
             error_lines.append(line_str)
 
         # Parse download percentage
@@ -3294,10 +3332,11 @@ def run_media_download_job(task_obj: dict, url: str, fmt: str, quality: str, des
     if proc.returncode != 0:
         concise_err = f"yt-dlp exited with code {proc.returncode}"
         if error_lines:
-            last_err = error_lines[-1].strip()
-            clean_err = re.sub(r'\x1b\[[0-9;]*m', '', last_err).strip()
-            if clean_err:
-                concise_err = clean_err
+            cleaned_errs = [re.sub(r'\x1b\[[0-9;]*m', '', el).strip() for el in error_lines if el.strip()]
+            if cleaned_errs:
+                concise_err = cleaned_errs[-1]
+                task_obj['metadata']['diagnostic_lines'] = cleaned_errs
+        task_obj['error'] = concise_err
         raise RuntimeError(concise_err)
 
     # Stage: VERIFYING output file

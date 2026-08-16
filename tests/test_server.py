@@ -2612,6 +2612,66 @@ class TestNexusNodeServer(unittest.TestCase):
             self.assertEqual(active_task["speed_bps"], 2097152)
             self.assertEqual(active_task["eta_seconds"], 8)
 
+    def test_64_find_ffmpeg_location_discovery(self):
+        """Verify ffmpeg discovery helper locates PATH or standard locations."""
+        loc = server_app.find_ffmpeg_location()
+        if loc is not None:
+            self.assertTrue(isinstance(loc, str))
+            self.assertTrue(os.path.isdir(loc))
+
+    def test_65_media_download_error_diagnostics_persistence(self):
+        """Verify that when a task errors with diagnostic lines, error is stored in task record."""
+        runner = server_app.task_runner
+
+        def failing_media_job(t):
+            t['status'] = 'RUNNING'
+            t['stage'] = 'DOWNLOADING'
+            runner._save_task_to_db(t)
+            t['metadata']['diagnostic_lines'] = ["ERROR: [youtube] video unavailable", "ERROR: unable to download video data"]
+            t['error'] = "ERROR: unable to download video data"
+            raise RuntimeError("ERROR: unable to download video data")
+
+        tid, _ = runner.enqueue_task("Failing Media Test", "media_download", failing_media_job, owner_user_id="admin")
+        time.sleep(0.15)
+
+        client = server_app.app.test_client()
+        resp = client.get(f"/api/tasks/{tid}", headers={"Authorization": f"Bearer {self.admin_token}"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+
+        self.assertEqual(data["status"], "FAILED")
+        self.assertEqual(data["stage"], "FAILED")
+        self.assertIn("unable to download video data", data.get("error", ""))
+        self.assertIn("diagnostic_lines", data.get("metadata", {}))
+        self.assertEqual(len(data["metadata"]["diagnostic_lines"]), 2)
+
+    def test_66_task_cancellation_preserves_cancelled_stage(self):
+        """Verify cancelling a task immediately updates both status and stage to CANCELLED."""
+        runner = server_app.task_runner
+
+        def long_job(t):
+            t['status'] = 'RUNNING'
+            t['stage'] = 'DOWNLOADING'
+            runner._save_task_to_db(t)
+            for _ in range(20):
+                if str(t.get('status', '')).upper() in ['CANCELLED', 'CANCELLING']:
+                    break
+                time.sleep(0.05)
+
+        tid, _ = runner.enqueue_task("Cancellable Job", "media_download", long_job, owner_user_id="admin")
+        time.sleep(0.05)
+
+        client = server_app.app.test_client()
+        resp_cancel = client.post(f"/api/tasks/{tid}/cancel", headers={"Authorization": f"Bearer {self.admin_token}"})
+        self.assertEqual(resp_cancel.status_code, 200)
+
+        time.sleep(0.1)
+        resp_get = client.get(f"/api/tasks/{tid}", headers={"Authorization": f"Bearer {self.admin_token}"})
+        self.assertEqual(resp_get.status_code, 200)
+        data = resp_get.get_json()
+        self.assertEqual(data["status"], "CANCELLED")
+        self.assertEqual(data["stage"], "CANCELLED")
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

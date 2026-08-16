@@ -58,18 +58,22 @@ def cmd_tasks_list(client: NexusClient, args, as_json: bool = False) -> int:
         speed_str = f"{round(t['speed_bps'] / (1024 * 1024), 1)} MB/s" if t.get("speed_bps") else "--"
         eta_str = f"{t['eta_seconds']}s" if t.get("eta_seconds") is not None else "--"
         created_str = output.format_timestamp(t.get("created_at"))
-        err_str = str(t.get("error")) if t.get("error") else "--"
+        raw_err = str(t.get("error")) if t.get("error") else "--"
+        err_str = output.red(raw_err[:30]) if t.get("error") else output.dim("--")
+
+        status_col = output.colorize_status(t["status"])
+        stage_col = output.colorize_status(t["stage"]) if t.get("stage") else output.dim("--")
 
         rows.append([
-            t["task_id"][:16],
+            output.cyan(t["task_id"][:16]),
             t["task_type"].upper(),
-            t["status"],
-            t["stage"] or "--",
+            status_col,
+            stage_col,
             prog,
             speed_str,
             eta_str,
             created_str,
-            err_str[:30]
+            err_str
         ])
 
     print(f"\n--- BACKGROUND TASKS ({len(tasks)} items) ---")
@@ -107,36 +111,40 @@ def cmd_tasks_status(client: NexusClient, args, as_json: bool = False) -> int:
     if target.get("has_contradiction"):
         output.print_warning(target.get("contradiction_warning"))
 
-    print(f"\n--- TASK STATUS: {target['task_id']} ---")
+    status_col = output.colorize_status(target.get("status"))
+    stage_col = output.colorize_status(target.get("stage")) if target.get("stage") else output.dim("--")
+
+    print(f"\n" + output.cyan(f"--- TASK STATUS: {target['task_id']} ---", bold=True))
     print(f"  Title:        {target.get('title', 'N/A')}")
     print(f"  Type:         {target.get('task_type')}")
     print(f"  Owner:        {target.get('owner')}")
-    print(f"  Status:       {target.get('status')}")
-    print(f"  Stage:        {target.get('stage') or '--'}")
+    print(f"  Status:       {status_col}")
+    print(f"  Stage:        {stage_col}")
     prog_str = f"{target['progress']:.0f}%" if target.get("progress") is not None else "--"
     print(f"  Progress:     {prog_str}")
     if target.get("speed_bps"):
         spd_mb = round(target["speed_bps"] / (1024 * 1024), 2)
-        print(f"  Speed:        {spd_mb} MB/s")
+        print(f"  Speed:        {output.cyan(f'{spd_mb} MB/s')}")
     else:
-        print(f"  Speed:        --")
+        print(f"  Speed:        {output.dim('--')}")
     if target.get("eta_seconds"):
-        print(f"  ETA:          {target['eta_seconds']}s")
+        eta_val = target["eta_seconds"]
+        print(f"  ETA:          {output.yellow(f'{eta_val}s')}")
     else:
-        print(f"  ETA:          --")
+        print(f"  ETA:          {output.dim('--')}")
     if target.get("output_path"):
-        print(f"  Output Path:  {target['output_path']}")
+        print(f"  Output Path:  {output.green(str(target['output_path']))}")
     else:
-        print(f"  Output Path:  --")
+        print(f"  Output Path:  {output.dim('--')}")
     print(f"  Created At:   {output.format_timestamp(target.get('created_at'))}")
     if target.get("started_at"):
         print(f"  Started At:   {output.format_timestamp(target.get('started_at'))}")
     if target.get("completed_at"):
         print(f"  Completed At: {output.format_timestamp(target.get('completed_at'))}")
     if target.get("error"):
-        print(f"  Error:        {target.get('error')}")
+        print(f"  Error:        {output.red(str(target.get('error')), bold=True)}")
     else:
-        print(f"  Error:        --")
+        print(f"  Error:        {output.dim('--')}")
     if target.get("result"):
         print(f"  Result:       {target.get('result')}")
     print()
@@ -169,5 +177,5 @@ def cmd_tasks_cancel(client: NexusClient, args, as_json: bool = False) -> int:
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
     else:
-        output.print_success(f"Task '{task_id}' cancellation requested successfully.")
+        output.print_success(f"Task '{output.cyan(task_id)}' cancellation requested successfully.")
     return 0

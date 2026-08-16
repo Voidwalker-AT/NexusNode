@@ -934,7 +934,7 @@ class TestNexusUniversalCLI(unittest.TestCase):
         try:
             ret = cmd_media.cmd_media_queue(client, args)
             self.assertEqual(ret, 0)
-            out = sys.stdout.getvalue()
+            out = n_output.strip_ansi(sys.stdout.getvalue())
             self.assertIn("ACTIVE", out)
             self.assertIn("Download: Example Video", out)
             self.assertIn("1.2 MB/s", out)
@@ -952,7 +952,7 @@ class TestNexusUniversalCLI(unittest.TestCase):
         try:
             ret = cmd_media.cmd_media_download(client, args)
             self.assertEqual(ret, 0)
-            out = sys.stdout.getvalue()
+            out = n_output.strip_ansi(sys.stdout.getvalue())
             self.assertIn("Task ID:     task-media-5555", out)
             self.assertIn("Status:      QUEUED", out)
         finally:
@@ -1055,6 +1055,112 @@ class TestNexusUniversalCLI(unittest.TestCase):
         self.assertTrue(task["has_contradiction"])
         self.assertEqual(task["task_id"], "t1")
         self.assertEqual(task["progress"], 100.0)
+
+    def test_color_enabled_tty(self):
+        n_output.set_color_enabled(True)
+        self.assertTrue(n_output.is_color_enabled())
+        colored_text = n_output.cyan("nexus")
+        self.assertIn("\033[96m", colored_text)
+        self.assertIn("\033[0m", colored_text)
+
+    def test_color_disabled_non_tty(self):
+        n_output.set_color_enabled(False)
+        self.assertFalse(n_output.is_color_enabled())
+        plain_text = n_output.cyan("nexus")
+        self.assertEqual(plain_text, "nexus")
+        self.assertNotIn("\033[", plain_text)
+
+    def test_no_color_flag(self):
+        args1 = n_main.create_parser().parse_args(["--no-color", "status"])
+        self.assertTrue(getattr(args1, "no_color", False))
+        args2 = n_main.create_parser().parse_args(["status", "--no-color"])
+        self.assertTrue(getattr(args2, "no_color", False))
+
+    def test_json_disables_colors(self):
+        n_output.set_color_enabled(True)
+        args1 = n_main.create_parser().parse_args(["--json", "status"])
+        self.assertTrue(getattr(args1, "json", False))
+        args2 = n_main.create_parser().parse_args(["status", "--json"])
+        self.assertTrue(getattr(args2, "json", False))
+
+    def test_task_status_colors(self):
+        n_output.set_color_enabled(True)
+        c_comp = n_output.colorize_status("COMPLETED")
+        self.assertIn("\033[92m", c_comp)  # Green
+
+        c_run = n_output.colorize_status("RUNNING")
+        self.assertIn("\033[92m", c_run)  # Green
+
+        c_que = n_output.colorize_status("QUEUED")
+        self.assertIn("\033[93m", c_que)  # Yellow
+
+        c_fail = n_output.colorize_status("FAILED")
+        self.assertIn("\033[91m", c_fail)  # Red
+
+        c_canc = n_output.colorize_status("CANCELLED")
+        self.assertIn("\033[91m", c_canc)  # Red
+
+    def test_service_status_colors(self):
+        n_output.set_color_enabled(True)
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        args = n_main.create_parser().parse_args(["services", "status"])
+        stdout_backup = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            ret = cmd_services.cmd_services_status(client, args)
+            self.assertEqual(ret, 0)
+            out = sys.stdout.getvalue()
+            self.assertIn("MANAGED SYSTEM SERVICES", out)
+            self.assertIn("ollama", out)
+        finally:
+            sys.stdout = stdout_backup
+            n_output.set_color_enabled(False)
+
+    def test_error_colors(self):
+        n_output.set_color_enabled(True)
+        stderr_backup = sys.stderr
+        sys.stderr = io.StringIO()
+        try:
+            n_output.print_error("Failed to connect to backend")
+            err_out = sys.stderr.getvalue()
+            self.assertIn("[ERROR]", err_out)
+            self.assertIn("\033[91m", err_out)
+        finally:
+            sys.stderr = stderr_backup
+            n_output.set_color_enabled(False)
+
+    def test_ai_colors(self):
+        n_output.set_color_enabled(True)
+        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
+        args = n_main.create_parser().parse_args(["ai", "state"])
+        stdout_backup = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            ret = cmd_ai.cmd_ai_state(client, args)
+            self.assertEqual(ret, 0)
+            out = sys.stdout.getvalue()
+            self.assertIn("AI RUNTIME STATE", out)
+            self.assertIn("qwen2.5:0.5b", out)
+        finally:
+            sys.stdout = stdout_backup
+            n_output.set_color_enabled(False)
+
+    def test_table_visible_len_alignment(self):
+        n_output.set_color_enabled(True)
+        colored_cell = n_output.green("ACTIVE")
+        self.assertEqual(n_output.visible_len(colored_cell), 6)
+        self.assertEqual(n_output.strip_ansi(colored_cell), "ACTIVE")
+
+        stdout_backup = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            n_output.print_table(["COL1", "COL2"], [["val1", colored_cell]])
+            table_out = sys.stdout.getvalue()
+            self.assertIn("COL1", table_out)
+            self.assertIn("COL2", table_out)
+        finally:
+            sys.stdout = stdout_backup
+            n_output.set_color_enabled(False)
 
 
 if __name__ == "__main__":

@@ -51,9 +51,10 @@ def cmd_models_list(client: NexusClient, args, as_json: bool = False) -> int:
     headers = ["NAME", "SIZE", "FAMILY", "PARAMS", "QUANT", "COMPATIBILITY"]
     rows = []
     for m in models:
-        compat = "PASS" if m.get("budget_status", {}).get("allowed", True) else "WARN/OOM"
+        is_pass = m.get("budget_status", {}).get("allowed", True)
+        compat = output.green("PASS", bold=True) if is_pass else output.yellow("WARN/OOM")
         rows.append([
-            m.get("name", "N/A"),
+            output.cyan(m.get("name", "N/A")),
             output.format_bytes(m.get("size_bytes", 0)) if m.get("size_bytes") is not None else "N/A",
             m.get("family", "N/A"),
             m.get("parameter_size", "N/A"),
@@ -61,7 +62,7 @@ def cmd_models_list(client: NexusClient, args, as_json: bool = False) -> int:
             compat
         ])
 
-    print(f"\n--- AUTHORITATIVE MODEL REGISTRY ({len(models)} models) ---")
+    print(f"\n" + output.magenta(f"--- AUTHORITATIVE MODEL REGISTRY ({len(models)} models) ---", bold=True))
     output.print_table(headers, rows)
     return 0
 
@@ -90,7 +91,7 @@ def cmd_models_details(client: NexusClient, args, as_json: bool = False) -> int:
         output.print_json(resp)
         return 0
 
-    print(f"\n--- MODEL SPECIFICATION: {resp.get('name')} ---")
+    print(f"\n" + output.magenta(f"--- MODEL SPECIFICATION: {resp.get('name')} ---", bold=True))
     print(f"  Family:          {resp.get('family', 'N/A')}")
     print(f"  Parameter Size:  {resp.get('parameter_size', 'N/A')}")
     print(f"  Quantization:    {resp.get('quantization_level', 'N/A')}")
@@ -101,39 +102,40 @@ def cmd_models_details(client: NexusClient, args, as_json: bool = False) -> int:
 
 
 def cmd_models_estimate(client: NexusClient, args, as_json: bool = False) -> int:
-    name = getattr(args, "model_name", None) or "custom-model"
-    param = getattr(args, "param", "1.5b")
-    quant = getattr(args, "quant", "q4_k_m")
+    name = getattr(args, "model_name", None)
+    ctx = getattr(args, "ctx", None)
 
-    payload = {
-        "model": name,
-        "parameter_size": param,
-        "quantization": quant
-    }
+    params = {}
+    if name:
+        params["model"] = name
+    if ctx:
+        params["ctx"] = ctx
 
     try:
-        status_code, resp = client.post("/api/models/estimate", data=payload)
+        status_code, resp = client.get("/api/models/estimate", params=params)
     except NexusConnectionError as e:
         output.print_error(str(e))
         return 1
 
     if status_code != 200 or not isinstance(resp, dict):
         err = resp.get("message", resp.get("error", f"HTTP {status_code}")) if isinstance(resp, dict) else str(resp)
-        output.print_error(f"Estimation failed ({err})")
+        output.print_error(f"Failed to estimate model memory budget ({err})")
         return 1
 
     if as_json or getattr(args, "json", False):
         output.print_json(resp)
         return 0
 
-    est_model_bytes = resp.get("estimated_model_bytes") or (resp.get("model_size_mb", 0) * 1024 * 1024)
-    est_total_bytes = resp.get("estimated_total_bytes") or (resp.get("total_ram_required_mb", 0) * 1024 * 1024)
-    is_safe = resp.get("allowed", resp.get("budget_status", {}).get("allowed", True))
+    is_allowed = resp.get("allowed", True)
+    status_col = output.green("ALLOWED / PASS", bold=True) if is_allowed else output.red("BLOCKED / OOM RISK", bold=True)
 
-    print(f"\n--- MEMORY BUDGET ESTIMATION: {name} ---")
-    print(f"  Parameters:          {param}")
-    print(f"  Quantization:        {quant}")
-    print(f"  Estimated Model RAM: {output.format_bytes(est_model_bytes)}")
-    print(f"  Total Memory Needed: {output.format_bytes(est_total_bytes)}")
-    print(f"  Hardware Safe?:      {'YES' if is_safe else 'NO (High OOM Risk)'}\n")
+    print("\n" + output.magenta("--- MODEL MEMORY BUDGET ESTIMATE ---", bold=True))
+    print(f"  Target Model:       {output.cyan(resp.get('model', 'N/A'))}")
+    print(f"  Context Size:       {resp.get('context_tokens', 2048)} tokens")
+    print(f"  Estimated RAM:      {output.format_bytes(resp.get('estimated_ram_bytes', 0))}")
+    print(f"  Available RAM:      {output.format_bytes(resp.get('available_ram_bytes', 0))}")
+    print(f"  Governor Status:    {status_col}")
+    if resp.get("reason"):
+        print(f"  Governor Reason:    {resp.get('reason')}")
+    print()
     return 0
