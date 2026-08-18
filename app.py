@@ -31,10 +31,11 @@ from datetime import datetime, timezone
 from functools import wraps
 
 import requests
-from flask import Flask, request, jsonify, render_template, send_file, Response, g, stream_with_context
+from flask import Flask, request, jsonify, render_template, send_file, Response, g, stream_with_context, redirect
 
 import config
 from resource_governor import governor, ResourceGovernor
+import timetable_sync
 
 # ==============================================================================
 # FLASK APP SETUP & LOCKS
@@ -43,6 +44,7 @@ from resource_governor import governor, ResourceGovernor
 app = Flask(__name__, template_folder='.')
 app.config['SECRET_KEY'] = config.SECRET_KEY
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB upload ceiling
+
 
 DB_LOCK = threading.RLock()
 SESSIONS_LOCK = threading.RLock()
@@ -73,7 +75,11 @@ def get_db_connection(db_file: str = None) -> sqlite3.Connection:
     return conn
 
 
+timetable_service = timetable_sync.TimetableService(get_db_connection)
+
+
 # --- PBKDF2 Password Helpers (must be defined before init_unified_db seeding) ---
+
 
 def hash_password(password: str, salt: str = None) -> tuple[str, str]:
     """
@@ -395,12 +401,16 @@ def init_unified_db():
                     time.time()
                 ))
 
+            # Initialize Google OAuth and Timetable Synchronization tables
+            timetable_sync.init_timetable_tables(conn)
+
             # Seed Default Scheduled Jobs
             default_jobs = [
                 ("job_auto_backup", "Daily Configuration Backup", "backup", 86400),
                 ("job_clean_temp", "Hourly Temp Files Cleanup", "clean_temp", 3600),
                 ("job_tunnel_check", "Tunnel Health Check", "tunnel_check", 300),
-                ("job_db_retention", "Daily Logs & Metrics Retention Sweep", "retention_sweep", 86400)
+                ("job_db_retention", "Daily Logs & Metrics Retention Sweep", "retention_sweep", 86400),
+                ("job_timetable_sync", "UPES Timetable Google Calendar Sync", "timetable_sync", config.TIMETABLE_SYNC_INTERVAL_SECONDS)
             ]
             for j_id, j_name, j_type, j_int in default_jobs:
                 cur.execute("SELECT COUNT(*) FROM scheduled_jobs WHERE id = ?;", (j_id,))
@@ -419,6 +429,7 @@ def init_unified_db():
 
 
 init_db = init_unified_db
+
 
 
 def init_rag_db():
@@ -2006,6 +2017,8 @@ class SchedulerDaemon(threading.Thread):
             task_runner.enqueue_task(f"Auto Clean: {name}", "scheduled_clean", run_clean_temp_job, owner_user_id="system")
         elif job_type == "retention_sweep":
             task_runner.enqueue_task(f"Retention Sweep: {name}", "retention_sweep", run_retention_sweep_job, owner_user_id="system")
+        elif job_type == "timetable_sync":
+            task_runner.enqueue_task(f"Timetable Sync: {name}", "timetable_sync", run_timetable_sync_job, owner_user_id="system")
         elif job_type == "tunnel_check":
             probe_localtonet_health()
 
@@ -2019,8 +2032,32 @@ class SchedulerDaemon(threading.Thread):
                 conn.close()
 
 
+def run_timetable_sync_job(task_obj: dict = None):
+    """Executes scheduled 3-hour timetable synchronization for all active users."""
+    if task_obj is None:
+        task_obj = {'logs': []}
+    task_obj.setdefault('logs', []).append("Executing scheduled 3-hour UPES Timetable -> Google Calendar sync...")
+    log_event("INFO", "TIMETABLE", "Timetable 3-hour sync job started.")
+    try:
+        results = timetable_service.sync_all_active_users()
+        total_created = sum(r.get("created", 0) for r in results.values() if isinstance(r, dict))
+        total_updated = sum(r.get("updated", 0) for r in results.values() if isinstance(r, dict))
+        total_deleted = sum(r.get("deleted", 0) for r in results.values() if isinstance(r, dict))
+        total_unchanged = sum(r.get("unchanged", 0) for r in results.values() if isinstance(r, dict))
+        total_errors = sum(len(r.get("errors", [])) for r in results.values() if isinstance(r, dict))
+
+        summary_msg = f"Timetable sync completed for {len(results)} users: Created={total_created}, Updated={total_updated}, Deleted={total_deleted}, Unchanged={total_unchanged}, Errors={total_errors}"
+        task_obj.setdefault('logs', []).append(summary_msg)
+        log_event("INFO", "TIMETABLE", summary_msg)
+    except Exception as e:
+        err_msg = f"Timetable sync job error: {str(e)}"
+        task_obj.setdefault('logs', []).append(err_msg)
+        log_event("ERROR", "TIMETABLE", err_msg)
+
+
 scheduler_daemon = SchedulerDaemon()
 scheduler_daemon.start()
+
 
 
 RETENTION_METRICS = {
@@ -4265,7 +4302,192 @@ def run_automation_job_now(job_id):
     return jsonify({"message": f"Job '{job_dict['name']}' triggered."})
 
 
+# ==============================================================================
+# UPES TIMETABLE & GOOGLE CALENDAR SYNCHRONIZATION ENDPOINTS
+# ==============================================================================
+
+@app.route('/api/maintenance/timetable/status', methods=['GET'])
+@app.route('/api/timetable/status', methods=['GET'])
+def get_timetable_sync_status():
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    if g.user.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    status_data = timetable_service.get_user_status(target_user_id)
+    return jsonify(status_data)
+
+
+@app.route('/api/maintenance/timetable/sync', methods=['POST'])
+@app.route('/api/timetable/sync', methods=['POST'])
+def trigger_timetable_sync():
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    data = request.get_json(force=True, silent=True) or {}
+    if g.user.get("role") == "admin" and data.get("user_id"):
+        target_user_id = data.get("user_id")
+
+    force_cal_id = data.get("calendar_id")
+    result = timetable_service.sync_user_timetable(target_user_id, force_calendar_id=force_cal_id)
+    return jsonify(result)
+
+
+@app.route('/api/maintenance/timetable/upload', methods=['POST'])
+@app.route('/api/timetable/upload', methods=['POST'])
+def upload_timetable_json():
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    # Check payload size
+    if (request.content_length and request.content_length > config.TIMETABLE_MAX_UPLOAD_BYTES):
+        return jsonify({"error": f"Payload exceeds maximum allowed size of {config.TIMETABLE_MAX_UPLOAD_BYTES // (1024*1024)} MB."}), 413
+
+    raw_json_str = None
+    if request.is_json:
+        raw_json_str = json.dumps(request.get_json(force=True, silent=True))
+    elif 'file' in request.files or 'timetable_file' in request.files:
+        f = request.files.get('file') or request.files.get('timetable_file')
+        raw_json_str = f.read().decode('utf-8', errors='ignore')
+    else:
+        raw_json_str = request.get_data(as_text=True)
+
+    if raw_json_str and len(raw_json_str.encode('utf-8')) > config.TIMETABLE_MAX_UPLOAD_BYTES:
+        return jsonify({"error": f"Payload exceeds maximum allowed size of {config.TIMETABLE_MAX_UPLOAD_BYTES // (1024*1024)} MB."}), 413
+
+
+    if not raw_json_str or not raw_json_str.strip():
+        return jsonify({"error": "Empty timetable payload provided."}), 400
+
+    target_user_id = g.user.get("user_id", "admin")
+    if g.user.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    success, msg, count = timetable_service.upload_timetable(target_user_id, raw_json_str)
+    if not success:
+        return jsonify({"error": msg}), 400
+
+    return jsonify({"status": "success", "message": msg, "sessions_count": count})
+
+
+@app.route('/api/auth/google/authorize', methods=['GET'])
+def get_google_authorize_url():
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    if not config.GOOGLE_CLIENT_ID or not config.GOOGLE_CLIENT_SECRET:
+        return jsonify({
+            "error": "Google OAuth is not configured on this server.",
+            "message": "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables."
+        }), 400
+
+    state_token = timetable_service.create_oauth_state(g.user.get("user_id", "admin"))
+    auth_url = timetable_sync.GoogleCalendarClient.get_authorization_url(state_token)
+
+    if request.args.get("redirect") == "true":
+        return redirect(auth_url)
+
+    return jsonify({"authorization_url": auth_url, "state": state_token})
+
+
+@app.route('/api/auth/google/callback', methods=['GET'])
+def google_oauth_callback():
+    error = request.args.get("error")
+    if error:
+        log_event("WARNING", "OAUTH", f"Google OAuth returned error: {error}")
+        return jsonify({"error": f"Google authorization failed: {error}"}), 400
+
+    code = request.args.get("code")
+    state = request.args.get("state")
+
+    if not code or not state:
+        return jsonify({"error": "Missing code or state parameter in OAuth callback."}), 400
+
+    user_id = timetable_service.validate_and_consume_state(state)
+    if not user_id:
+        log_event("WARNING", "OAUTH", "Invalid or expired OAuth state token during callback.")
+        return jsonify({"error": "Invalid or expired OAuth state token. Possible CSRF attempt."}), 400
+
+    try:
+        token_data = timetable_sync.GoogleCalendarClient.exchange_code_for_tokens(code)
+        timetable_service.save_oauth_tokens(user_id, token_data)
+        log_event("INFO", "OAUTH", f"Google Calendar connected successfully for user '{user_id}'")
+
+        if request.headers.get("Accept") == "application/json" or request.args.get("format") == "json":
+            return jsonify({"status": "success", "message": "Google Calendar connected successfully."})
+
+        return redirect("/#tab-maintenance?google_auth=success")
+    except timetable_sync.GoogleCalendarError as e:
+        log_event("ERROR", "OAUTH", f"OAuth token exchange error: {str(e)}")
+        return jsonify({"error": str(e)}), e.status_code
+    except Exception as e:
+        log_event("ERROR", "OAUTH", f"Unexpected error during OAuth token exchange: {str(e)}")
+        return jsonify({"error": "Internal error during Google token exchange."}), 500
+
+
+@app.route('/api/auth/google/disconnect', methods=['POST'])
+def disconnect_google_oauth():
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    user_id = g.user.get("user_id", "admin")
+    timetable_service.disconnect_google(user_id)
+    log_event("INFO", "OAUTH", f"Google Calendar disconnected for user '{user_id}'")
+    return jsonify({"status": "success", "message": "Google Calendar disconnected successfully."})
+
+
+@app.route('/api/auth/google/calendars', methods=['GET'])
+def list_google_calendars():
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    user_id = g.user.get("user_id", "admin")
+    oauth_info = timetable_service.get_oauth_tokens(user_id)
+    if not oauth_info:
+        return jsonify({"error": "Google account not connected."}), 400
+
+    token_data, current_cal_id, email = oauth_info
+    try:
+        def on_refresh(u_id, new_tokens):
+            timetable_service.save_oauth_tokens(u_id, new_tokens, current_cal_id, email)
+
+        client = timetable_sync.GoogleCalendarClient(token_data, user_id, on_token_refresh=on_refresh)
+        calendars = client.list_calendars()
+        return jsonify({"calendars": calendars, "active_calendar_id": current_cal_id})
+    except timetable_sync.GoogleCalendarError as e:
+        return jsonify({"error": str(e)}), e.status_code
+
+
+@app.route('/api/auth/google/calendar', methods=['POST'])
+def select_google_calendar():
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    user_id = g.user.get("user_id", "admin")
+    data = request.get_json(force=True, silent=True) or {}
+    calendar_id = data.get("calendar_id", "primary")
+
+    oauth_info = timetable_service.get_oauth_tokens(user_id)
+    if not oauth_info:
+        return jsonify({"error": "Google account not connected."}), 400
+
+    token_data, _, email = oauth_info
+    timetable_service.save_oauth_tokens(user_id, token_data, calendar_id=calendar_id, email=email)
+    return jsonify({"status": "success", "calendar_id": calendar_id})
+
+
 # --- Storage Intelligence & Settings ---
+
 @app.route('/api/storage/intelligence', methods=['GET'])
 @app.route('/api/system/storage-intel', methods=['GET'])
 def get_storage_intelligence():
@@ -4611,13 +4833,18 @@ def db_create_user(user_id: str, password: str, role: str = "user", privileges: 
     if role not in ["admin", "user"]:
         return False, f"Invalid role '{role}'. Must be 'admin' or 'user'."
 
-    if privileges is not None and isinstance(privileges, dict):
+    if privileges is not None:
         sanitized_privs = {}
-        for k in config.ALL_PRIVILEGES:
-            sanitized_privs[k] = bool(privileges.get(k, False))
+        if isinstance(privileges, dict):
+            for k in config.ALL_PRIVILEGES:
+                sanitized_privs[k] = bool(privileges.get(k, False))
+        elif isinstance(privileges, (list, tuple, set)):
+            for k in config.ALL_PRIVILEGES:
+                sanitized_privs[k] = k in privileges
         privileges = sanitized_privs
     else:
         privileges = dict(config.ADMIN_DEFAULT_PRIVILEGES if role == "admin" else config.USER_DEFAULT_PRIVILEGES)
+
 
     hashed, salt = hash_password(password)
     with DB_LOCK:
@@ -5015,7 +5242,12 @@ def admin_db_query():
     table = request.args.get('table', 'users')
     limit = min(50, int(request.args.get('limit', 25)))
 
-    allowed_tables = ["users", "system_logs", "background_tasks", "shares", "backups", "scheduled_jobs", "incidents", "ai_inference_metrics"]
+    allowed_tables = [
+        "users", "system_logs", "background_tasks", "shares", "backups",
+        "scheduled_jobs", "incidents", "ai_inference_metrics",
+        "timetable_events_map", "user_timetables", "timetable_sync_history",
+        "timetable_sync_locks", "google_oauth_tokens"
+    ]
     if table not in allowed_tables:
         return jsonify({"error": "Table not allowed for inspection."}), 400
 
@@ -5025,14 +5257,18 @@ def admin_db_query():
             cur = conn.cursor()
             cur.execute(f"SELECT * FROM {table} ORDER BY 1 DESC LIMIT ?", (limit,))
             rows = [dict(r) for r in cur.fetchall()]
-            # Sanitize password hashes if querying users table
+            # Sanitize password hashes and token data
             if table == "users":
                 for r in rows:
                     if "password_hash" in r: r["password_hash"] = "[REDACTED]"
                     if "salt" in r: r["salt"] = "[REDACTED]"
+            elif table == "google_oauth_tokens":
+                for r in rows:
+                    if "encrypted_token_data" in r: r["encrypted_token_data"] = "[ENCRYPTED_AT_REST]"
             return jsonify({"table": table, "count": len(rows), "rows": rows})
         finally:
             conn.close()
+
 
 
 # --- Network Diagnostics Endpoints ---

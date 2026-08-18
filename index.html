@@ -893,7 +893,59 @@
             <!-- Injected by app.js -->
           </div>
         </section>
+
+        <!-- GOOGLE CALENDAR & TIMETABLE SYNC -->
+        <section class="tech-card" style="margin-top: 1.5rem;">
+          <div class="tech-card-header">
+            <h2 class="tech-card-title">
+              <span class="material-symbols-outlined">calendar_month</span>
+              <span>UPES Timetable & Google Calendar Synchronization</span>
+            </h2>
+            <div class="header-actions">
+              <button class="btn btn-secondary btn-sm" onclick="triggerManualTimetableSync()" id="btnTimetableSyncNow">
+                <span class="material-symbols-outlined">sync</span>
+                <span>Sync Now</span>
+              </button>
+            </div>
+          </div>
+          <div class="tech-card-body" style="padding: 1rem 0;">
+            <div class="sync-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-bottom: 1.25rem;">
+              <div class="stat-box" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color, #2c2c2c); border-radius: 8px; padding: 12px 16px;">
+                <div class="stat-label" style="font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em;">Google Connection</div>
+                <div class="stat-val" id="timetableGoogleStatus" style="font-size: 1rem; font-weight: 600; margin-top: 0.25rem;">Checking...</div>
+                <div class="stat-sub" id="timetableConnectedEmail" style="font-size: 0.8rem; color: #888; margin-top: 2px;"></div>
+              </div>
+              <div class="stat-box" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color, #2c2c2c); border-radius: 8px; padding: 12px 16px;">
+                <div class="stat-label" style="font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em;">Target Calendar</div>
+                <div class="stat-val" id="timetableCalendarName" style="font-size: 0.95rem; font-weight: 600; margin-top: 0.25rem;">primary</div>
+                <div class="stat-sub" id="timetableNextSync" style="font-size: 0.8rem; color: #888; margin-top: 2px;">Scheduled: Every 3 hours</div>
+              </div>
+              <div class="stat-box" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color, #2c2c2c); border-radius: 8px; padding: 12px 16px;">
+                <div class="stat-label" style="font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em;">Last Sync Summary</div>
+                <div class="stat-val" id="timetableLastSyncResult" style="font-size: 0.95rem; font-weight: 600; margin-top: 0.25rem;">No sync yet</div>
+                <div class="stat-sub" id="timetableLastSyncTime" style="font-size: 0.8rem; color: #888; margin-top: 2px;">Never</div>
+              </div>
+            </div>
+
+            <div class="actions-row" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+              <button class="btn btn-primary btn-sm" onclick="connectGoogleCalendar()" id="btnGoogleConnect">
+                <span class="material-symbols-outlined">login</span>
+                <span>Connect Google Calendar</span>
+              </button>
+              <button class="btn btn-danger btn-sm" onclick="disconnectGoogleCalendar()" id="btnGoogleDisconnect" style="display: none;">
+                <span class="material-symbols-outlined">link_off</span>
+                <span>Disconnect Google</span>
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('timetableFileInput').click()">
+                <span class="material-symbols-outlined">upload_file</span>
+                <span>Upload Timetable JSON</span>
+              </button>
+              <input type="file" id="timetableFileInput" accept=".json,application/json" style="display: none;" onchange="handleTimetableFileUpload(event)">
+            </div>
+          </div>
+        </section>
       </main>
+
 
       <!-- ===================================================================== -->
       <!-- TAB: SYSTEM BACKUPS                                                   -->

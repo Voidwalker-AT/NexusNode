@@ -14,12 +14,18 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - NEXUS_SECRET_KEY=${SECRET_KEY:-}
       - NEXUS_ADMIN_PASSWORD=${NEXUS_ADMIN_PASSWORD:-Admin@1234}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:5000/api/auth/google/callback}
+      - TIMETABLE_TIMEZONE=${TIMETABLE_TIMEZONE:-Asia/Kolkata}
+      - TIMETABLE_SYNC_INTERVAL_SECONDS=${TIMETABLE_SYNC_INTERVAL_SECONDS:-10800}
     volumes:
       - nexus_vault:/app/storage_vault
       - nexus_logs:/app/logs
     depends_on:
       ollama:
         condition: service_started
+
 
   ollama:
     image: ollama/ollama:latest

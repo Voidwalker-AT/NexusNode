@@ -581,7 +581,9 @@ function switchTab(tabId) {
       break;
     case 'automation':
       loadAutomationJobs();
+      loadTimetableSyncStatus();
       break;
+
     case 'backups':
       loadBackupsList();
       break;
@@ -2144,8 +2146,10 @@ async function loadAutomationJobs(opts = {}) {
 
     if (!opts.isPreload) {
       renderAutomationJobsUI(jobs);
+      loadTimetableSyncStatus();
     }
     return jobs;
+
   } catch (e) {
     console.error('Failed to load automation jobs:', e);
     if (appData.automation.data) {
@@ -2187,7 +2191,162 @@ async function runAutomationJob(jobId) {
   }
 }
 
+// --- Timetable & Google Calendar Synchronization ---
+
+async function loadTimetableSyncStatus() {
+  try {
+    const res = await apiFetch('/api/maintenance/timetable/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    renderTimetableSyncStatus(data);
+  } catch (e) {
+    console.error('Failed to load timetable sync status:', e);
+  }
+}
+
+function renderTimetableSyncStatus(status) {
+  const statusEl = document.getElementById('timetableGoogleStatus');
+  const emailEl = document.getElementById('timetableConnectedEmail');
+  const calEl = document.getElementById('timetableCalendarName');
+  const nextEl = document.getElementById('timetableNextSync');
+  const resultEl = document.getElementById('timetableLastSyncResult');
+  const timeEl = document.getElementById('timetableLastSyncTime');
+  const btnConnect = document.getElementById('btnGoogleConnect');
+  const btnDisconnect = document.getElementById('btnGoogleDisconnect');
+
+  if (!statusEl) return;
+
+  if (status.google_connected) {
+    statusEl.innerHTML = '<span style="color: var(--status-healthy, #00daf3);">● Connected</span>';
+    emailEl.textContent = status.connected_email || 'Google Account Linked';
+    if (btnConnect) btnConnect.style.display = 'none';
+    if (btnDisconnect) btnDisconnect.style.display = '';
+  } else {
+    statusEl.innerHTML = '<span style="color: var(--on-surface-muted, #888);">○ Not Connected</span>';
+    emailEl.textContent = 'Authorize to enable sync';
+    if (btnConnect) btnConnect.style.display = '';
+    if (btnDisconnect) btnDisconnect.style.display = 'none';
+  }
+
+  if (calEl) {
+    calEl.textContent = status.calendar_id || 'primary';
+  }
+
+  if (nextEl) {
+    if (status.next_scheduled_run) {
+      const nextDate = new Date(status.next_scheduled_run * 1000);
+      nextEl.textContent = `Next sync: ${nextDate.toLocaleTimeString()}`;
+    } else {
+      nextEl.textContent = 'Scheduled: Every 3 hours';
+    }
+  }
+
+  if (status.last_sync) {
+    const ls = status.last_sync;
+    const lsDate = new Date(ls.timestamp * 1000);
+    if (resultEl) {
+      resultEl.textContent = `${(ls.status || '').toUpperCase()} (${ls.created} created, ${ls.updated} updated, ${ls.unchanged} unchanged)`;
+    }
+    if (timeEl) {
+      timeEl.textContent = lsDate.toLocaleString();
+    }
+  } else {
+    if (resultEl) resultEl.textContent = 'No sync history recorded';
+    if (timeEl) timeEl.textContent = 'Never';
+  }
+}
+
+async function connectGoogleCalendar() {
+  try {
+    const res = await apiFetch('/api/auth/google/authorize');
+    if (!res.ok) {
+      const err = await res.json();
+      showToast(err.message || err.error || 'Failed to initiate Google OAuth.', 'error');
+      return;
+    }
+    const data = await res.json();
+    if (data.authorization_url) {
+      window.location.href = data.authorization_url;
+    }
+  } catch (e) {
+    showToast('Failed to connect Google Calendar: ' + e.message, 'error');
+  }
+}
+
+async function disconnectGoogleCalendar() {
+  if (!confirm('Disconnect Google Calendar? Scheduled synchronization will be paused.')) return;
+  try {
+    const res = await apiFetch('/api/auth/google/disconnect', { method: 'POST' });
+    if (res.ok) {
+      showToast('Google Calendar disconnected.', 'success');
+      loadTimetableSyncStatus();
+    } else {
+      showToast('Failed to disconnect Google Calendar.', 'error');
+    }
+  } catch (e) {
+    showToast('Failed to disconnect: ' + e.message, 'error');
+  }
+}
+
+async function triggerManualTimetableSync() {
+  const btn = document.getElementById('btnTimetableSyncNow');
+  if (btn) btn.disabled = true;
+  showToast('Starting timetable synchronization...', 'info');
+
+  try {
+    const res = await apiFetch('/api/maintenance/timetable/sync', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      if (data.status === 'locked') {
+        showToast('Sync in progress by another task. Please wait.', 'warning');
+      } else if (data.status === 'empty') {
+        showToast(data.message || 'No timetable sessions found. Upload timetable first.', 'warning');
+      } else {
+        showToast(`Sync complete! Created: ${data.created}, Updated: ${data.updated}, Unchanged: ${data.unchanged}`, 'success');
+      }
+      loadTimetableSyncStatus();
+    } else {
+      showToast(data.error || 'Timetable sync failed.', 'error');
+    }
+  } catch (e) {
+    showToast('Timetable sync error: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function handleTimetableFileUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append('timetable_file', file);
+
+  showToast('Uploading UPES timetable JSON...', 'info');
+  try {
+    const res = await fetch('/api/maintenance/timetable/upload', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${sessionToken || ''}`
+      },
+      body: formData
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Timetable uploaded: ${data.sessions_count} sessions parsed!`, 'success');
+      loadTimetableSyncStatus();
+    } else {
+      showToast(data.error || 'Upload failed.', 'error');
+    }
+  } catch (e) {
+    showToast('Upload error: ' + e.message, 'error');
+  } finally {
+    event.target.value = '';
+  }
+}
+
 async function loadBackupsList(opts = {}) {
+
   const tbody = document.getElementById('backupsTableBody');
 
   if (appData.backups.data && !opts.isPreload) {

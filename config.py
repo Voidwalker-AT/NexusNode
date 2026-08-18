@@ -131,6 +131,21 @@ LOG_BROADCAST_QUEUE_SIZE = 100
 TELEMETRY_CACHE_TTL_SECONDS = float(os.environ.get("NEXUS_TELEMETRY_TTL", 2.5))
 TUNNEL_HEALTH_PROBE_TTL_SECONDS = float(os.environ.get("NEXUS_TUNNEL_PROBE_TTL", 30.0))
 
+# Google Calendar & UPES Timetable Synchronization
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:5000/api/auth/google/callback")
+GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+GOOGLE_CALENDAR_API_BASE = "https://www.googleapis.com/calendar/v3"
+GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly"
+TIMETABLE_TIMEZONE = os.environ.get("TIMETABLE_TIMEZONE", "Asia/Kolkata")
+TIMETABLE_SYNC_INTERVAL_SECONDS = int(os.environ.get("TIMETABLE_SYNC_INTERVAL_SECONDS", 3 * 3600))
+UPES_TIMETABLE_JSON_PATH = os.environ.get("UPES_TIMETABLE_JSON_PATH", os.path.join(STORAGE_DIR, "upes_timetable.json"))
+TIMETABLE_MAX_UPLOAD_BYTES = int(os.environ.get("NEXUS_TIMETABLE_MAX_UPLOAD", 2 * 1024 * 1024))
+TIMETABLE_MAX_SESSIONS = int(os.environ.get("NEXUS_TIMETABLE_MAX_SESSIONS", 500))
+TIMETABLE_LOCK_TIMEOUT_SECONDS = int(os.environ.get("NEXUS_TIMETABLE_LOCK_TIMEOUT", 300))
+
 # Permissions Registry (Authoritative Single Source of Truth)
 ALL_PRIVILEGES = [
     "can_upload_files",
@@ -145,7 +160,8 @@ ALL_PRIVILEGES = [
     "can_manage_users",
     "can_manage_backups",
     "can_manage_automation",
-    "can_manage_settings"
+    "can_manage_settings",
+    "can_sync_timetable"
 ]
 
 PRIVILEGE_METADATA = {
@@ -160,71 +176,71 @@ PRIVILEGE_METADATA = {
     "can_manage_files": {
         "name": "can_manage_files",
         "label": "Manage Files",
-        "description": "Rename, move, and delete user-accessible Vault files",
+        "description": "Rename, move, and delete files inside the Vault",
         "category": "Storage & Vault",
         "default_user": True,
         "default_admin": True
     },
     "can_create_shares": {
         "name": "can_create_shares",
-        "label": "Create File Shares",
-        "description": "Generate temporary cryptographic public download links",
+        "label": "Temporary Share Links",
+        "description": "Generate time-limited, signed public sharing URLs",
         "category": "Storage & Vault",
-        "default_user": False,
+        "default_user": True,
         "default_admin": True
     },
     "can_download_media": {
         "name": "can_download_media",
-        "label": "Download Media",
-        "description": "Enqueue background audio/video media extraction downloads",
-        "category": "Media Center",
+        "label": "Media Downloads",
+        "description": "Queue yt-dlp media downloads and stream active jobs",
+        "category": "Media",
         "default_user": True,
         "default_admin": True
     },
     "can_use_ai": {
         "name": "can_use_ai",
-        "label": "AI Studio Inference",
-        "description": "Execute conversational LLM inference and model chat",
-        "category": "AI & Inference",
+        "label": "AI Chat & Inference",
+        "description": "Access local Ollama LLM chat and streaming generation",
+        "category": "Artificial Intelligence",
         "default_user": True,
         "default_admin": True
     },
     "can_use_rag": {
         "name": "can_use_rag",
-        "label": "RAG Knowledge Search",
-        "description": "Search inverted index knowledge base and document chunks",
-        "category": "AI & Inference",
+        "label": "RAG Knowledge Base",
+        "description": "Query indexed document vault with hybrid lexical search",
+        "category": "Artificial Intelligence",
         "default_user": True,
         "default_admin": True
     },
     "can_control_services": {
         "name": "can_control_services",
-        "label": "Control Services",
-        "description": "Start, stop, and restart daemon services (OpenSSH, LocalToNet, Ollama)",
-        "category": "System & Daemons",
+        "label": "Service Supervision",
+        "description": "Start, stop, and restart background daemon processes",
+        "category": "System Control",
         "default_user": False,
         "default_admin": True
     },
     "can_manage_models": {
         "name": "can_manage_models",
-        "label": "Manage LLM Models",
-        "description": "Pull, delete, and inspect Ollama quantization models",
-        "category": "AI & Inference",
+        "label": "Ollama Model Management",
+        "description": "Pull, delete, and switch quantized Ollama models",
+        "category": "System Control",
         "default_user": False,
         "default_admin": True
     },
     "can_view_system_logs": {
         "name": "can_view_system_logs",
         "label": "View Audit Logs",
-        "description": "Inspect raw system event and audit log streams",
-        "category": "Monitoring & Logs",
+        "description": "Inspect live system log streams and filter historical events",
+        "category": "System Control",
         "default_user": False,
         "default_admin": True
     },
     "can_manage_users": {
         "name": "can_manage_users",
-        "label": "User & Role Governance",
-        "description": "Create, edit, disable, and delete user accounts and RBAC roles",
+        "label": "User Administration",
+        "description": "Create, edit, suspend, and delete user accounts and roles",
         "category": "Administration",
         "default_user": False,
         "default_admin": True
@@ -251,6 +267,14 @@ PRIVILEGE_METADATA = {
         "description": "Modify core ports, hostname, and resource governor thresholds",
         "category": "Administration",
         "default_user": False,
+        "default_admin": True
+    },
+    "can_sync_timetable": {
+        "name": "can_sync_timetable",
+        "label": "Timetable Sync",
+        "description": "Upload timetable data and synchronize with Google Calendar",
+        "category": "Maintenance",
+        "default_user": True,
         "default_admin": True
     }
 }

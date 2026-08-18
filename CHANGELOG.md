@@ -7,7 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.9] - 2026-08-18
+
+### 📅 UPES Timetable → Google Calendar Synchronization & AES-GCM Token Security
+
+#### Added & Enhanced
+- **UPES Timetable Ingestion & Normalization (`timetable_sync.py`)**:
+  - Implemented schema-tolerant parser extracting course names, codes, dates, times, rooms, and faculty from varied UPES JSON formats.
+  - Generates timezone-aware ISO 8601 datetimes defaulting to `Asia/Kolkata` (IST +05:30).
+  - Skips malformed sessions gracefully with diagnostic logging without interrupting the synchronization job.
+- **Authenticated AES-GCM OAuth Token Security**:
+  - Secure storage of Google OAuth 2.0 refresh and access tokens at rest using AES-GCM with a 256-bit PBKDF2-derived key from `NEXUS_SECRET_KEY`.
+  - Cryptographically random CSRF state tokens with 10-minute TTL consumed once during OAuth callback.
+  - Zero token or credential leakage in logs, API responses, or UI.
+- **Deterministic Event Mapping & Strict Idempotency**:
+  - SQLite mapping table (`timetable_events_map`) tracks `(user_id, source_session_id, source_date, google_calendar_id, google_event_id, source_hash)`.
+  - Reconciles delta changes (`CREATE`, `UPDATE`, `DELETE`, `NO-OP`) with zero duplicates on repeated runs.
+  - Scopes event ownership via private extended properties (`nexusnode_managed: true`), preventing mutation of unmanaged user events.
+- **3-Hour Automated Background Scheduler**:
+  - Integrated with native `SchedulerDaemon` and `task_runner` under job ID `job_timetable_sync` (10800s interval).
+  - Database-backed distributed lease locks (`timetable_sync_locks`) prevent concurrent synchronization collisions across multiple processes.
+- **Maintenance UI & REST APIs**:
+  - Added UPES Timetable & Google Calendar synchronization control card in the Automation tab.
+  - Endpoints: `GET /api/maintenance/timetable/status`, `POST /api/maintenance/timetable/sync`, `POST /api/maintenance/timetable/upload`, `GET /api/auth/google/authorize`, `GET /api/auth/google/callback`, `POST /api/auth/google/disconnect`.
+
+---
+
 ## [2.3.8] - 2026-08-16
+
 
 ### 🛡️ Unified Production Hardening, PBKDF2 Password Security & Authoritative RBAC User Governance
 
