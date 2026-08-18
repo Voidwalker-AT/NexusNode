@@ -1,0 +1,73 @@
+# ==============================================================================
+# NexusNode Appliance — Docker Ignore File
+# Prevents development artifacts, databases, sensitive credentials, and test files
+# from being copied into the production container image.
+# ==============================================================================
+
+# User Data & Storage Vault
+storage_vault/
+storage_vault/*
+media/
+backups/
+downloads/
+music/
+videos/
+podcasts/
+documents/
+other/
+photos/
+rag/
+
+# SQLite Databases & Lock files
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+nexusnode.db
+nexus_unified.db
+rag_vault.db
+
+# Secrets, Environment & Credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pub
+id_rsa*
+session
+session.json
+localtonet.log
+emergency_fallback.log
+server_config.json
+
+# Development & Test Artifacts
+tests/
+scratch/
+.system_generated/
+*.log
+dist/
+build/
+*.egg-info/
+.coverage
+.pytest_cache/
+
+# Version Control & IDE Metadata
+.git/
+.github/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/

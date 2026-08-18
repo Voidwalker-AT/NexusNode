@@ -5285,4 +5285,8 @@ def admin_ssh_keys():
 
 if __name__ == '__main__':
     log_event("INFO", "SERVER", f"NexusNode Appliance v{config.VERSION} booting on {config.HOST}:{config.PORT}")
-    app.run(host=config.HOST, port=config.PORT, threaded=True)
+    try:
+        from waitress import serve
+        serve(app, host=config.HOST, port=config.PORT, threads=6)
+    except ImportError:
+        app.run(host=config.HOST, port=config.PORT, threaded=True)

@@ -1,0 +1,41 @@
+services:
+  nexusnode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexusnode-appliance
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NEXUS_HOST=0.0.0.0
+      - NEXUS_PORT=5000
+      - NEXUS_STORAGE_DIR=/app/storage_vault
+      - OLLAMA_HOST=http://ollama:11434
+      - NEXUS_SECRET_KEY=${SECRET_KEY:-}
+      - NEXUS_ADMIN_PASSWORD=${NEXUS_ADMIN_PASSWORD:-Admin@1234}
+    volumes:
+      - nexus_vault:/app/storage_vault
+      - nexus_logs:/app/logs
+    depends_on:
+      ollama:
+        condition: service_started
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: nexusnode-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_models:/root/.ollama
+
+volumes:
+  nexus_vault:
+    name: nexus_vault
+  nexus_logs:
+    name: nexus_logs
+  ollama_models:
+    name: ollama_models
