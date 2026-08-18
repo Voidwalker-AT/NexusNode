@@ -4598,8 +4598,12 @@ def db_create_user(user_id: str, password: str, role: str = "user", privileges: 
     user_id = str(user_id or "").strip().lower()
     if not user_id:
         return False, "User ID cannot be empty."
+    if not re.match(r'^[a-zA-Z0-9_\-]+$', user_id):
+        return False, "User ID must contain only alphanumeric characters, underscores, and hyphens."
     if not password:
         return False, "Password cannot be empty."
+    if len(password) < 6:
+        return False, "Password must be at least 6 characters."
     if db_get_user(user_id):
         return False, f"User '{user_id}' already exists."
 
@@ -4607,7 +4611,12 @@ def db_create_user(user_id: str, password: str, role: str = "user", privileges: 
     if role not in ["admin", "user"]:
         return False, f"Invalid role '{role}'. Must be 'admin' or 'user'."
 
-    if privileges is None:
+    if privileges is not None and isinstance(privileges, dict):
+        sanitized_privs = {}
+        for k in config.ALL_PRIVILEGES:
+            sanitized_privs[k] = bool(privileges.get(k, False))
+        privileges = sanitized_privs
+    else:
         privileges = dict(config.ADMIN_DEFAULT_PRIVILEGES if role == "admin" else config.USER_DEFAULT_PRIVILEGES)
 
     hashed, salt = hash_password(password)
@@ -4627,7 +4636,7 @@ def db_create_user(user_id: str, password: str, role: str = "user", privileges: 
 
 
 def db_delete_user(user_id: str) -> tuple[bool, str]:
-    """Deletes a user, purges their sessions, and clears lockout state."""
+    """Deletes a user, purges their sessions, clears lockout state, and cascades related records."""
     user_id = str(user_id or "").strip().lower()
     if user_id == "admin":
         return False, "Cannot delete primary admin account."
@@ -4637,6 +4646,10 @@ def db_delete_user(user_id: str) -> tuple[bool, str]:
     with DB_LOCK:
         conn = get_db_connection()
         try:
+            # Cascade delete associated user records safely
+            conn.execute("DELETE FROM ssh_keys WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM user_chats WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM shares WHERE user_id = ? OR owner_user_id = ?", (user_id, user_id))
             conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
             conn.commit()
         finally:
@@ -4688,6 +4701,10 @@ def admin_manage_users():
         data = request.get_json(force=True, silent=True) or {}
         user_id = str(data.get('user_id', '')).strip().lower()
         password = str(data.get('password', '')).strip()
+        confirm_password = data.get('confirm_password')
+        if confirm_password is not None and str(confirm_password).strip() != password:
+            return jsonify({"error": "Passwords do not match."}), 400
+
         role = str(data.get('role', 'user')).strip().lower()
         is_disabled = 1 if data.get('is_disabled') else 0
         privileges = data.get('privileges', None)

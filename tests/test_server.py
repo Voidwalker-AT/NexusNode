@@ -1385,7 +1385,7 @@ class TestNexusNodeServer(unittest.TestCase):
         from argparse import Namespace
 
         uname = f"cli_u5_{int(time.time()*1000)}"
-        nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="pwd", yes=True))
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="password_1", yes=True))
         u = server_app.db_get_user(uname)
 
         out = io.StringIO()
@@ -1402,10 +1402,10 @@ class TestNexusNodeServer(unittest.TestCase):
         from argparse import Namespace
 
         uname = f"cli_u6_{int(time.time()*1000)}"
-        nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="p1", yes=True))
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="password_1", yes=True))
         self.assertEqual(server_app.db_get_user(uname)["role"], "user")
 
-        nexus_admin.cmd_reset_password(Namespace(user=uname, password="p2"))
+        nexus_admin.cmd_reset_password(Namespace(user=uname, password="password_2"))
         self.assertEqual(server_app.db_get_user(uname)["role"], "user")
 
         nexus_admin.cmd_unlock(Namespace(user=uname))
@@ -1417,10 +1417,10 @@ class TestNexusNodeServer(unittest.TestCase):
         from argparse import Namespace
 
         uname = f"cli_u7_{int(time.time()*1000)}"
-        nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="p1", yes=True))
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="user", password="password_1", yes=True))
         orig_privs = dict(server_app.db_get_user(uname)["privileges"])
 
-        nexus_admin.cmd_reset_password(Namespace(user=uname, password="p2"))
+        nexus_admin.cmd_reset_password(Namespace(user=uname, password="password_2"))
         self.assertEqual(server_app.db_get_user(uname)["privileges"], orig_privs)
 
     def test_cli_ssh_vs_app_auth_separation(self):

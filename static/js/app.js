@@ -2513,8 +2513,9 @@ async function openAddUserModal() {
   const title = document.getElementById('adminUserModalTitle');
   const mode = document.getElementById('adminUserMode');
   const userIdInput = document.getElementById('adminUserIdInput');
-  const pwdGroup = document.getElementById('adminUserPasswordGroup');
+  const pwdSection = document.getElementById('adminUserPasswordSection');
   const pwdInput = document.getElementById('adminUserPasswordInput');
+  const confPwdInput = document.getElementById('adminUserConfirmPasswordInput');
   const roleSelect = document.getElementById('adminUserRoleSelect');
   const disabledInput = document.getElementById('adminUserDisabledInput');
 
@@ -2522,8 +2523,9 @@ async function openAddUserModal() {
   if (title) title.textContent = 'Create User Account';
   if (mode) mode.value = 'create';
   if (userIdInput) { userIdInput.value = ''; userIdInput.disabled = false; }
-  if (pwdGroup) pwdGroup.style.display = 'block';
+  if (pwdSection) pwdSection.style.display = 'grid';
   if (pwdInput) { pwdInput.value = ''; pwdInput.required = true; }
+  if (confPwdInput) { confPwdInput.value = ''; confPwdInput.required = true; }
   if (roleSelect) roleSelect.value = 'user';
   if (disabledInput) disabledInput.checked = false;
 
@@ -2539,8 +2541,9 @@ async function openEditUserModal(userId) {
   const title = document.getElementById('adminUserModalTitle');
   const mode = document.getElementById('adminUserMode');
   const userIdInput = document.getElementById('adminUserIdInput');
-  const pwdGroup = document.getElementById('adminUserPasswordGroup');
+  const pwdSection = document.getElementById('adminUserPasswordSection');
   const pwdInput = document.getElementById('adminUserPasswordInput');
+  const confPwdInput = document.getElementById('adminUserConfirmPasswordInput');
   const roleSelect = document.getElementById('adminUserRoleSelect');
   const disabledInput = document.getElementById('adminUserDisabledInput');
 
@@ -2562,8 +2565,9 @@ async function openEditUserModal(userId) {
   if (title) title.textContent = `Edit User: ${userId}`;
   if (mode) mode.value = 'edit';
   if (userIdInput) { userIdInput.value = userId; userIdInput.disabled = true; }
-  if (pwdGroup) pwdGroup.style.display = 'none';
+  if (pwdSection) pwdSection.style.display = 'none';
   if (pwdInput) { pwdInput.value = ''; pwdInput.required = false; }
+  if (confPwdInput) { confPwdInput.value = ''; confPwdInput.required = false; }
   if (roleSelect) roleSelect.value = userData.role || 'user';
   if (disabledInput) disabledInput.checked = Boolean(userData.is_disabled);
 
@@ -2621,8 +2625,14 @@ async function handleSaveAdminUser(event) {
   try {
     if (mode === 'create') {
       const password = document.getElementById('adminUserPasswordInput')?.value || '';
+      const confirmPassword = document.getElementById('adminUserConfirmPasswordInput')?.value || '';
       if (!password || password.length < 6) {
         showToast('Password must be at least 6 characters.', 'warning');
+        if (submitBtn) submitBtn.disabled = false;
+        return;
+      }
+      if (password !== confirmPassword) {
+        showToast('Passwords do not match.', 'warning');
         if (submitBtn) submitBtn.disabled = false;
         return;
       }
@@ -2631,6 +2641,7 @@ async function handleSaveAdminUser(event) {
         body: JSON.stringify({
           user_id: userId,
           password: password,
+          confirm_password: confirmPassword,
           role: role,
           is_disabled: isDisabled,
           privileges: privileges
@@ -2914,9 +2925,7 @@ function renderNetworkInterfacesUI(data) {
   `;
 }
 
-function openAddUserModal() {
-  showToast('Add user dialog opening...', 'info');
-}
+// (Legacy duplicate openAddUserModal removed - authoritative implementation is at line 2511)
 
 // ==============================================================================
 // 11. UTILITY FUNCTIONS

@@ -1208,13 +1208,6 @@
             <label class="form-label" for="adminUserIdInput">USER ID / USERNAME</label>
             <input class="form-input" id="adminUserIdInput" placeholder="operator_name" required pattern="[a-zA-Z0-9_\-]+" title="Letters, numbers, underscores, and hyphens only">
           </div>
-          <div class="form-group" id="adminUserPasswordGroup">
-            <label class="form-label" for="adminUserPasswordInput">PASSWORD (MIN 6 CHARS)</label>
-            <input class="form-input" id="adminUserPasswordInput" type="password" placeholder="••••••••" minlength="6">
-          </div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
           <div class="form-group">
             <label class="form-label" for="adminUserRoleSelect">ACCOUNT ROLE</label>
             <select class="form-select" id="adminUserRoleSelect" onchange="handleRoleChangeInUserModal()">
@@ -1222,8 +1215,21 @@
               <option value="admin">Administrator</option>
             </select>
           </div>
-          <div class="form-group" style="display: flex; flex-direction: column; justify-content: center;">
-            <label class="form-label" style="margin-bottom: 6px;">ACCOUNT STATUS</label>
+        </div>
+
+        <div id="adminUserPasswordSection" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+          <div class="form-group" id="adminUserPasswordGroup">
+            <label class="form-label" for="adminUserPasswordInput">PASSWORD (MIN 6 CHARS)</label>
+            <input class="form-input" id="adminUserPasswordInput" type="password" placeholder="••••••••" minlength="6" autocomplete="new-password">
+          </div>
+          <div class="form-group" id="adminUserConfirmPasswordGroup">
+            <label class="form-label" for="adminUserConfirmPasswordInput">CONFIRM PASSWORD</label>
+            <input class="form-input" id="adminUserConfirmPasswordInput" type="password" placeholder="••••••••" minlength="6" autocomplete="new-password">
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px;">
+          <div class="form-group" style="margin-bottom: 0;">
             <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--on-surface); cursor: pointer;">
               <input type="checkbox" id="adminUserDisabledInput">
               <span>Disable Account</span>
