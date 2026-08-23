@@ -694,9 +694,10 @@ class TestFlaskTimetableRoutes(unittest.TestCase):
     def test_trigger_upes_fetch_endpoint(self, mock_fetch):
         # Configure session first
         self.app.timetable_service.save_upes_session("admin", "tok123", "3a678d8e-8817-41e6-b1a8-5a3ec6ee4948")
+        today_str = datetime.date.today().strftime("%Y-%m-%d")
         mock_fetch.return_value = ([
             {
-                "SlotDate": "2026-08-19",
+                "SlotDate": today_str,
                 "SlotStartTime": "09:15 AM",
                 "SlotEndTime": "05:00 PM",
                 "ModuleList": [{"ModuleName": "Leadership and Team Building", "ModuleCode": "HUMN1001"}],
