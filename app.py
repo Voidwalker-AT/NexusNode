@@ -4419,6 +4419,7 @@ def get_timetable_sessions():
             "course_code": s.course_code,
             "faculty": s.faculty,
             "room": s.room,
+            "meeting_link": getattr(s, "meeting_link", ""),
             "start": s.start_time,
             "end": s.end_time,
             "session_id": s.session_id,

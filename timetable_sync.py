@@ -43,13 +43,14 @@ class TimetableSession:
     room: str
     faculty: str
     session_id: str
+    meeting_link: str = ""
     source: str = "upes"
     raw: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def deterministic_hash(self) -> str:
         """Computes SHA-256 hash of normalized content fields to detect modifications."""
-        norm_str = f"{self.course_name.strip()}|{self.course_code.strip()}|{self.date.strip()}|{self.start_time.strip()}|{self.end_time.strip()}|{self.room.strip()}|{self.faculty.strip()}"
+        norm_str = f"{self.course_name.strip()}|{self.course_code.strip()}|{self.date.strip()}|{self.start_time.strip()}|{self.end_time.strip()}|{self.room.strip()}|{self.faculty.strip()}|{self.meeting_link.strip()}"
         return hashlib.sha256(norm_str.encode("utf-8")).hexdigest()
 
     def get_start_iso(self, tz_name: str = config.TIMETABLE_TIMEZONE) -> str:
@@ -284,7 +285,24 @@ def normalize_upes_session(raw_item: Dict[str, Any], default_date: Optional[str]
     if not faculty:
         faculty = "TBD"
 
-    # 7. Extract or derive session ID
+    # 7. Extract meeting link (MS Teams / virtual classroom link)
+    meeting_link = (
+        raw_item.get("MeetingLink") or
+        raw_item.get("meeting_link") or
+        raw_item.get("meetingLink") or
+        raw_item.get("join_url") or
+        raw_item.get("joinUrl") or
+        raw_item.get("teams_link") or
+        raw_item.get("teamsLink") or
+        raw_item.get("online_link") or
+        ""
+    ).strip()
+
+    if not meeting_link and isinstance(raw_item.get("FloorPlanDetails"), dict):
+        fp = raw_item["FloorPlanDetails"]
+        meeting_link = (fp.get("MeetingLink") or fp.get("meetingLink") or fp.get("JoinUrl") or fp.get("joinUrl") or "").strip()
+
+    # 8. Extract or derive session ID
     session_id = (
         raw_item.get("session_id") or
         raw_item.get("sessionId") or
@@ -310,6 +328,7 @@ def normalize_upes_session(raw_item: Dict[str, Any], default_date: Optional[str]
         room=room,
         faculty=faculty,
         session_id=session_id,
+        meeting_link=meeting_link,
         source="upes",
         raw=raw_item
     )
@@ -758,18 +777,32 @@ class GoogleCalendarClient:
         if session.course_code:
             summary = f"[{session.course_code}] {session.course_name}"
 
-        description = (
-            f"Course: {session.course_name}\n"
-            f"Code: {session.course_code or 'N/A'}\n"
-            f"Faculty: {session.faculty}\n"
-            f"Room: {session.room}\n"
-            f"Source: UPES Timetable\n"
-            f"Managed by: NexusNode"
-        )
+        location = session.room
+        meeting_link = getattr(session, "meeting_link", "").strip()
+        if meeting_link:
+            room_lower = session.room.lower()
+            if "team" in room_lower or "online" in room_lower or "virtual" in room_lower:
+                location = meeting_link
+            else:
+                location = f"{session.room} ({meeting_link})"
+
+        desc_lines = [
+            f"Course: {session.course_name}",
+            f"Code: {session.course_code or 'N/A'}",
+            f"Faculty: {session.faculty}",
+            f"Room: {session.room}"
+        ]
+        if meeting_link:
+            desc_lines.append(f"MS Teams Link: {meeting_link}")
+        desc_lines.extend([
+            "Source: UPES Timetable",
+            "Managed by: NexusNode"
+        ])
+        description = "\n".join(desc_lines)
 
         return {
             "summary": summary,
-            "location": session.room,
+            "location": location,
             "description": description,
             "start": {
                 "dateTime": session.get_start_iso(),

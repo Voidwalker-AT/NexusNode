@@ -1401,6 +1401,48 @@ class TestRollingTwoWeekTimetableAndRBAC(unittest.TestCase):
             self.assertEqual(len(sessions), 1)
             self.assertEqual(sessions[0].course_name, "Valid LKG Class")
 
+    def test_teams_meeting_link_extraction(self):
+        raw = {
+            "SlotDate": "2026-08-24",
+            "SlotStartTime": "11:00 AM",
+            "SlotEndTime": "11:55 AM",
+            "ModuleList": [{"ModuleName": "AI and Multimedia", "ModuleCode": "SMDM3014_3"}],
+            "TeacherList": [{"Name": "Amit Kumar"}],
+            "FloorPlanDetails": {
+                "VenueName": "MS Teams",
+                "MeetingLink": "https://teams.microsoft.com/l/meetup-join/19%3ameeting_xyz%40thread.v2/0"
+            }
+        }
+        session = timetable_sync.normalize_upes_session(raw)
+        self.assertIsNotNone(session)
+        self.assertEqual(session.room, "MS Teams")
+        self.assertEqual(session.meeting_link, "https://teams.microsoft.com/l/meetup-join/19%3ameeting_xyz%40thread.v2/0")
+
+    def test_teams_event_payload_building(self):
+        session = TimetableSession(
+            course_name="AI and Multimedia",
+            course_code="SMDM3014_3",
+            date="2026-08-24",
+            start_time="11:00:00",
+            end_time="11:55:00",
+            room="MS Teams",
+            faculty="Amit Kumar",
+            session_id="upes_teams_test_01",
+            meeting_link="https://teams.microsoft.com/l/meetup-join/19%3ameeting_xyz%40thread.v2/0"
+        )
+        client = timetable_sync.GoogleCalendarClient({"access_token": "dummy"}, "admin")
+        event = client._build_event_body(session, "admin")
+
+        self.assertEqual(event["location"], "https://teams.microsoft.com/l/meetup-join/19%3ameeting_xyz%40thread.v2/0")
+        self.assertIn("MS Teams Link: https://teams.microsoft.com/l/meetup-join/19%3ameeting_xyz%40thread.v2/0", event["description"])
+        self.assertIn("Course: AI and Multimedia", event["description"])
+
+    def test_teams_deterministic_hash_change(self):
+        s1 = TimetableSession("AI", "SMDM", "2026-08-24", "11:00", "11:55", "MS Teams", "Prof", "s1", "https://teams.microsoft.com/1")
+        s2 = TimetableSession("AI", "SMDM", "2026-08-24", "11:00", "11:55", "MS Teams", "Prof", "s1", "https://teams.microsoft.com/2")
+        self.assertNotEqual(s1.deterministic_hash, s2.deterministic_hash)
+
 
 if __name__ == "__main__":
     unittest.main()
+
