@@ -4376,6 +4376,162 @@ def upload_timetable_json():
     return jsonify({"status": "success", "message": msg, "sessions_count": count})
 
 
+@app.route('/api/maintenance/timetable/sessions', methods=['GET'])
+@app.route('/api/timetable/sessions', methods=['GET'])
+def get_timetable_sessions():
+    """Returns structured diagnostic timetable sessions with date, weekday, course, faculty, room, and sync status."""
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    if g.user.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    sessions, errors = timetable_service.load_timetable_sessions(target_user_id)
+
+    # Get synced events map
+    synced_map = {}
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT source_session_id, source_date, google_event_id, status FROM timetable_events_map WHERE user_id = ?", (target_user_id,))
+        for r in cur.fetchall():
+            synced_map[f"{r[0]}:{r[1]}"] = {"google_event_id": r[2], "status": r[3]}
+    finally:
+        conn.close()
+
+    result_sessions = []
+    for s in sessions:
+        weekday_name = "Unknown"
+        try:
+            d_parts = [int(p) for p in s.date.split("-")]
+            dt_obj = datetime.date(d_parts[0], d_parts[1], d_parts[2])
+            weekday_name = dt_obj.strftime("%A")
+        except Exception:
+            pass
+
+        map_entry = synced_map.get(f"{s.session_id}:{s.date}", {})
+        result_sessions.append({
+            "date": s.date,
+            "weekday": weekday_name,
+            "course": s.course_name,
+            "course_code": s.course_code,
+            "faculty": s.faculty,
+            "room": s.room,
+            "start": s.start_time,
+            "end": s.end_time,
+            "session_id": s.session_id,
+            "synced": map_entry.get("status") == "synced",
+            "google_event_id": map_entry.get("google_event_id")
+        })
+
+    # Sort sessions chronologically by date and start_time
+    result_sessions.sort(key=lambda x: (x["date"], x["start"]))
+
+    return jsonify({
+        "user_id": target_user_id,
+        "total_sessions": len(result_sessions),
+        "sessions": result_sessions,
+        "errors": errors
+    })
+
+
+@app.route('/api/maintenance/timetable/upes/session', methods=['POST'])
+@app.route('/api/timetable/upes/session', methods=['POST'])
+def save_upes_portal_session():
+    """Stores authenticated UPES portal access token and student SAP ID encrypted at rest."""
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    payload = request.get_json(silent=True) or {}
+    access_token = (payload.get("access_token") or payload.get("token") or "").strip()
+    student_code = (payload.get("student_code") or payload.get("student_id") or payload.get("sap_id") or "").strip()
+    api_url = (payload.get("api_url") or "").strip() or None
+
+    if not access_token:
+        return jsonify({"error": "Missing 'access_token' in request."}), 400
+    if not student_code:
+        return jsonify({"error": "Missing 'student_code' (SAP ID) in request."}), 400
+
+    target_user_id = g.user.get("user_id", "admin")
+    if g.user.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    timetable_service.save_upes_session(target_user_id, access_token, student_code, api_url)
+    return jsonify({
+        "status": "success",
+        "message": "UPES portal session saved and encrypted successfully.",
+        "student_code_masked": student_code[:3] + "***" if len(student_code) > 4 else "***"
+    })
+
+
+@app.route('/api/maintenance/timetable/upes/session', methods=['DELETE'])
+@app.route('/api/timetable/upes/session', methods=['DELETE'])
+def delete_upes_portal_session():
+    """Removes stored UPES portal session credentials."""
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    if g.user.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    timetable_service.delete_upes_session(target_user_id)
+    return jsonify({"status": "success", "message": "UPES portal session removed."})
+
+
+@app.route('/api/maintenance/timetable/upes/fetch', methods=['POST'])
+@app.route('/api/timetable/upes/fetch', methods=['POST'])
+def trigger_upes_fetch():
+    """Manually triggers authenticated UPES Curriculum Scheduling fetch and stores resulting sessions."""
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    if g.user.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    success, msg, count = timetable_service.fetch_and_store_upes_timetable(target_user_id)
+    if not success:
+        return jsonify({"status": "error", "message": msg, "sessions_count": 0}), 400
+
+    return jsonify({"status": "success", "message": msg, "sessions_count": count})
+
+
+
+@app.route('/api/maintenance/timetable/bridge/scan', methods=['POST'])
+@app.route('/api/timetable/bridge/scan', methods=['POST'])
+def trigger_browser_bridge_scan():
+    """Scans local Chrome CDP instance to acquire active UPES portal session."""
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    if g.user.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    bridge = timetable_service.session_broker.browser_bridge
+    acquired = bridge.acquire_session_from_browser(target_user_id)
+    if acquired:
+        return jsonify({
+            "status": "success",
+            "message": "Authenticated browser session acquired and encrypted successfully.",
+            "expires_at": acquired[3]
+        }), 200
+    else:
+        status_msg = bridge.last_check_status
+        return jsonify({
+            "status": "not_acquired",
+            "reason": status_msg,
+            "message": f"Could not acquire session from browser: {status_msg}"
+        }), 200
+
+
 @app.route('/api/auth/google/authorize', methods=['GET'])
 def get_google_authorize_url():
     err = require_privilege_or_admin("can_sync_timetable")

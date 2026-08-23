@@ -65,6 +65,9 @@ nexus_logs/
 .env
 .env.local
 server_config.json
+storage_vault/.nexus_secret
+storage_vault/.*
+storage_vault/*
 
 # IDE / OS metadata
 .vscode/
@@ -72,5 +75,8 @@ server_config.json
 .DS_Store
 Thumbs.db
 
-# Local scratch files
+# Local scratch files & profiles
 scratch/
+scratch_*.py
+run_live_test.py
+NexusNodeBridge/

@@ -111,10 +111,28 @@ LOCALTONET_LOG_PATHS = [
 # SECURITY, PASSWORDS & CREDENTIALS
 # ==============================================================================
 
-SECRET_KEY = os.environ.get(
-    "NEXUS_SECRET_KEY",
-    secrets.token_hex(32)
-)
+def _get_or_create_secret_key() -> str:
+    env_key = os.environ.get("NEXUS_SECRET_KEY")
+    if env_key:
+        return env_key
+    key_file = os.path.join(STORAGE_DIR, ".nexus_secret")
+    if os.path.exists(key_file):
+        try:
+            with open(key_file, "r", encoding="utf-8") as f:
+                k = f.read().strip()
+                if k:
+                    return k
+        except Exception:
+            pass
+    new_key = secrets.token_hex(32)
+    try:
+        with open(key_file, "w", encoding="utf-8") as f:
+            f.write(new_key)
+    except Exception:
+        pass
+    return new_key
+
+SECRET_KEY = _get_or_create_secret_key()
 
 SESSION_EXPIRY_SECONDS = int(
     os.environ.get(
@@ -520,6 +538,34 @@ UPES_TIMETABLE_JSON_PATH = os.environ.get(
         "upes_timetable.json"
     )
 )
+
+UPES_TIMETABLE_API_URL = os.environ.get(
+    "UPES_TIMETABLE_API_URL",
+    "https://myupes-beta.upes.ac.in/apigateway/api/timetable"
+).strip()
+
+UPES_STUDENT_CODE = os.environ.get(
+    "UPES_STUDENT_CODE",
+    ""
+).strip()
+
+UPES_ACCESS_TOKEN = os.environ.get(
+    "UPES_ACCESS_TOKEN",
+    ""
+).strip()
+
+UPES_REQUEST_TIMEOUT_SECONDS = int(
+    os.environ.get(
+        "UPES_REQUEST_TIMEOUT_SECONDS",
+        20
+    )
+)
+
+CHROME_CDP_HOST = os.environ.get("CHROME_CDP_HOST", "127.0.0.1").strip()
+CHROME_CDP_PORT = int(os.environ.get("CHROME_CDP_PORT", "9222"))
+UPES_PORTAL_HOST_PATTERN = os.environ.get("UPES_PORTAL_HOST_PATTERN", "myupes-beta.upes.ac.in").strip()
+UPES_BROWSER_BRIDGE_ENABLED = os.environ.get("UPES_BROWSER_BRIDGE_ENABLED", "true").lower() in ("true", "1", "yes")
+UPES_CDP_TIMEOUT_SECONDS = int(os.environ.get("UPES_CDP_TIMEOUT_SECONDS", "5"))
 
 TIMETABLE_MAX_UPLOAD_BYTES = int(
     os.environ.get(
