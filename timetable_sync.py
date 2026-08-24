@@ -12,6 +12,7 @@ import base64
 import datetime
 import hashlib
 import json
+import math
 import os
 import secrets
 import socket
@@ -48,9 +49,17 @@ class TimetableSession:
     raw: Dict[str, Any] = field(default_factory=dict)
 
     @property
+    def is_online(self) -> bool:
+        """Determines if the session is conducted online (e.g. MS Teams / Virtual Classroom)."""
+        if self.meeting_link.strip():
+            return True
+        r = self.room.strip().lower()
+        return "team" in r or "online" in r or "virtual" in r
+
+    @property
     def deterministic_hash(self) -> str:
         """Computes SHA-256 hash of normalized content fields to detect modifications."""
-        norm_str = f"{self.course_name.strip()}|{self.course_code.strip()}|{self.date.strip()}|{self.start_time.strip()}|{self.end_time.strip()}|{self.room.strip()}|{self.faculty.strip()}|{self.meeting_link.strip()}"
+        norm_str = f"{self.course_name.strip()}|{self.course_code.strip()}|{self.date.strip()}|{self.start_time.strip()}|{self.end_time.strip()}|{self.room.strip()}|{self.faculty.strip()}|{self.meeting_link.strip()}|{1 if self.is_online else 0}"
         return hashlib.sha256(norm_str.encode("utf-8")).hexdigest()
 
     def get_start_iso(self, tz_name: str = config.TIMETABLE_TIMEZONE) -> str:
@@ -800,7 +809,7 @@ class GoogleCalendarClient:
         ])
         description = "\n".join(desc_lines)
 
-        return {
+        payload = {
             "summary": summary,
             "location": location,
             "description": description,
@@ -821,6 +830,9 @@ class GoogleCalendarClient:
                 }
             }
         }
+        if session.is_online:
+            payload["colorId"] = "4"  # Flamingo / Pink in Google Calendar palette
+        return payload
 
 
 # ==============================================================================
@@ -922,6 +934,27 @@ def init_timetable_tables(conn):
         conn.execute("ALTER TABLE upes_auth_sessions ADD COLUMN expires_at REAL;")
     except Exception:
         pass
+
+    # 8. Attendance Punch Records & Logs
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS attendance_punches (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            session_id TEXT,
+            course_name TEXT NOT NULL,
+            course_code TEXT NOT NULL,
+            punch_date TEXT NOT NULL,
+            punch_time TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'present',
+            room TEXT,
+            notes TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            UNIQUE(user_id, course_code, punch_date, punch_time)
+        );
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_punches_user_date ON attendance_punches (user_id, punch_date);")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_punches_user_course ON attendance_punches (user_id, course_code);")
 
 
 class DatabaseSyncLease:
@@ -1948,4 +1981,283 @@ class TimetableService:
             "next_scheduled_run": next_run,
             "last_sync": last_sync,
             "last_upes_fetch": last_upes_fetch
+        }
+
+    def record_punch(
+        self,
+        user_id: str,
+        course_name: str,
+        course_code: str,
+        punch_date: str,
+        punch_time: str,
+        status: str = "present",
+        room: str = "",
+        session_id: str = "",
+        notes: str = ""
+    ) -> Dict[str, Any]:
+        """Records or updates an attendance punch for a user session."""
+        punch_id = f"pnch_{secrets.token_hex(8)}"
+        now = time.time()
+        conn = self.conn_factory()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO attendance_punches (
+                    id, user_id, session_id, course_name, course_code,
+                    punch_date, punch_time, status, room, notes, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, course_code, punch_date, punch_time) DO UPDATE SET
+                    status = excluded.status,
+                    notes = excluded.notes,
+                    room = excluded.room,
+                    updated_at = excluded.updated_at
+            """, (
+                punch_id, user_id, session_id, course_name, course_code,
+                punch_date, punch_time, status, room, notes, now, now
+            ))
+            conn.commit()
+            return {
+                "id": punch_id,
+                "user_id": user_id,
+                "course_name": course_name,
+                "course_code": course_code,
+                "punch_date": punch_date,
+                "punch_time": punch_time,
+                "status": status,
+                "room": room,
+                "notes": notes,
+                "updated_at": now
+            }
+        finally:
+            conn.close()
+
+    def get_punches(
+        self,
+        user_id: str,
+        course_code: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        limit: int = 200
+    ) -> List[Dict[str, Any]]:
+        """Retrieves recorded attendance punches ordered by date and time descending."""
+        conn = self.conn_factory()
+        try:
+            cur = conn.cursor()
+            query = "SELECT id, user_id, session_id, course_name, course_code, punch_date, punch_time, status, room, notes, created_at, updated_at FROM attendance_punches WHERE user_id = ?"
+            params = [user_id]
+            if course_code:
+                query += " AND course_code = ?"
+                params.append(course_code)
+            if date_from:
+                query += " AND punch_date >= ?"
+                params.append(date_from)
+            if date_to:
+                query += " AND punch_date <= ?"
+                params.append(date_to)
+            query += " ORDER BY punch_date DESC, punch_time DESC LIMIT ?"
+            params.append(limit)
+
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "user_id": r[1],
+                    "session_id": r[2],
+                    "course_name": r[3],
+                    "course_code": r[4],
+                    "punch_date": r[5],
+                    "punch_time": r[6],
+                    "status": r[7],
+                    "room": r[8],
+                    "notes": r[9],
+                    "created_at": r[10],
+                    "updated_at": r[11]
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    def delete_punch(self, user_id: str, punch_id: str) -> bool:
+        """Deletes an attendance punch record."""
+        conn = self.conn_factory()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM attendance_punches WHERE id = ? AND user_id = ?", (punch_id, user_id))
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
+
+    def get_attendance_analytics(self, user_id: str, ref_datetime: Optional[datetime.datetime] = None) -> Dict[str, Any]:
+        """
+        Computes detailed attendance metrics, 75% bunk calculations, and today's schedule for user.
+        Uses full semester scheduled sessions (384 slots) and actual punch logs.
+        """
+        tz_name = config.TIMETABLE_TIMEZONE
+        try:
+            tz = zoneinfo.ZoneInfo(tz_name)
+            now_dt = ref_datetime if ref_datetime else datetime.datetime.now(tz)
+        except Exception:
+            ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+            now_dt = ref_datetime if ref_datetime else datetime.datetime.now(ist)
+
+        today_str = now_dt.strftime("%Y-%m-%d")
+        now_time_str = now_dt.strftime("%H:%M:%S")
+
+        # 1. Load all semester sessions (384 sessions)
+        all_sessions, _ = self.load_timetable_sessions(user_id, rolling_two_weeks=False)
+
+        # 2. Query all punches for user
+        punches = self.get_punches(user_id, limit=2000)
+        punch_map = {}
+        for p in punches:
+            punch_map[f"{p['course_code']}:{p['punch_date']}"] = p
+            if p.get("session_id"):
+                punch_map[f"{p['session_id']}:{p['punch_date']}"] = p
+
+        # 3. Group sessions by course
+        courses_dict: Dict[str, Dict[str, Any]] = {}
+        for s in all_sessions:
+            c_key = s.course_code or s.course_name
+            if c_key not in courses_dict:
+                courses_dict[c_key] = {
+                    "course_code": s.course_code,
+                    "course_name": s.course_name,
+                    "faculty": s.faculty,
+                    "room": s.room,
+                    "sessions": []
+                }
+            courses_dict[c_key]["sessions"].append(s)
+
+        # 4. Compute per-course metrics
+        subject_reports = []
+        overall_total = 0
+        overall_conducted = 0
+        overall_attended = 0
+        overall_safe_bunks = 0
+        critical_count = 0
+
+        for c_key, c_info in sorted(courses_dict.items(), key=lambda x: x[1]["course_name"]):
+            sess_list = c_info["sessions"]
+            sess_list.sort(key=lambda s: (s.date, s.start_time))
+
+            total_classes = len(sess_list)
+            conducted_classes = 0
+            remaining_classes = 0
+            attended_classes = 0
+            next_session = None
+
+            for s in sess_list:
+                is_past = False
+                if s.date < today_str:
+                    is_past = True
+                elif s.date == today_str and s.start_time <= now_time_str:
+                    is_past = True
+
+                if is_past:
+                    conducted_classes += 1
+                    p_entry = punch_map.get(f"{s.course_code}:{s.date}") or punch_map.get(f"{s.session_id}:{s.date}")
+                    if p_entry and p_entry["status"] == "present":
+                        attended_classes += 1
+                else:
+                    remaining_classes += 1
+                    if not next_session:
+                        next_session = {
+                            "date": s.date,
+                            "start_time": s.start_time,
+                            "end_time": s.end_time,
+                            "room": s.room,
+                            "meeting_link": getattr(s, "meeting_link", ""),
+                            "faculty": s.faculty
+                        }
+
+            # Attendance percentage
+            if conducted_classes > 0:
+                pct = round((attended_classes / conducted_classes) * 100.0, 1)
+            else:
+                pct = 100.0
+
+            # 75% Bunk calculation across the entire semester
+            max_allowed_absences = math.floor(0.25 * total_classes)
+            current_absences = max(0, conducted_classes - attended_classes)
+            safe_bunks_remaining = max(0, max_allowed_absences - current_absences)
+
+            # Classes needed to recover to 75% if currently below 75%
+            catchup_needed = 0
+            if pct < 75.0 and conducted_classes > 0:
+                catchup_needed = max(0, math.ceil(3 * conducted_classes - 4 * attended_classes))
+
+            status_badge = "safe"
+            if pct < 75.0:
+                status_badge = "critical"
+                critical_count += 1
+            elif pct < 80.0:
+                status_badge = "warning"
+
+            overall_total += total_classes
+            overall_conducted += conducted_classes
+            overall_attended += attended_classes
+            overall_safe_bunks += safe_bunks_remaining
+
+            subject_reports.append({
+                "course_code": c_info["course_code"],
+                "course_name": c_info["course_name"],
+                "faculty": c_info["faculty"],
+                "room": c_info["room"],
+                "total_classes": total_classes,
+                "conducted_classes": conducted_classes,
+                "remaining_classes": remaining_classes,
+                "attended_classes": attended_classes,
+                "missed_classes": current_absences,
+                "attendance_percentage": pct,
+                "safe_bunks_remaining": safe_bunks_remaining,
+                "max_allowed_absences": max_allowed_absences,
+                "catchup_needed": catchup_needed,
+                "status": status_badge,
+                "next_session": next_session
+            })
+
+        # 5. Today's classes
+        today_classes = []
+        for s in all_sessions:
+            if s.date == today_str:
+                p_entry = punch_map.get(f"{s.course_code}:{s.date}") or punch_map.get(f"{s.session_id}:{s.date}")
+                today_classes.append({
+                    "session_id": s.session_id,
+                    "course_name": s.course_name,
+                    "course_code": s.course_code,
+                    "start_time": s.start_time,
+                    "end_time": s.end_time,
+                    "room": s.room,
+                    "faculty": s.faculty,
+                    "meeting_link": getattr(s, "meeting_link", ""),
+                    "is_online": getattr(s, "is_online", False),
+                    "punched": p_entry is not None,
+                    "punch_status": p_entry["status"] if p_entry else None,
+                    "punch_id": p_entry["id"] if p_entry else None,
+                    "punch_time": p_entry["punch_time"] if p_entry else None
+                })
+        today_classes.sort(key=lambda x: x["start_time"])
+
+        overall_pct = round((overall_attended / overall_conducted) * 100.0, 1) if overall_conducted > 0 else 100.0
+
+        return {
+            "user_id": user_id,
+            "as_of_date": today_str,
+            "as_of_time": now_time_str,
+            "overall": {
+                "total_classes": overall_total,
+                "conducted_classes": overall_conducted,
+                "attended_classes": overall_attended,
+                "missed_classes": max(0, overall_conducted - overall_attended),
+                "attendance_percentage": overall_pct,
+                "total_safe_bunks": overall_safe_bunks,
+                "critical_subjects": critical_count,
+                "total_subjects": len(subject_reports)
+            },
+            "subjects": subject_reports,
+            "today_classes": today_classes,
+            "recent_punches": punches[:50]
         }

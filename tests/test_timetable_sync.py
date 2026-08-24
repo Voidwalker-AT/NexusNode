@@ -1436,13 +1436,115 @@ class TestRollingTwoWeekTimetableAndRBAC(unittest.TestCase):
         self.assertEqual(event["location"], "https://teams.microsoft.com/l/meetup-join/19%3ameeting_xyz%40thread.v2/0")
         self.assertIn("MS Teams Link: https://teams.microsoft.com/l/meetup-join/19%3ameeting_xyz%40thread.v2/0", event["description"])
         self.assertIn("Course: AI and Multimedia", event["description"])
+        # Verify Pink ColorId (Flamingo = 4)
+        self.assertEqual(event.get("colorId"), "4")
+
+    def test_offline_class_has_no_teams_color_id(self):
+        session = TimetableSession(
+            course_name="Data Structures",
+            course_code="CS201",
+            date="2026-08-24",
+            start_time="10:00:00",
+            end_time="10:55:00",
+            room="11011",
+            faculty="Prof Smith",
+            session_id="sess_offline_01"
+        )
+        client = timetable_sync.GoogleCalendarClient({"access_token": "dummy"}, "admin")
+        event = client._build_event_body(session, "admin")
+        self.assertNotIn("colorId", event)
 
     def test_teams_deterministic_hash_change(self):
         s1 = TimetableSession("AI", "SMDM", "2026-08-24", "11:00", "11:55", "MS Teams", "Prof", "s1", "https://teams.microsoft.com/1")
         s2 = TimetableSession("AI", "SMDM", "2026-08-24", "11:00", "11:55", "MS Teams", "Prof", "s1", "https://teams.microsoft.com/2")
         self.assertNotEqual(s1.deterministic_hash, s2.deterministic_hash)
 
+    def test_record_get_and_delete_punch(self):
+        rec = self.service.record_punch(
+            user_id="user_punch_test",
+            course_name="Deep Learning",
+            course_code="CSAI3027P_5",
+            punch_date="2026-08-24",
+            punch_time="11:02:15",
+            status="present",
+            room="11213",
+            session_id="s_123",
+            notes="On time"
+        )
+        self.assertIsNotNone(rec.get("id"))
+        self.assertEqual(rec["status"], "present")
+
+        punches = self.service.get_punches("user_punch_test")
+        self.assertEqual(len(punches), 1)
+        self.assertEqual(punches[0]["course_code"], "CSAI3027P_5")
+        self.assertEqual(punches[0]["punch_time"], "11:02:15")
+
+        deleted = self.service.delete_punch("user_punch_test", rec["id"])
+        self.assertTrue(deleted)
+        self.assertEqual(len(self.service.get_punches("user_punch_test")), 0)
+
+    def test_attendance_75_bunk_analytics_formula(self):
+        # 1. Seed 40 classes across semester (20 past, 20 future)
+        raw_sessions = []
+        for d in range(1, 21):
+            date_str = f"2026-08-{d:02d}"
+            raw_sessions.append({
+                "course_name": "Probability & Statistics",
+                "course_code": "MATH201",
+                "date": date_str,
+                "start_time": "09:00",
+                "end_time": "10:00",
+                "room": "11113",
+                "faculty": "Dr. Gauss"
+            })
+        for d in range(1, 21):
+            date_str = f"2026-09-{d:02d}"
+            raw_sessions.append({
+                "course_name": "Probability & Statistics",
+                "course_code": "MATH201",
+                "date": date_str,
+                "start_time": "09:00",
+                "end_time": "10:00",
+                "room": "11113",
+                "faculty": "Dr. Gauss"
+            })
+
+        self.service.upload_timetable("user_bunk_calc", json.dumps(raw_sessions))
+
+        # 2. Record 16 present punches out of 20 conducted classes
+        for d in range(1, 17):
+            self.service.record_punch(
+                user_id="user_bunk_calc",
+                course_name="Probability & Statistics",
+                course_code="MATH201",
+                punch_date=f"2026-08-{d:02d}",
+                punch_time="09:05:00",
+                status="present"
+            )
+
+        # 3. Compute analytics as of 2026-08-25 (after the 20 classes)
+        ref_dt = datetime.datetime(2026, 8, 25, 12, 0, 0)
+        analytics = self.service.get_attendance_analytics("user_bunk_calc", ref_datetime=ref_dt)
+
+        self.assertEqual(len(analytics["subjects"]), 1)
+        sub = analytics["subjects"][0]
+
+        self.assertEqual(sub["total_classes"], 40)
+        self.assertEqual(sub["conducted_classes"], 20)
+        self.assertEqual(sub["remaining_classes"], 20)
+        self.assertEqual(sub["attended_classes"], 16)
+        self.assertEqual(sub["missed_classes"], 4)
+        self.assertEqual(sub["attendance_percentage"], 80.0)
+
+        # Max allowed absences: floor(0.25 * 40) = 10
+        self.assertEqual(sub["max_allowed_absences"], 10)
+        # Safe bunks left: max(0, 10 - 4) = 6
+        self.assertEqual(sub["safe_bunks_remaining"], 6)
+        self.assertEqual(sub["catchup_needed"], 0)
+        self.assertEqual(sub["status"], "safe")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

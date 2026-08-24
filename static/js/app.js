@@ -599,6 +599,9 @@ function switchTab(tabId) {
     case 'admin':
       loadAdminUsers();
       break;
+    case 'attendance':
+      loadAttendanceData();
+      break;
   }
 }
 
@@ -3155,6 +3158,359 @@ function formatTimestamp(val) {
 // ==============================================================================
 // 12. INITIALIZATION ON DOM READY
 // ==============================================================================
+// 13. ATTENDANCE TRACKING & 75% BUNK PLANNER DATA SHEET
+// ==============================================================================
+
+let attendanceState = {
+  data: null,
+  loading: false
+};
+
+async function loadAttendanceData() {
+  if (attendanceState.loading) return;
+  attendanceState.loading = true;
+  
+  try {
+    const res = await apiRequest('/api/attendance/analytics');
+    if (res && res.overall) {
+      attendanceState.data = res;
+      renderAttendanceMetrics(res);
+      renderTodayClasses(res.today_classes || []);
+      renderAttendanceSubjectsTable(res.subjects || []);
+      renderAttendancePunchesTable(res.recent_punches || []);
+    } else {
+      showToast('No attendance data available. Upload timetable first.', 'warning');
+    }
+  } catch (err) {
+    console.error('Failed to load attendance analytics:', err);
+    showToast('Failed to load attendance data.', 'error');
+  } finally {
+    attendanceState.loading = false;
+  }
+}
+
+function renderAttendanceMetrics(data) {
+  const overall = data.overall || {};
+  const pct = overall.attendance_percentage !== undefined ? overall.attendance_percentage : 0;
+  
+  const pctEl = document.getElementById('attOverallPct');
+  if (pctEl) {
+    pctEl.textContent = `${pct}%`;
+    pctEl.style.color = pct >= 80 ? 'var(--primary)' : (pct >= 75 ? '#f59e0b' : '#ef4444');
+  }
+  
+  const badgeEl = document.getElementById('attOverallBadge');
+  if (badgeEl) {
+    if (pct >= 80) {
+      badgeEl.className = 'status-pill status-healthy';
+      badgeEl.textContent = 'Safe (≥80%)';
+    } else if (pct >= 75) {
+      badgeEl.className = 'status-pill status-warning';
+      badgeEl.textContent = 'Warning (75-80%)';
+    } else {
+      badgeEl.className = 'status-pill status-critical';
+      badgeEl.textContent = 'Critical (<75%)';
+    }
+  }
+  
+  const countEl = document.getElementById('attOverallCount');
+  if (countEl) {
+    countEl.textContent = `${overall.attended_classes || 0} / ${overall.conducted_classes || 0} classes attended (${overall.missed_classes || 0} missed)`;
+  }
+  
+  const bunksEl = document.getElementById('attSafeBunksTotal');
+  if (bunksEl) {
+    bunksEl.textContent = overall.total_safe_bunks !== undefined ? overall.total_safe_bunks : '--';
+  }
+  
+  const slotsEl = document.getElementById('attSemesterTotalSlots');
+  if (slotsEl) {
+    slotsEl.textContent = overall.total_classes || 384;
+  }
+  
+  const condEl = document.getElementById('attConductedVsRemaining');
+  if (condEl) {
+    const rem = (overall.total_classes || 384) - (overall.conducted_classes || 0);
+    condEl.textContent = `${overall.conducted_classes || 0} done · ${rem} remaining`;
+  }
+  
+  const todayClasses = data.today_classes || [];
+  const todayPunched = todayClasses.filter(c => c.punched && c.punch_status === 'present').length;
+  const todayCountEl = document.getElementById('attTodayCount');
+  if (todayCountEl) {
+    todayCountEl.textContent = `${todayPunched} / ${todayClasses.length}`;
+  }
+  
+  const todayLabelEl = document.getElementById('attTodayDateLabel');
+  if (todayLabelEl) {
+    todayLabelEl.textContent = `Today: ${data.as_of_date || ''} (${todayClasses.length} slots)`;
+  }
+}
+
+function renderTodayClasses(classes) {
+  const container = document.getElementById('todayClassesContainer');
+  if (!container) return;
+  
+  if (!classes || classes.length === 0) {
+    container.innerHTML = `<div style="color: var(--text-muted); font-size: 13px; padding: 12px; grid-column: 1 / -1; text-align: center;">No classes scheduled for today (${new Date().toLocaleDateString()}). Enjoy your day off! 🎉</div>`;
+    return;
+  }
+  
+  container.innerHTML = classes.map(c => {
+    const isPunched = c.punched && c.punch_status === 'present';
+    const isOnline = c.is_online || (c.room && c.room.toLowerCase().includes('team'));
+    const badgeColor = isOnline ? '#ec4899' : 'var(--primary)';
+    
+    return `
+      <div style="background: var(--bg-surface-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
+            <span style="font-size: 11px; font-weight: 700; color: ${badgeColor}; background: rgba(236,72,153,0.1); padding: 2px 6px; border-radius: 4px;">
+              ${escapeHtml(c.course_code || 'CLASS')}
+            </span>
+            <span style="font-size: 11px; color: var(--text-muted);">
+              ${escapeHtml(c.start_time.substring(0, 5))} - ${escapeHtml(c.end_time.substring(0, 5))}
+            </span>
+          </div>
+          <div style="font-weight: 600; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">
+            ${escapeHtml(c.course_name)}
+          </div>
+          <div style="font-size: 11px; color: var(--text-secondary);">
+            📍 ${escapeHtml(c.room)} · 👤 ${escapeHtml(c.faculty)}
+          </div>
+          ${c.meeting_link ? `
+            <div style="margin-top: 6px;">
+              <a href="${escapeHtml(c.meeting_link)}" target="_blank" style="font-size: 11px; color: #ec4899; text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;">
+                <span class="material-symbols-outlined" style="font-size: 14px;">videocam</span> Join MS Teams
+              </a>
+            </div>
+          ` : ''}
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
+          <div>
+            ${isPunched ? `
+              <span class="status-pill status-healthy" style="font-size: 10px;">
+                ✓ Punched at ${escapeHtml(c.punch_time || '')}
+              </span>
+            ` : `
+              <span style="font-size: 11px; color: var(--text-muted);">Not punched yet</span>
+            `}
+          </div>
+          <div>
+            ${isPunched ? `
+              <button class="btn btn-sm btn-secondary" style="font-size: 11px; padding: 2px 8px;" onclick="handleDeletePunch('${c.punch_id}')">
+                Undo
+              </button>
+            ` : `
+              <button class="btn btn-sm btn-primary" style="font-size: 11px; padding: 4px 10px;" onclick="handlePunchClass('${c.session_id}', '${escapeHtml(c.course_name)}', '${escapeHtml(c.course_code)}', '${escapeHtml(c.room)}')">
+                Punch Present
+              </button>
+            `}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderAttendanceSubjectsTable(subjects) {
+  const tbody = document.getElementById('attendanceSubjectsTbody');
+  if (!tbody) return;
+  
+  if (!subjects || subjects.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No subjects found in timetable.</td></tr>`;
+    return;
+  }
+  
+  tbody.innerHTML = subjects.map(s => {
+    const pct = s.attendance_percentage !== undefined ? s.attendance_percentage : 100;
+    let badgeClass = 'status-healthy';
+    let adviceHtml = '';
+    
+    if (pct < 75) {
+      badgeClass = 'status-critical';
+      adviceHtml = `<span style="color: #ef4444; font-weight: 600; font-size: 11px;">⚠️ Attend next ${s.catchup_needed} classes</span>`;
+    } else if (pct < 80) {
+      badgeClass = 'status-warning';
+      adviceHtml = `<span style="color: #f59e0b; font-size: 11px;">⚠️ Borderline (Can skip ${s.safe_bunks_remaining})</span>`;
+    } else {
+      badgeClass = 'status-healthy';
+      adviceHtml = `<span style="color: #10b981; font-size: 11px;">✓ Safe (Can skip ${s.safe_bunks_remaining})</span>`;
+    }
+    
+    return `
+      <tr>
+        <td>
+          <div style="font-weight: 600; color: var(--text-primary); font-size: 13px;">${escapeHtml(s.course_name)}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(s.course_code || 'N/A')}</div>
+        </td>
+        <td>
+          <div style="font-size: 12px;">${escapeHtml(s.faculty)}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">📍 ${escapeHtml(s.room)}</div>
+        </td>
+        <td style="font-weight: 600;">${s.total_classes}</td>
+        <td>
+          <span style="color: var(--text-primary);">${s.conducted_classes} done</span>
+          <span style="color: var(--text-muted); font-size: 11px;"> · ${s.remaining_classes} left</span>
+        </td>
+        <td>
+          <span style="color: #10b981; font-weight: 600;">${s.attended_classes}</span>
+          <span style="color: #ef4444; font-size: 11px;"> / ${s.missed_classes} missed</span>
+        </td>
+        <td>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="status-pill ${badgeClass}" style="font-weight: 700; font-size: 12px;">${pct}%</span>
+          </div>
+          <div style="background: rgba(255,255,255,0.08); height: 4px; border-radius: 2px; margin-top: 4px; overflow: hidden; width: 60px;">
+            <div style="background: ${pct >= 75 ? '#10b981' : '#ef4444'}; width: ${Math.min(100, pct)}%; height: 100%;"></div>
+          </div>
+        </td>
+        <td>
+          <div style="font-weight: 700; font-size: 14px; color: ${s.safe_bunks_remaining > 0 ? '#10b981' : '#ef4444'};">
+            ${s.safe_bunks_remaining} <span style="font-size: 11px; font-weight: 400; color: var(--text-muted);">classes</span>
+          </div>
+          <div style="font-size: 10px; color: var(--text-muted);">Max allowed abs: ${s.max_allowed_absences}</div>
+        </td>
+        <td>
+          ${adviceHtml}
+        </td>
+        <td>
+          <button class="btn btn-sm btn-secondary" style="font-size: 11px;" onclick="handlePunchClass('', '${escapeHtml(s.course_name)}', '${escapeHtml(s.course_code)}', '${escapeHtml(s.room)}')">
+            Punch Today
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderAttendancePunchesTable(punches) {
+  const tbody = document.getElementById('attendancePunchesTbody');
+  if (!tbody) return;
+  
+  if (!punches || punches.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No attendance punches logged yet.</td></tr>`;
+    return;
+  }
+  
+  tbody.innerHTML = punches.map(p => {
+    const isPresent = p.status === 'present';
+    return `
+      <tr>
+        <td>
+          <div style="font-weight: 600;">${escapeHtml(p.punch_date)}</div>
+        </td>
+        <td style="font-family: var(--font-mono); font-size: 12px; color: var(--primary);">
+          ${escapeHtml(p.punch_time)}
+        </td>
+        <td>
+          <div style="font-weight: 600;">${escapeHtml(p.course_name)}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(p.course_code)}</div>
+        </td>
+        <td>
+          <span style="font-size: 12px;">${escapeHtml(p.room || 'Classroom')}</span>
+        </td>
+        <td>
+          <span class="status-pill ${isPresent ? 'status-healthy' : 'status-critical'}" style="font-size: 11px;">
+            ${escapeHtml(p.status.toUpperCase())}
+          </span>
+        </td>
+        <td style="font-size: 11px; color: var(--text-muted);">
+          ${escapeHtml(p.notes || '--')}
+        </td>
+        <td>
+          <button class="btn btn-sm btn-secondary" style="font-size: 11px; color: #ef4444;" onclick="handleDeletePunch('${p.id}')">
+            Delete
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function handlePunchClass(sessionId, courseName, courseCode, room, status = 'present') {
+  try {
+    const payload = {
+      session_id: sessionId,
+      course_name: courseName,
+      course_code: courseCode,
+      room: room,
+      status: status
+    };
+    const res = await apiRequest('/api/attendance/punch', 'POST', payload);
+    if (res && res.status === 'success') {
+      showToast(`Punched attendance for ${courseName}!`, 'success');
+      loadAttendanceData();
+    } else {
+      showToast(res.error || 'Failed to punch attendance.', 'error');
+    }
+  } catch (err) {
+    console.error('Error punching attendance:', err);
+    showToast('Failed to record punch.', 'error');
+  }
+}
+
+async function handleBulkPunchToday() {
+  if (!confirm("Mark all of today's scheduled classes as Present?")) return;
+  try {
+    const res = await apiRequest('/api/attendance/bulk-punch', 'POST', { status: 'present' });
+    if (res && res.status === 'success') {
+      showToast(`Recorded ${res.count} punches for today!`, 'success');
+      loadAttendanceData();
+    } else {
+      showToast('Failed to bulk punch.', 'error');
+    }
+  } catch (err) {
+    showToast('Error during bulk punch.', 'error');
+  }
+}
+
+async function handleDeletePunch(punchId) {
+  if (!confirm('Are you sure you want to delete this punch record?')) return;
+  try {
+    const res = await apiRequest(`/api/attendance/punch/${punchId}`, 'DELETE');
+    if (res && res.status === 'success') {
+      showToast('Punch record deleted.', 'success');
+      loadAttendanceData();
+    } else {
+      showToast('Failed to delete punch.', 'error');
+    }
+  } catch (err) {
+    showToast('Error deleting punch.', 'error');
+  }
+}
+
+function openCustomPunchModal() {
+  const courseName = prompt('Enter Course Name (e.g. Deep Learning):');
+  if (!courseName) return;
+  const courseCode = prompt('Enter Course Code (e.g. CSAI3027P_5):', '') || '';
+  const date = prompt('Enter Date (YYYY-MM-DD) or leave empty for Today:', '') || '';
+  const time = prompt('Enter Time (HH:MM:SS) or leave empty for Current Time:', '') || '';
+  
+  handleCustomPunch(courseName, courseCode, date, time);
+}
+
+async function handleCustomPunch(courseName, courseCode, date, time) {
+  try {
+    const payload = {
+      course_name: courseName,
+      course_code: courseCode,
+      punch_date: date,
+      punch_time: time,
+      status: 'present'
+    };
+    const res = await apiRequest('/api/attendance/punch', 'POST', payload);
+    if (res && res.status === 'success') {
+      showToast(`Logged manual punch for ${courseName}!`, 'success');
+      loadAttendanceData();
+    } else {
+      showToast(res.error || 'Failed to log punch.', 'error');
+    }
+  } catch (err) {
+    showToast('Error logging manual punch.', 'error');
+  }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   initAuth();

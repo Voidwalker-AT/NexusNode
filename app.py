@@ -4643,6 +4643,180 @@ def select_google_calendar():
     return jsonify({"status": "success", "calendar_id": calendar_id})
 
 
+# ==============================================================================
+# ATTENDANCE TRACKING & 75% BUNK CRITERIA ANALYTICS
+# ==============================================================================
+
+@app.route('/api/attendance/summary', methods=['GET'])
+@app.route('/api/attendance/analytics', methods=['GET'])
+def get_attendance_summary():
+    """Returns comprehensive semester attendance stats, 75% safe bunks, and today's schedule."""
+    err = require_auth()
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    if g.user.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    try:
+        analytics = timetable_service.get_attendance_analytics(target_user_id)
+        return jsonify(analytics), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to compute attendance analytics: {str(e)}"}), 500
+
+
+@app.route('/api/attendance/punches', methods=['GET'])
+def list_attendance_punches():
+    """Lists historical attendance punches for user."""
+    err = require_auth()
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    if g.user.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    course_code = request.args.get("course_code")
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
+    limit = min(int(request.args.get("limit", 200)), 1000)
+
+    try:
+        punches = timetable_service.get_punches(
+            target_user_id,
+            course_code=course_code,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit
+        )
+        return jsonify({"user_id": target_user_id, "total": len(punches), "punches": punches}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to load attendance punches: {str(e)}"}), 500
+
+
+@app.route('/api/attendance/punch', methods=['POST'])
+def record_attendance_punch():
+    """Records an attendance punch with exact timestamp and subject details."""
+    err = require_auth()
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    payload = request.get_json(force=True, silent=True) or {}
+
+    course_name = (payload.get("course_name") or payload.get("course") or "").strip()
+    course_code = (payload.get("course_code") or "").strip()
+    punch_date = (payload.get("punch_date") or payload.get("date") or "").strip()
+    punch_time = (payload.get("punch_time") or payload.get("time") or "").strip()
+    status = (payload.get("status") or "present").strip().lower()
+    room = (payload.get("room") or "").strip()
+    session_id = (payload.get("session_id") or "").strip()
+    notes = (payload.get("notes") or "").strip()
+
+    tz_name = config.TIMETABLE_TIMEZONE
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+        now_dt = datetime.datetime.now(tz)
+    except Exception:
+        ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        now_dt = datetime.datetime.now(ist)
+
+    if not punch_date:
+        punch_date = now_dt.strftime("%Y-%m-%d")
+    if not punch_time:
+        punch_time = now_dt.strftime("%H:%M:%S")
+
+    if not course_name and not course_code:
+        return jsonify({"error": "course_name or course_code is required."}), 400
+
+    try:
+        record = timetable_service.record_punch(
+            user_id=target_user_id,
+            course_name=course_name,
+            course_code=course_code,
+            punch_date=punch_date,
+            punch_time=punch_time,
+            status=status,
+            room=room,
+            session_id=session_id,
+            notes=notes
+        )
+        log_event("INFO", "ATTENDANCE", f"Punch recorded for user '{target_user_id}' on {course_name} ({punch_date} {punch_time}) -> {status}")
+        return jsonify({"status": "success", "message": "Attendance punch recorded successfully.", "punch": record}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to record attendance punch: {str(e)}"}), 500
+
+
+@app.route('/api/attendance/punch/<punch_id>', methods=['DELETE'])
+def delete_attendance_punch(punch_id):
+    """Deletes an attendance punch record."""
+    err = require_auth()
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    try:
+        deleted = timetable_service.delete_punch(target_user_id, punch_id)
+        if deleted:
+            log_event("INFO", "ATTENDANCE", f"Punch '{punch_id}' deleted for user '{target_user_id}'")
+            return jsonify({"status": "success", "message": "Punch record deleted."}), 200
+        else:
+            return jsonify({"error": "Punch record not found."}), 404
+    except Exception as e:
+        return jsonify({"error": f"Failed to delete punch: {str(e)}"}), 500
+
+
+@app.route('/api/attendance/bulk-punch', methods=['POST'])
+def bulk_attendance_punch():
+    """Bulk marks attendance (e.g. all of today's classes marked present)."""
+    err = require_auth()
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    payload = request.get_json(force=True, silent=True) or {}
+    items = payload.get("sessions") or []
+    status = (payload.get("status") or "present").strip().lower()
+
+    if not items:
+        analytics = timetable_service.get_attendance_analytics(target_user_id)
+        items = analytics.get("today_classes", [])
+
+    recorded = []
+    tz_name = config.TIMETABLE_TIMEZONE
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+        now_dt = datetime.datetime.now(tz)
+    except Exception:
+        ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        now_dt = datetime.datetime.now(ist)
+
+    p_date = now_dt.strftime("%Y-%m-%d")
+    p_time = now_dt.strftime("%H:%M:%S")
+
+    for it in items:
+        c_name = it.get("course_name") or ""
+        c_code = it.get("course_code") or ""
+        s_id = it.get("session_id") or ""
+        rm = it.get("room") or ""
+        if c_name or c_code:
+            rec = timetable_service.record_punch(
+                user_id=target_user_id,
+                course_name=c_name,
+                course_code=c_code,
+                punch_date=it.get("date") or p_date,
+                punch_time=p_time,
+                status=status,
+                room=rm,
+                session_id=s_id,
+                notes="Bulk marked present"
+            )
+            recorded.append(rec)
+
+    return jsonify({"status": "success", "count": len(recorded), "punches": recorded}), 200
+
+
 # --- Storage Intelligence & Settings ---
 
 @app.route('/api/storage/intelligence', methods=['GET'])
