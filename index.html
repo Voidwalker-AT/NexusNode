@@ -1043,7 +1043,7 @@
         <!-- Top Metric Summary Grid -->
         <div class="metrics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 20px;">
           <div class="tech-card metric-card" style="border-left: 4px solid var(--primary); padding: 16px;">
-            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Overall Attendance</div>
+            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">NexusNode Aggregate Attendance</div>
             <div style="display: flex; align-items: baseline; justify-content: space-between; margin-top: 8px;">
               <span id="attOverallPct" style="font-size: 28px; font-weight: 700; color: var(--primary);">--%</span>
               <span id="attOverallBadge" class="status-pill status-healthy" style="font-size: 11px;">75% Criteria</span>
@@ -1054,24 +1054,24 @@
           </div>
 
           <div class="tech-card metric-card" style="border-left: 4px solid #10b981; padding: 16px;">
-            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Safe Bunks Available</div>
+            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Subject-Allocated Safe Skips</div>
             <div style="display: flex; align-items: baseline; justify-content: space-between; margin-top: 8px;">
               <span id="attSafeBunksTotal" style="font-size: 28px; font-weight: 700; color: #10b981;">--</span>
               <span class="material-symbols-outlined" style="color: #10b981;">event_available</span>
             </div>
             <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
-              Total leaves across semester to stay &ge; 75%
+              Sum of per-module allowances (&ge;75% threshold)
             </div>
           </div>
 
           <div class="tech-card metric-card" style="border-left: 4px solid #f59e0b; padding: 16px;">
-            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Semester Total Slots</div>
+            <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Total Conducted Sessions</div>
             <div style="display: flex; align-items: baseline; justify-content: space-between; margin-top: 8px;">
-              <span id="attSemesterTotalSlots" style="font-size: 28px; font-weight: 700; color: var(--text-primary);">384</span>
+              <span id="attSemesterTotalSlots" style="font-size: 28px; font-weight: 700; color: var(--text-primary);">0</span>
               <span class="material-symbols-outlined" style="color: var(--text-muted);">calendar_month</span>
             </div>
             <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
-              <span id="attConductedVsRemaining">0 done · 0 remaining</span>
+              <span id="attConductedVsRemaining">0 attended · 0 missed</span>
             </div>
           </div>
 
@@ -1092,9 +1092,13 @@
           <div class="tech-card-header">
             <h2 class="tech-card-title">
               <span class="material-symbols-outlined" style="color: #ec4899;">today</span>
-              <span>Today's Class Schedule & Attendance Punch</span>
+              <span>Today's Class Schedule & Live Card-Punch</span>
             </h2>
             <div style="display: flex; gap: 8px;">
+              <button class="btn btn-sm btn-primary" id="btnSyncAttendance" onclick="triggerAttendanceSync()">
+                <span class="material-symbols-outlined" style="font-size: 16px;">cloud_sync</span>
+                <span>Sync with UPES</span>
+              </button>
               <button class="btn btn-sm btn-secondary" onclick="loadAttendanceData()">
                 <span class="material-symbols-outlined" style="font-size: 16px;">refresh</span>
                 <span>Refresh</span>
@@ -1111,29 +1115,26 @@
           <div class="tech-card-header">
             <h2 class="tech-card-title">
               <span class="material-symbols-outlined" style="color: var(--primary);">table_chart</span>
-              <span>Subject-wise Attendance & 75% Criteria Data Sheet</span>
+              <span>Authoritative Module Attendance & 75% Safe Bunk Planner</span>
             </h2>
             <div style="display: flex; gap: 8px; align-items: center;">
-              <span style="font-size: 11px; color: var(--text-muted);">Target: 75% Minimum</span>
+              <span style="font-size: 11px; color: var(--text-muted);">Target Criteria: 75% Minimum</span>
             </div>
           </div>
           <div class="table-responsive">
             <table class="tech-table" id="attendanceSubjectsTable">
               <thead>
                 <tr>
-                  <th>COURSE / SUBJECT</th>
-                  <th>FACULTY & VENUE</th>
-                  <th>SEMESTER SLOTS</th>
-                  <th>DONE / REMAINING</th>
-                  <th>ATTENDED / MISSED</th>
+                  <th>COURSE / MODULE</th>
+                  <th>CONDUCTED</th>
+                  <th>ATTENDED / ABSENT</th>
                   <th>ATTENDANCE %</th>
                   <th>SAFE BUNKS LEFT (&ge;75%)</th>
-                  <th>STATUS & TARGET</th>
-                  <th>ACTION</th>
+                  <th>NEXT LECTURE PROJECTION</th>
                 </tr>
               </thead>
               <tbody id="attendanceSubjectsTbody">
-                <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">Loading subject data...</td></tr>
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading subject data...</td></tr>
               </tbody>
             </table>
           </div>
@@ -1144,7 +1145,7 @@
           <div class="tech-card-header">
             <h2 class="tech-card-title">
               <span class="material-symbols-outlined" style="color: var(--primary);">history</span>
-              <span>Punch History & Timestamps Log</span>
+              <span>Authoritative Granular Session Ledger & CRA RFID History</span>
             </h2>
             <button class="btn btn-sm btn-secondary" onclick="openCustomPunchModal()">
               <span class="material-symbols-outlined" style="font-size: 16px;">add</span>
@@ -1155,17 +1156,16 @@
             <table class="tech-table" id="attendancePunchesTable">
               <thead>
                 <tr>
-                  <th>DATE & DAY</th>
-                  <th>PUNCH TIME</th>
-                  <th>SUBJECT / CODE</th>
-                  <th>ROOM / ONLINE</th>
-                  <th>STATUS</th>
-                  <th>NOTES</th>
-                  <th>ACTION</th>
+                  <th>DATE & TIME</th>
+                  <th>PUNCH IN TIME</th>
+                  <th>COURSE / SESSION</th>
+                  <th>VENUE & FACULTY</th>
+                  <th>OFFICIAL STATUS</th>
+                  <th>SUBTYPE / MODE</th>
                 </tr>
               </thead>
               <tbody id="attendancePunchesTbody">
-                <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No punches recorded yet.</td></tr>
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No session records loaded yet.</td></tr>
               </tbody>
             </table>
           </div>

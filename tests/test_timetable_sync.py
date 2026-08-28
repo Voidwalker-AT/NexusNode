@@ -1544,6 +1544,481 @@ class TestRollingTwoWeekTimetableAndRBAC(unittest.TestCase):
         self.assertEqual(sub["status"], "safe")
 
 
+class TestUpesAuthLifecycleAndHeadlessRefresh(unittest.TestCase):
+    """
+    Comprehensive Phase 2.7 Unit Tests for:
+      1. Database Schema Migration for extended session bundle
+      2. AES-GCM Encrypted Token and Cookie Persistence
+      3. Unattended Headless Token Refresh & Single-Use Rotation
+      4. Crash-Consistent Write-Ahead Recovery Journal
+      5. Cookie Expiration & State Machine Transitions (ACTIVE -> REFRESH_AVAILABLE -> AUTH_REQUIRED)
+      6. Telemetry & Non-Sensitive Status Sanitization
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.temp_dir, "test_auth_lifecycle.db")
+        self.journal_path = os.path.join(self.temp_dir, ".upes_session_journal.enc")
+
+        # Point storage vault dir to temp_dir
+        self._orig_vault_dir = getattr(config, "STORAGE_VAULT_DIR", "storage_vault")
+        config.STORAGE_VAULT_DIR = self.temp_dir
+
+        def conn_factory():
+            c = sqlite3.connect(self.db_path)
+            c.row_factory = sqlite3.Row
+            return c
+
+        self.conn_factory = conn_factory
+        conn = self.conn_factory()
+        timetable_sync.init_timetable_tables(conn)
+        conn.close()
+
+        self.service = TimetableService(self.conn_factory)
+        self.broker = self.service.session_broker
+
+    def tearDown(self):
+        config.STORAGE_VAULT_DIR = self._orig_vault_dir
+        timetable_sync.UpesSessionJournal.cleanup_journal()
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _make_mock_jwt(self, exp_offset: float = 3600) -> str:
+        exp_ts = time.time() + exp_offset
+        p = json.dumps({"sub": "500012345", "exp": exp_ts}).encode("utf-8")
+        b64 = base64.urlsafe_b64encode(p).decode("ascii").rstrip("=")
+        return f"eyJhbGciOiJIUzI1NiJ9.{b64}.mock_sig"
+
+    def test_schema_migration_adds_new_columns(self):
+        """Verifies that init_timetable_tables gracefully migrates legacy upes_auth_sessions schemas."""
+        legacy_db_path = os.path.join(self.temp_dir, "legacy_schema.db")
+        conn = sqlite3.connect(legacy_db_path)
+        # Create old schema
+        conn.execute("""
+            CREATE TABLE upes_auth_sessions (
+                user_id TEXT PRIMARY KEY,
+                encrypted_access_token TEXT NOT NULL,
+                student_code TEXT NOT NULL,
+                api_url TEXT,
+                expires_at REAL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
+        conn.commit()
+
+        # Run initializer which applies ALTER TABLE migrations
+        timetable_sync.init_timetable_tables(conn)
+
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(upes_auth_sessions)")
+        cols = {row[1] for row in cur.fetchall()}
+        conn.close()
+
+        self.assertIn("encrypted_refresh_token", cols)
+        self.assertIn("encrypted_cookies", cols)
+        self.assertIn("cookie_expires_at", cols)
+        self.assertIn("credential_generation", cols)
+        self.assertIn("last_refresh_at", cols)
+        self.assertIn("last_refresh_status", cols)
+
+    def test_encrypted_session_bundle_persistence_and_retrieval(self):
+        """Verifies that the complete session bundle is encrypted at rest and decrypted on retrieval."""
+        user_id = "test_user_bundle"
+        jwt = self._make_mock_jwt(3600)
+        refresh_tok = "mock_refresh_token_xyz_123"
+        cookies = {"idp_session_info": "mock_cookie_val_abc"}
+        cookie_exp = time.time() + 36000
+
+        self.service.save_upes_session(
+            user_id=user_id,
+            access_token=jwt,
+            student_code="500099999",
+            refresh_token=refresh_tok,
+            cookies=cookies,
+            cookie_expires_at=cookie_exp,
+            credential_generation=1,
+            last_refresh_status="test_init"
+        )
+
+        # 1. Verify SQLite raw row does NOT contain plaintext tokens
+        conn = self.conn_factory()
+        cur = conn.cursor()
+        cur.execute("SELECT encrypted_access_token, encrypted_refresh_token, encrypted_cookies FROM upes_auth_sessions WHERE user_id = ?", (user_id,))
+        row = cur.fetchone()
+        conn.close()
+
+        self.assertNotIn(jwt, row[0])
+        self.assertNotIn(refresh_tok, row[1])
+        self.assertNotIn("mock_cookie_val_abc", row[2])
+
+        # 2. Verify get_full_upes_session decrypts all fields
+        full = self.service.get_full_upes_session(user_id)
+        self.assertIsNotNone(full)
+        self.assertEqual(full["access_token"], jwt)
+        self.assertEqual(full["refresh_token"], refresh_tok)
+        self.assertEqual(full["cookies"]["idp_session_info"], "mock_cookie_val_abc")
+        self.assertEqual(full["student_code"], "500099999")
+        self.assertEqual(full["credential_generation"], 1)
+
+        # 3. Verify backwards-compatible get_upes_session 4-tuple
+        compat = self.service.get_upes_session(user_id)
+        self.assertEqual(compat[0], jwt)
+        self.assertEqual(compat[1], "500099999")
+
+    @patch("requests.post")
+    def test_headless_refresh_success_rotates_credentials(self, mock_post):
+        """Verifies that headless token refresh rotates tokens, increments generation, and commits safely."""
+        user_id = "test_user_rotate"
+        old_jwt = self._make_mock_jwt(-60)  # Expired JWT
+        old_refresh = "old_refresh_token_gen1"
+        cookies = {"idp_session_info": "valid_sso_cookie"}
+        cookie_exp = time.time() + 20000
+
+        self.service.save_upes_session(
+            user_id=user_id,
+            access_token=old_jwt,
+            student_code="500012345",
+            refresh_token=old_refresh,
+            cookies=cookies,
+            cookie_expires_at=cookie_exp,
+            credential_generation=1
+        )
+
+        new_jwt = self._make_mock_jwt(7200)
+        new_refresh = "new_refresh_token_gen2"
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "StatusCode": 200,
+            "Message": "refresh token generated successfully.",
+            "Item": {
+                "tokenInfo": {
+                    "accessToken": new_jwt,
+                    "refreshToken": new_refresh,
+                    "expiresAt": 24
+                }
+            }
+        }
+        mock_post.return_value = mock_resp
+
+        # Trigger headless refresh
+        success, reason, summary = self.broker.refresh_upes_session_headless(user_id)
+        self.assertTrue(success)
+        self.assertEqual(reason, "refreshed_successfully")
+        self.assertEqual(summary["credential_generation"], 2)
+
+        # Verify DB updated
+        refreshed = self.service.get_full_upes_session(user_id)
+        self.assertEqual(refreshed["access_token"], new_jwt)
+        self.assertEqual(refreshed["refresh_token"], new_refresh)
+        self.assertEqual(refreshed["credential_generation"], 2)
+        self.assertEqual(refreshed["last_refresh_status"], "success")
+
+        # Verify journal is clean
+        self.assertFalse(os.path.exists(timetable_sync.UpesSessionJournal.get_journal_path()))
+
+    def test_headless_refresh_fails_when_cookie_expired(self):
+        """Verifies that refresh is aborted immediately if SSO cookie is expired (without calling network)."""
+        user_id = "test_user_cookie_expired"
+        jwt = self._make_mock_jwt(-60)
+        past_cookie_exp = time.time() - 300  # Expired 5 mins ago
+
+        self.service.save_upes_session(
+            user_id=user_id,
+            access_token=jwt,
+            student_code="500012345",
+            refresh_token="valid_refresh",
+            cookies={"idp_session_info": "expired_cookie"},
+            cookie_expires_at=past_cookie_exp,
+            credential_generation=1
+        )
+
+        success, reason, _ = self.broker.refresh_upes_session_headless(user_id)
+        self.assertFalse(success)
+        self.assertEqual(reason, "sso_cookie_expired")
+
+        # Broker state should be AUTH_REQUIRED (assuming no browser tab)
+        with patch.object(self.broker.browser_bridge, "is_cdp_available", return_value=False):
+            st = self.broker.get_session_status(user_id)
+            self.assertEqual(st["auth_status"], "AUTH_REQUIRED")
+
+    def test_headless_refresh_fails_when_missing_tokens(self):
+        """Verifies refresh failure if refresh token or cookie is absent."""
+        user_id = "test_user_no_refresh"
+        self.service.save_upes_session(
+            user_id=user_id,
+            access_token="tok",
+            student_code="500012345",
+            refresh_token=None,
+            cookies=None
+        )
+
+        success, reason, _ = self.broker.refresh_upes_session_headless(user_id)
+        self.assertFalse(success)
+        self.assertEqual(reason, "refresh_unavailable_no_refresh_token")
+
+    @patch("requests.post")
+    def test_headless_refresh_handles_server_rejection(self, mock_post):
+        """Verifies handling of remote UPES rejection (e.g. StatusCode 401 single-use invalidation)."""
+        user_id = "test_user_reject"
+        old_jwt = self._make_mock_jwt(3600)
+        self.service.save_upes_session(
+            user_id=user_id,
+            access_token=old_jwt,
+            student_code="500012345",
+            refresh_token="replayed_token",
+            cookies={"idp_session_info": "valid_cookie"},
+            cookie_expires_at=time.time() + 10000,
+            credential_generation=1
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "StatusCode": 401,
+            "Message": "failed to generate the refresh token"
+        }
+        mock_post.return_value = mock_resp
+
+        success, reason, summary = self.broker.refresh_upes_session_headless(user_id)
+        self.assertFalse(success)
+        self.assertIn("rejected_401", reason)
+        self.assertIsNone(summary)
+
+    def test_recovery_journal_atomic_write_and_replay(self):
+        """Verifies that an uncommitted recovery journal is replayed into SQLite upon broker startup."""
+        user_id = "test_user_journal_replay"
+        old_jwt = self._make_mock_jwt(-60)
+        self.service.save_upes_session(
+            user_id=user_id,
+            access_token=old_jwt,
+            student_code="500012345",
+            refresh_token="old_ref",
+            credential_generation=1
+        )
+
+        # Simulate crash: write uncommitted journal generation 2
+        recovered_jwt = self._make_mock_jwt(7200)
+        recovered_bundle = {
+            "access_token": recovered_jwt,
+            "student_code": "500012345",
+            "api_url": "https://api.test/timetable",
+            "expires_at": time.time() + 7200,
+            "refresh_token": "recovered_ref_gen2",
+            "cookies": {"idp_session_info": "rec_cookie"},
+            "cookie_expires_at": time.time() + 25000,
+            "credential_generation": 2
+        }
+        written = timetable_sync.UpesSessionJournal.write_journal(user_id, 2, recovered_bundle)
+        self.assertTrue(written)
+        self.assertTrue(os.path.exists(timetable_sync.UpesSessionJournal.get_journal_path()))
+
+        # Call recover_and_replay_journal
+        replayed_user = timetable_sync.UpesSessionJournal.recover_and_replay_journal(self.service)
+        self.assertEqual(replayed_user, user_id)
+
+        # Verify SQLite has generation 2 credentials
+        full = self.service.get_full_upes_session(user_id)
+        self.assertEqual(full["access_token"], recovered_jwt)
+        self.assertEqual(full["refresh_token"], "recovered_ref_gen2")
+        self.assertEqual(full["credential_generation"], 2)
+        self.assertEqual(full["last_refresh_status"], "recovered_from_journal")
+
+        # Verify journal is cleaned up
+        self.assertFalse(os.path.exists(timetable_sync.UpesSessionJournal.get_journal_path()))
+
+    def test_recovery_journal_malformed_handling(self):
+        """Verifies that corrupted journal files are safely discarded without crashing."""
+        jpath = timetable_sync.UpesSessionJournal.get_journal_path()
+        with open(jpath, "w", encoding="utf-8") as f:
+            f.write("GARBAGE_CORRUPTED_CIPHERTEXT")
+
+        replayed = timetable_sync.UpesSessionJournal.recover_and_replay_journal(self.service)
+        self.assertIsNone(replayed)
+        self.assertFalse(os.path.exists(jpath))
+
+    def test_broker_state_machine_resolution(self):
+        """Verifies state machine transitions: ACTIVE -> REFRESH_AVAILABLE -> AUTH_REQUIRED."""
+        user_id = "test_user_sm"
+
+        # 1. Valid Active JWT
+        active_jwt = self._make_mock_jwt(3600)
+        self.service.save_upes_session(user_id, active_jwt, "500012345")
+        with patch.object(self.broker.browser_bridge, "is_cdp_available", return_value=False):
+            st = self.broker.get_session_status(user_id)
+            self.assertEqual(st["auth_status"], "ACTIVE")
+            session, err = self.broker.resolve_session(user_id)
+            self.assertIsNotNone(session)
+            self.assertIsNone(err)
+
+        # 2. Expired JWT + Valid Refresh Token + Valid Cookie -> REFRESH_AVAILABLE
+        expired_jwt = self._make_mock_jwt(-60)
+        self.service.save_upes_session(
+            user_id=user_id,
+            access_token=expired_jwt,
+            student_code="500012345",
+            refresh_token="valid_ref",
+            cookies={"idp_session_info": "valid_cookie"},
+            cookie_expires_at=time.time() + 10000,
+            credential_generation=1
+        )
+        with patch.object(self.broker.browser_bridge, "is_cdp_available", return_value=False):
+            st = self.broker.get_session_status(user_id)
+            self.assertEqual(st["auth_status"], "REFRESH_AVAILABLE")
+
+        # 3. resolve_session executes headless refresh and returns new token
+        new_jwt = self._make_mock_jwt(7200)
+        with patch("requests.post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                "StatusCode": 200,
+                "Message": "success",
+                "Item": {"tokenInfo": {"accessToken": new_jwt, "refreshToken": "new_ref_gen2"}}
+            }
+            mock_post.return_value = mock_resp
+            session, err = self.broker.resolve_session(user_id)
+            self.assertIsNotNone(session)
+            self.assertEqual(session[0], new_jwt)
+            self.assertIsNone(err)
+
+        # 4. Expired JWT + Expired Cookie + No CDP -> AUTH_REQUIRED
+        self.service.save_upes_session(
+            user_id=user_id,
+            access_token=expired_jwt,
+            student_code="500012345",
+            refresh_token="ref",
+            cookies={"idp_session_info": "cookie"},
+            cookie_expires_at=time.time() - 3600,
+            credential_generation=2
+        )
+        with patch.object(self.broker.browser_bridge, "is_cdp_available", return_value=False):
+            st = self.broker.get_session_status(user_id)
+            self.assertEqual(st["auth_status"], "AUTH_REQUIRED")
+            session, err = self.broker.resolve_session(user_id)
+            self.assertIsNone(session)
+            self.assertIn("auth_required", err)
+
+    def test_get_session_status_sanitization(self):
+        """Verifies that get_session_status never leaks tokens or cookie values."""
+        user_id = "test_user_sanitize"
+        jwt = self._make_mock_jwt(3600)
+        self.service.save_upes_session(
+            user_id=user_id,
+            access_token=jwt,
+            student_code="500098765",
+            refresh_token="secret_refresh_123",
+            cookies={"idp_session_info": "secret_cookie_456"},
+            cookie_expires_at=time.time() + 10000,
+            credential_generation=3,
+            last_refresh_status="success"
+        )
+
+        status = self.broker.get_session_status(user_id)
+        # Check masked student code
+        self.assertEqual(status["student_code_masked"], "500***")
+        self.assertEqual(status["credential_generation"], 3)
+        self.assertTrue(status["access_token_available"])
+        self.assertTrue(status["refresh_token_available"])
+        self.assertTrue(status["sso_cookie_available"])
+
+        # Check that no sensitive strings are present in values
+        status_str = json.dumps(status)
+        self.assertNotIn(jwt, status_str)
+        self.assertNotIn("secret_refresh_123", status_str)
+        self.assertNotIn("secret_cookie_456", status_str)
+        self.assertNotIn("500098765", status_str)
+
+    def test_journal_recovery_case_b_stale_discarded(self):
+        """CASE B: DB gen N+1, Journal gen N -> stale journal discarded, DB unchanged."""
+        user_id = "test_user_stale_j"
+        self.service.save_upes_session(user_id, "tok_gen2", "50002", credential_generation=2, refresh_token="ref_gen2")
+        bundle_stale = {
+            "access_token": "tok_gen1_stale",
+            "student_code": "50002",
+            "api_url": "https://api.test",
+            "expires_at": time.time() + 7200,
+            "refresh_token": "ref_gen1_stale",
+            "cookies": {"idp_session_info": "cookie_b"},
+            "cookie_expires_at": time.time() + 20000,
+            "credential_generation": 1
+        }
+        timetable_sync.UpesSessionJournal.write_journal(user_id, 1, bundle_stale)
+        replayed = timetable_sync.UpesSessionJournal.recover_and_replay_journal(self.service, user_id)
+        self.assertEqual(replayed, user_id)
+        full = self.service.get_full_upes_session(user_id)
+        self.assertEqual(full["credential_generation"], 2)
+        self.assertEqual(full["access_token"], "tok_gen2")
+        self.assertEqual(full["refresh_token"], "ref_gen2")
+        self.assertFalse(os.path.exists(timetable_sync.UpesSessionJournal.get_journal_path()))
+
+    def test_journal_recovery_case_d_other_user_isolation(self):
+        """CASE D: Journal for other user -> target user not overwritten."""
+        user_target = "test_user_target"
+        self.service.save_upes_session(user_target, "tok_target", "50004", credential_generation=1, refresh_token="ref_target")
+        bundle_other = {
+            "access_token": "tok_other",
+            "student_code": "99999",
+            "api_url": "https://api.test",
+            "expires_at": time.time() + 7200,
+            "refresh_token": "ref_other",
+            "cookies": {"idp_session_info": "cookie_other"},
+            "cookie_expires_at": time.time() + 20000,
+            "credential_generation": 2
+        }
+        timetable_sync.UpesSessionJournal.write_journal("user_other", 2, bundle_other)
+        replayed = timetable_sync.UpesSessionJournal.recover_and_replay_journal(self.service, target_user_id=user_target)
+        self.assertIsNone(replayed)
+        full_target = self.service.get_full_upes_session(user_target)
+        self.assertEqual(full_target["credential_generation"], 1)
+        self.assertEqual(full_target["access_token"], "tok_target")
+        self.assertEqual(full_target["student_code"], "50004")
+        timetable_sync.UpesSessionJournal.cleanup_journal()
+
+    def test_journal_recovery_case_e_incomplete_fields_rejected(self):
+        """CASE E: Incomplete journal fields -> rejected, DB unchanged."""
+        user_id = "test_user_incomp"
+        self.service.save_upes_session(user_id, "tok_e", "50005", credential_generation=1, refresh_token="ref_e")
+        bundle_incomplete = {
+            "access_token": "tok_e_gen2",
+            "student_code": "50005",
+            "refresh_token": None  # Missing refresh token
+        }
+        timetable_sync.UpesSessionJournal.write_journal(user_id, 2, bundle_incomplete)
+        replayed = timetable_sync.UpesSessionJournal.recover_and_replay_journal(self.service, user_id)
+        self.assertIsNone(replayed)
+        full = self.service.get_full_upes_session(user_id)
+        self.assertEqual(full["credential_generation"], 1)
+        self.assertEqual(full["access_token"], "tok_e")
+        self.assertFalse(os.path.exists(timetable_sync.UpesSessionJournal.get_journal_path()))
+
+    def test_legacy_session_behavior_isolated(self):
+        """Verifies valid legacy session works and expired legacy transitions to AUTH_REQUIRED without crash."""
+        user_id = "test_legacy_iso"
+        valid_jwt = self._make_mock_jwt(7200)
+        self.service.save_upes_session(user_id, valid_jwt, "500011111", refresh_token=None, cookies=None)
+
+        with patch.object(self.broker.browser_bridge, "is_cdp_available", return_value=False):
+            st = self.broker.get_session_status(user_id)
+            self.assertEqual(st["auth_status"], "ACTIVE")
+            self.assertFalse(st["refresh_token_available"])
+            sess, err = self.broker.resolve_session(user_id)
+            self.assertIsNotNone(sess)
+            self.assertEqual(sess[0], valid_jwt)
+
+        # Expired legacy session
+        expired_jwt = self._make_mock_jwt(-3600)
+        self.service.save_upes_session(user_id, expired_jwt, "500011111", refresh_token=None, cookies=None)
+        with patch.object(self.broker.browser_bridge, "is_cdp_available", return_value=False):
+            st = self.broker.get_session_status(user_id)
+            self.assertEqual(st["auth_status"], "AUTH_REQUIRED")
+            sess, err = self.broker.resolve_session(user_id)
+            self.assertIsNone(sess)
+            self.assertIn("auth_required", err)
+
+
 if __name__ == "__main__":
     unittest.main()
 

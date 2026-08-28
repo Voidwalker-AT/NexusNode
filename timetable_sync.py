@@ -12,6 +12,7 @@ import base64
 import datetime
 import hashlib
 import json
+import logging
 import math
 import os
 import secrets
@@ -22,12 +23,14 @@ import time
 import urllib.parse
 import zoneinfo
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import config
+
+logger = logging.getLogger(__name__)
 
 # ==============================================================================
 # 1. NORMALIZED TIMETABLE DATA MODEL & TOLERANT PARSER
@@ -918,7 +921,7 @@ def init_timetable_tables(conn):
         );
     """)
 
-    # 7. Authenticated UPES Portal Sessions
+    # 7. Authenticated UPES Portal Sessions (with Session Bundle & Headless Rotation)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS upes_auth_sessions (
             user_id TEXT PRIMARY KEY,
@@ -926,14 +929,29 @@ def init_timetable_tables(conn):
             student_code TEXT NOT NULL,
             api_url TEXT,
             expires_at REAL,
+            encrypted_refresh_token TEXT,
+            encrypted_cookies TEXT,
+            cookie_expires_at REAL,
+            credential_generation INTEGER NOT NULL DEFAULT 1,
+            last_refresh_at REAL,
+            last_refresh_status TEXT,
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL
         );
     """)
-    try:
-        conn.execute("ALTER TABLE upes_auth_sessions ADD COLUMN expires_at REAL;")
-    except Exception:
-        pass
+    for col_def in [
+        "expires_at REAL",
+        "encrypted_refresh_token TEXT",
+        "encrypted_cookies TEXT",
+        "cookie_expires_at REAL",
+        "credential_generation INTEGER NOT NULL DEFAULT 1",
+        "last_refresh_at REAL",
+        "last_refresh_status TEXT"
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE upes_auth_sessions ADD COLUMN {col_def};")
+        except Exception:
+            pass
 
     # 8. Attendance Punch Records & Logs
     conn.execute("""
@@ -1170,10 +1188,11 @@ class TimetableSynchronizer:
 # 6. UPES BROWSER SESSION BRIDGE & SESSION BROKER
 # ==============================================================================
 
-def cdp_websocket_evaluate(ws_url: str, expression: str, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+def cdp_websocket_command(ws_url: str, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
     """
-    Pure Python standard-library implementation of a WebSocket client for Chrome DevTools Protocol (CDP).
-    Requires zero external dependencies. Works on standard Python, Termux, Windows, and Linux.
+    Pure Python standard-library implementation of a WebSocket command client for Chrome DevTools Protocol (CDP).
+    Supports arbitrary CDP domains (Runtime, Network, Storage, etc.).
+    Requires zero external dependencies. Works across standard Python, Termux, Windows, and Linux.
     """
     if not ws_url or not isinstance(ws_url, str):
         return None
@@ -1217,12 +1236,8 @@ def cdp_websocket_evaluate(ws_url: str, expression: str, timeout: float = 5.0) -
             # 2. Construct and send masked text frame
             payload = json.dumps({
                 "id": int(time.time() * 1000) % 1000000,
-                "method": "Runtime.evaluate",
-                "params": {
-                    "expression": expression,
-                    "returnByValue": True,
-                    "awaitPromise": True
-                }
+                "method": method,
+                "params": params or {}
             }).encode("utf-8")
 
             frame = bytearray([0x81])
@@ -1275,11 +1290,159 @@ def cdp_websocket_evaluate(ws_url: str, expression: str, timeout: float = 5.0) -
         return None
 
 
+def cdp_websocket_evaluate(ws_url: str, expression: str, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+    """Evaluates a JavaScript expression in the context of the target page using CDP WebSocket."""
+    return cdp_websocket_command(ws_url, "Runtime.evaluate", {
+        "expression": expression,
+        "returnByValue": True,
+        "awaitPromise": True
+    }, timeout=timeout)
+
+
+class UpesSessionJournal:
+    """
+    Encrypted Write-Ahead Recovery Journal for UPES Session Credential Rotation.
+    Guarantees crash-consistency across the network boundary between remote token rotation
+    and local database persistence.
+    """
+
+    @classmethod
+    def get_journal_path(cls) -> str:
+        vault_dir = getattr(config, "STORAGE_VAULT_DIR", "storage_vault")
+        os.makedirs(vault_dir, exist_ok=True)
+        return os.path.join(vault_dir, ".upes_session_journal.enc")
+
+    @classmethod
+    def write_journal(cls, user_id: str, generation: int, session_bundle: Dict[str, Any]) -> bool:
+        """Atomically writes an encrypted journal entry before database commit."""
+        try:
+            journal_path = cls.get_journal_path()
+            tmp_path = journal_path + f".{secrets.token_hex(4)}.tmp"
+
+            payload = {
+                "user_id": user_id,
+                "generation": generation,
+                "timestamp": time.time(),
+                "bundle": session_bundle
+            }
+            encrypted = OAuthTokenCrypto.encrypt(payload)
+            if not encrypted:
+                return False
+
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(encrypted)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass
+
+            if hasattr(os, "chmod") and os.name != "nt":
+                try:
+                    os.chmod(tmp_path, 0o600)
+                except Exception:
+                    pass
+
+            os.replace(tmp_path, journal_path)
+            return True
+        except Exception as e:
+            logger.warning(f"[AUTH_JOURNAL] Failed to write recovery journal: {e}")
+            return False
+
+    @classmethod
+    @classmethod
+    def recover_and_replay_journal(cls, service: 'TimetableService', target_user_id: Optional[str] = None) -> Optional[str]:
+        """
+        Inspects for an uncommitted recovery journal, validates integrity and required fields,
+        replays newer credentials into SQLite, and cleans up the journal.
+        """
+        journal_path = cls.get_journal_path()
+        if not os.path.exists(journal_path):
+            return None
+
+        try:
+            with open(journal_path, "r", encoding="utf-8") as f:
+                encrypted = f.read().strip()
+
+            if not encrypted:
+                cls.cleanup_journal()
+                return None
+
+            payload = OAuthTokenCrypto.decrypt(encrypted)
+            if not isinstance(payload, dict):
+                logger.warning("[AUTH_JOURNAL] Malformed/undecryptable journal detected. Cleaning up.")
+                cls.cleanup_journal()
+                return None
+
+            user_id = payload.get("user_id")
+            journal_gen = payload.get("generation", 1)
+            bundle = payload.get("bundle", {})
+
+            if not user_id or not isinstance(bundle, dict):
+                logger.warning("[AUTH_JOURNAL] Journal missing user_id or bundle. Discarding.")
+                cls.cleanup_journal()
+                return None
+
+            # Case D: If target_user_id specified and differs, do not replay for another user
+            if target_user_id and user_id != target_user_id:
+                logger.info(f"[AUTH_JOURNAL] Journal belongs to user '{user_id}', ignoring for target '{target_user_id}'.")
+                return None
+
+            # Case E: Journal must contain valid, non-empty access_token and refresh_token
+            access_tok = bundle.get("access_token")
+            refresh_tok = bundle.get("refresh_token")
+            if not access_tok or not refresh_tok or not isinstance(access_tok, str) or not isinstance(refresh_tok, str):
+                logger.warning("[AUTH_JOURNAL] Journal contains incomplete/missing token fields. Discarding.")
+                cls.cleanup_journal()
+                return None
+
+            # Check existing generation in DB
+            existing = service.get_full_upes_session(user_id)
+            current_gen = existing.get("credential_generation", 0) if existing else 0
+
+            # Case A vs Case B: Replay only if journal is newer or equal
+            if journal_gen >= current_gen:
+                service.save_upes_session(
+                    user_id=user_id,
+                    access_token=access_tok,
+                    student_code=bundle.get("student_code", ""),
+                    api_url=bundle.get("api_url"),
+                    expires_at=bundle.get("expires_at"),
+                    refresh_token=refresh_tok,
+                    cookies=bundle.get("cookies"),
+                    cookie_expires_at=bundle.get("cookie_expires_at"),
+                    credential_generation=journal_gen,
+                    last_refresh_at=payload.get("timestamp", time.time()),
+                    last_refresh_status="recovered_from_journal"
+                )
+                logger.info(f"[AUTH_JOURNAL] Successfully replayed recovered session journal (gen {journal_gen}) for user '{user_id}'.")
+            else:
+                logger.info(f"[AUTH_JOURNAL] Discarding stale journal (gen {journal_gen} < db gen {current_gen}).")
+
+            cls.cleanup_journal()
+            return user_id
+        except Exception as e:
+            logger.warning(f"[AUTH_JOURNAL] Error during journal recovery: {e}")
+            cls.cleanup_journal()
+            return None
+
+    @classmethod
+    def cleanup_journal(cls):
+        """Safely removes the journal file."""
+        try:
+            journal_path = cls.get_journal_path()
+            if os.path.exists(journal_path):
+                os.remove(journal_path)
+        except Exception:
+            pass
+
+
 class UpesBrowserSessionBridge:
     """
     Connects to local Chrome / Chromium instance via Chrome DevTools Protocol (CDP),
-    locates open UPES portal tabs, and securely extracts the active session token
-    and student UUID from sessionStorage without requiring manual copy-pasting.
+    locates open UPES portal tabs, and securely extracts the active session bundle
+    (access token, refresh token, student UUID, and idp_session_info SSO cookie)
+    without requiring manual copy-pasting.
     """
 
     def __init__(self, timetable_service: 'TimetableService'):
@@ -1338,8 +1501,9 @@ class UpesBrowserSessionBridge:
 
     def acquire_session_from_browser(self, user_id: str) -> Optional[Tuple[str, str, str, Optional[float]]]:
         """
-        Attempts to acquire an authenticated UPES session from the running browser.
-        If found and valid, persists it encrypted into SQLite and returns the session tuple.
+        Attempts to acquire an authenticated UPES session bundle from the running browser.
+        Extracts access token, refresh token, student UUID, and the idp_session_info SSO cookie.
+        Persists the complete session bundle encrypted into SQLite.
         """
         self.last_check_timestamp = time.time()
         if not getattr(config, "UPES_BROWSER_BRIDGE_ENABLED", True):
@@ -1355,12 +1519,15 @@ class UpesBrowserSessionBridge:
             self.last_check_status = "upes_tab_not_found"
             return None
 
-        # Extract session tokens and student metadata from page storage (sessionStorage and localStorage)
+        ws_url = target.get("webSocketDebuggerUrl")
+
+        # 1. Extract session tokens and student metadata from page storage
         js_extract = """
         (() => {
             try {
                 let jwtRaw = null;
                 let studentRaw = null;
+                let refreshTokenRaw = null;
 
                 const scan = (store) => {
                     if (!store) return;
@@ -1371,8 +1538,13 @@ class UpesBrowserSessionBridge:
                         try {
                             const p = JSON.parse(v);
                             if (p && typeof p === 'object') {
-                                if (p.Identity && p.Identity.AccessToken) jwtRaw = v;
-                                else if (p.access_token) jwtRaw = v;
+                                if (p.Identity && p.Identity.AccessToken) {
+                                    jwtRaw = v;
+                                    if (p.Identity.RefreshToken) refreshTokenRaw = p.Identity.RefreshToken;
+                                } else if (p.access_token) {
+                                    jwtRaw = v;
+                                    if (p.refresh_token) refreshTokenRaw = p.refresh_token;
+                                }
                                 if (p.StudentId) studentRaw = p.StudentId;
                                 else if (p.StudentCode) studentRaw = p.StudentCode;
                             }
@@ -1389,7 +1561,7 @@ class UpesBrowserSessionBridge:
                 scan(sessionStorage);
                 scan(localStorage);
 
-                return JSON.stringify({ jwt: jwtRaw, student: studentRaw });
+                return JSON.stringify({ jwt: jwtRaw, student: studentRaw, refresh: refreshTokenRaw });
             } catch (e) {
                 return JSON.stringify({ error: e.toString() });
             }
@@ -1415,17 +1587,21 @@ class UpesBrowserSessionBridge:
             self.last_check_status = "no_jwt_in_session"
             return None
 
-        # Extract access token string
         access_token = None
+        refresh_token = data.get("refresh")
         if isinstance(jwt_raw, str):
             try:
                 jwt_obj = json.loads(jwt_raw)
                 if isinstance(jwt_obj, dict):
                     access_token = jwt_obj.get("Identity", {}).get("AccessToken") or jwt_obj.get("access_token")
+                    if not refresh_token:
+                        refresh_token = jwt_obj.get("Identity", {}).get("RefreshToken") or jwt_obj.get("refresh_token")
             except Exception:
                 access_token = jwt_raw.strip()
         elif isinstance(jwt_raw, dict):
             access_token = jwt_raw.get("Identity", {}).get("AccessToken") or jwt_raw.get("access_token")
+            if not refresh_token:
+                refresh_token = jwt_raw.get("Identity", {}).get("RefreshToken") or jwt_raw.get("refresh_token")
 
         if not access_token:
             self.last_check_status = "access_token_missing"
@@ -1442,11 +1618,10 @@ class UpesBrowserSessionBridge:
             except Exception:
                 student_code = str(student_raw).strip()
 
-        # Fallback to existing configured student code if present
         if not student_code:
-            existing = self.service.get_upes_session(user_id)
-            if existing and existing[1]:
-                student_code = existing[1]
+            existing = self.service.get_full_upes_session(user_id)
+            if existing and existing.get("student_code"):
+                student_code = existing["student_code"]
             elif getattr(config, "UPES_STUDENT_CODE", None):
                 student_code = config.UPES_STUDENT_CODE
 
@@ -1454,20 +1629,39 @@ class UpesBrowserSessionBridge:
             self.last_check_status = "student_code_unresolved"
             return None
 
-        # Check token expiration
         expires_at = decode_jwt_expiration(access_token)
         now = time.time()
-        if expires_at and now >= (expires_at - 300):
+        if expires_at and now >= (expires_at - 300) and not refresh_token:
             self.last_check_status = "browser_session_expired"
             return None
 
-        # Persist newly acquired session encrypted via AES-GCM
+        # 2. Extract ONLY required idp_session_info cookie via CDP
+        cookies_dict = None
+        cookie_expires_at = None
+        if ws_url:
+            cookie_cmd_resp = cdp_websocket_command(ws_url, "Network.getCookies", {"urls": ["https://myupes-beta.upes.ac.in"]}, timeout=self.timeout)
+            if cookie_cmd_resp and isinstance(cookie_cmd_resp, dict):
+                c_list = cookie_cmd_resp.get("result", {}).get("cookies", [])
+                for c in c_list:
+                    if c.get("name") == "idp_session_info":
+                        cookies_dict = {"idp_session_info": c.get("value")}
+                        exp = c.get("expires", 0)
+                        cookie_expires_at = exp if exp > 0 else None
+                        break
+
+        # 3. Persist newly acquired session bundle encrypted via AES-GCM
         self.service.save_upes_session(
             user_id=user_id,
             access_token=access_token,
             student_code=student_code,
             api_url=config.UPES_TIMETABLE_API_URL,
-            expires_at=expires_at
+            expires_at=expires_at,
+            refresh_token=refresh_token,
+            cookies=cookies_dict,
+            cookie_expires_at=cookie_expires_at,
+            credential_generation=1,
+            last_refresh_at=now,
+            last_refresh_status="browser_acquired"
         )
 
         self.last_check_status = "acquired_successfully"
@@ -1477,8 +1671,8 @@ class UpesBrowserSessionBridge:
 class UpesSessionBroker:
     """
     Session Broker abstraction for UPES Portal.
-    Coordinates between encrypted stored sessions and the UpesBrowserSessionBridge,
-    evaluates token TTL/expiration, and executes authenticated timetable retrieval.
+    Coordinates between encrypted stored sessions, headless token refresh,
+    and UpesBrowserSessionBridge fallback. Implements robust crash-recovery journal protection.
     """
 
     def __init__(self, timetable_service: 'TimetableService'):
@@ -1486,77 +1680,291 @@ class UpesSessionBroker:
         self.browser_bridge = UpesBrowserSessionBridge(timetable_service)
 
     def get_session_status(self, user_id: str) -> Dict[str, Any]:
-        """Returns non-sensitive session health status and TTL without leaking tokens."""
-        session_info = self.service.get_upes_session(user_id)
+        """Returns comprehensive non-sensitive session health status, generation, and TTLs."""
+        # Recover uncommitted journal if present
+        UpesSessionJournal.recover_and_replay_journal(self.service, user_id)
+
+        full = self.service.get_full_upes_session(user_id)
         browser_avail = self.browser_bridge.is_cdp_available()
         browser_tab = self.browser_bridge.find_upes_target() is not None if browser_avail else False
 
-        if not session_info:
+        if not full or not full.get("access_token"):
             return {
                 "configured": False,
                 "status": "not_configured",
-                "browser_available": browser_avail,
-                "browser_authenticated": browser_tab,
-                "authorization_available": False,
+                "auth_status": "NOT_CONFIGURED",
+                "access_token_available": False,
+                "access_token_expires_at": None,
+                "access_token_ttl_seconds": 0,
                 "expires_at": None,
                 "ttl_seconds": 0,
+                "refresh_token_available": False,
+                "sso_cookie_available": False,
+                "sso_cookie_expires_at": None,
+                "sso_cookie_ttl_seconds": 0,
+                "credential_generation": 0,
+                "last_refresh_at": None,
+                "last_refresh_status": None,
+                "browser_bridge_available": browser_avail,
+                "browser_available": browser_avail,
+                "browser_authenticated": browser_tab,
+                "student_code_masked": None,
                 "last_bridge_status": self.browser_bridge.last_check_status
             }
 
-        _, student_code, _, expires_at = session_info
         now = time.time()
-        is_expired = (expires_at is not None and now >= expires_at)
-        ttl = max(0, int(expires_at - now)) if expires_at else None
+        expires_at = full.get("expires_at")
+        access_ttl = max(0, int(expires_at - now)) if expires_at else None
+        is_access_valid = (expires_at is None or now < (expires_at - 300))
+
+        has_refresh = bool(full.get("refresh_token"))
+        cookies = full.get("cookies") or {}
+        has_cookie = bool(cookies.get("idp_session_info"))
+        cookie_exp = full.get("cookie_expires_at")
+        cookie_ttl = max(0, int(cookie_exp - now)) if cookie_exp else 0
+        is_cookie_valid = (cookie_exp is None or now < (cookie_exp - 60))
+
+        if is_access_valid:
+            auth_status = "ACTIVE"
+        elif has_refresh and has_cookie and is_cookie_valid:
+            auth_status = "REFRESH_AVAILABLE"
+        elif browser_tab:
+            auth_status = "REACQUISITION_AVAILABLE"
+        else:
+            auth_status = "AUTH_REQUIRED"
+
+        student_code = full.get("student_code", "")
+        masked_student = (student_code[:3] + "***") if len(student_code) > 4 else "***"
 
         return {
             "configured": True,
-            "status": "expired" if is_expired else "active",
+            "status": "active" if (expires_at is None or now < expires_at) else "expired",
+            "auth_status": auth_status,
+            "access_token_available": bool(full.get("access_token")),
+            "access_token_expires_at": expires_at,
+            "access_token_ttl_seconds": access_ttl or 0,
+            "expires_at": expires_at,
+            "ttl_seconds": access_ttl,
+            "refresh_token_available": has_refresh,
+            "sso_cookie_available": has_cookie,
+            "sso_cookie_expires_at": cookie_exp,
+            "sso_cookie_ttl_seconds": cookie_ttl,
+            "credential_generation": full.get("credential_generation", 1),
+            "last_refresh_at": full.get("last_refresh_at"),
+            "last_refresh_status": full.get("last_refresh_status"),
+            "browser_bridge_available": browser_avail,
             "browser_available": browser_avail,
             "browser_authenticated": browser_tab,
-            "authorization_available": not is_expired,
-            "student_code_masked": (student_code[:3] + "***") if len(student_code) > 4 else "***",
-            "expires_at": expires_at,
-            "ttl_seconds": ttl,
+            "student_code_masked": masked_student,
             "last_bridge_status": self.browser_bridge.last_check_status
         }
+
+    def refresh_upes_session_headless(self, user_id: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        """
+        Executes unattended headless token refresh against UPES SSO gateway using the persisted
+        encrypted refresh token and idp_session_info cookie.
+        Guarantees single-use token rotation persistence and write-ahead recovery journal protection.
+        """
+        UpesSessionJournal.recover_and_replay_journal(self.service, user_id)
+
+        full_session = self.service.get_full_upes_session(user_id)
+        if not full_session or not full_session.get("access_token"):
+            return False, "no_session", None
+
+        refresh_token = full_session.get("refresh_token")
+        cookies = full_session.get("cookies") or {}
+        cookie_val = cookies.get("idp_session_info")
+        cookie_expires_at = full_session.get("cookie_expires_at")
+        student_code = full_session.get("student_code", "")
+        api_url = full_session.get("api_url") or config.UPES_TIMETABLE_API_URL
+        current_gen = full_session.get("credential_generation", 1)
+
+        if not refresh_token:
+            return False, "refresh_unavailable_no_refresh_token", None
+
+        if not cookie_val:
+            return False, "refresh_unavailable_no_sso_cookie", None
+
+        now = time.time()
+        if cookie_expires_at is not None and now >= (cookie_expires_at - 60):
+            return False, "sso_cookie_expired", None
+
+        refresh_url = f"https://myupes-beta.upes.ac.in/sso/user/oauth2/refresh-token?q={secrets.token_hex(10)}"
+        client_secret = getattr(config, "UPES_CLIENT_SECRET", "ku7GUMtyT8er51rTfTc7HC")
+        client_id = getattr(config, "UPES_CLIENT_ID", 3)
+
+        payload = {
+            "ClientId": client_id,
+            "ClientSecret": client_secret,
+            "RefreshToken": refresh_token
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*"
+        }
+        req_cookies = {
+            "idp_session_info": cookie_val
+        }
+
+        try:
+            resp = requests.post(refresh_url, json=payload, headers=headers, cookies=req_cookies, timeout=15)
+        except Exception as e:
+            logger.warning(f"[AUTH_REFRESH] Headless refresh network error: {e}")
+            return False, f"network_error: {str(e)}", None
+
+        if resp.status_code != 200:
+            logger.warning(f"[AUTH_REFRESH] Headless refresh HTTP {resp.status_code}")
+            return False, f"http_{resp.status_code}", None
+
+        try:
+            resp_data = resp.json()
+        except Exception:
+            return False, "invalid_json_response", None
+
+        payload_status = resp_data.get("StatusCode")
+        if payload_status != 200:
+            msg = resp_data.get("Message", "failed to refresh token")
+            logger.warning(f"[AUTH_REFRESH] Headless refresh rejected by server (StatusCode={payload_status}): {msg}")
+            return False, f"rejected_{payload_status}: {msg}", None
+
+        token_info = (resp_data.get("Item") or {}).get("tokenInfo") or {}
+        new_access = token_info.get("accessToken")
+        new_refresh = token_info.get("refreshToken")
+
+        if not new_access or not new_refresh:
+            return False, "missing_tokens_in_response", None
+
+        new_expires_at = decode_jwt_expiration(new_access)
+        new_gen = current_gen + 1
+
+        new_bundle = {
+            "access_token": new_access,
+            "student_code": student_code,
+            "api_url": api_url,
+            "expires_at": new_expires_at,
+            "refresh_token": new_refresh,
+            "cookies": {"idp_session_info": cookie_val},
+            "cookie_expires_at": cookie_expires_at,
+            "credential_generation": new_gen
+        }
+
+        # 1. Write-Ahead Journal BEFORE SQLite Commit
+        UpesSessionJournal.write_journal(user_id, new_gen, new_bundle)
+
+        # 2. Commit to SQLite
+        self.service.save_upes_session(
+            user_id=user_id,
+            access_token=new_access,
+            student_code=student_code,
+            api_url=api_url,
+            expires_at=new_expires_at,
+            refresh_token=new_refresh,
+            cookies={"idp_session_info": cookie_val},
+            cookie_expires_at=cookie_expires_at,
+            credential_generation=new_gen,
+            last_refresh_at=now,
+            last_refresh_status="success"
+        )
+
+        # 3. Clean up Journal
+        UpesSessionJournal.cleanup_journal()
+        logger.info(f"[AUTH_REFRESH] Headless token refresh succeeded (gen {new_gen}) for user '{user_id}'.")
+
+        summary = {
+            "status": "success",
+            "credential_generation": new_gen,
+            "expires_at": new_expires_at,
+            "ttl_seconds": max(0, int(new_expires_at - now)) if new_expires_at else 0
+        }
+        return True, "refreshed_successfully", summary
+
+    def resolve_session(self, user_id: str) -> Tuple[Optional[Tuple[str, str, str, Optional[float]]], Optional[str]]:
+        """
+        Authoritative state machine resolving UPES authentication for user_id.
+
+        Resolution Flow:
+          1. Replay any uncommitted recovery journal
+          2. Check stored session:
+             - If access token valid (TTL >= 300s or unexpired) -> ACTIVE
+             - If access token near expiry or expired:
+                 - If refresh_token + unexpired SSO cookie -> Execute headless refresh
+                 - If headless refresh succeeds -> ACTIVE
+                 - If headless refresh fails -> Fallback to browser bridge
+          3. Browser bridge fallback (if local Chrome available) -> ACTIVE
+          4. If all fail -> AUTH_REQUIRED
+        """
+        now = time.time()
+        UpesSessionJournal.recover_and_replay_journal(self.service, user_id)
+
+        full = self.service.get_full_upes_session(user_id)
+        if full and full.get("access_token"):
+            expires_at = full.get("expires_at")
+            has_refresh = bool(full.get("refresh_token"))
+            cookie_val = (full.get("cookies") or {}).get("idp_session_info")
+            cookie_exp = full.get("cookie_expires_at")
+
+            # 1. Active token with safe margin (> 5 mins) or unexpired/opaque token
+            if expires_at is None or now < (expires_at - 300):
+                return (full["access_token"], full.get("student_code", ""), full.get("api_url") or config.UPES_TIMETABLE_API_URL, expires_at), None
+
+            # 2. JWT near expiry or expired; attempt headless refresh if refresh token and unexpired cookie exist
+            if has_refresh and cookie_val and (cookie_exp is None or now < (cookie_exp - 60)):
+                success, msg, summary = self.refresh_upes_session_headless(user_id)
+                if success:
+                    refreshed = self.service.get_full_upes_session(user_id)
+                    if refreshed and refreshed.get("access_token"):
+                        return (refreshed["access_token"], refreshed.get("student_code", ""), refreshed.get("api_url") or config.UPES_TIMETABLE_API_URL, refreshed.get("expires_at")), None
+                logger.info(f"[AUTH_BROKER] Headless refresh attempt ({msg}); attempting browser fallback.")
+
+        # 3. Fallback to browser session bridge if available
+        acquired = self.browser_bridge.acquire_session_from_browser(user_id)
+        if acquired:
+            return acquired, None
+
+        # 4. All resolution paths exhausted
+        bridge_hint = self.browser_bridge.last_check_status
+        return None, f"auth_required: UPES session expired or unavailable (Bridge: {bridge_hint}). Interactive portal login required."
+
+    def execute_with_retry(self, user_id: str, api_fn: Callable[[str, str], Tuple[Any, Optional[str]]]) -> Tuple[Any, Optional[str]]:
+        """
+        Executes an authenticated UPES API function with automatic single-retry on 401/auth invalidation.
+        """
+        session_tuple, err = self.resolve_session(user_id)
+        if err or not session_tuple:
+            return None, err
+
+        token, student_code, _, _ = session_tuple
+        data, err = api_fn(token, student_code)
+
+        if err and "auth_required" in err:
+            logger.info(f"[AUTH_BROKER] Received auth_required from API. Attempting single refresh/reacquisition retry...")
+            full = self.service.get_full_upes_session(user_id)
+            if full and full.get("refresh_token") and (full.get("cookies") or {}).get("idp_session_info"):
+                succ, _, _ = self.refresh_upes_session_headless(user_id)
+                if not succ:
+                    self.browser_bridge.acquire_session_from_browser(user_id)
+            else:
+                self.browser_bridge.acquire_session_from_browser(user_id)
+
+            session_tuple, err = self.resolve_session(user_id)
+            if err or not session_tuple:
+                return None, err
+            token, student_code, _, _ = session_tuple
+            data, err = api_fn(token, student_code)
+
+        return data, err
 
     def fetch_timetable_json(self, user_id: str) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
         """
         Retrieves raw timetable JSON for a given user from UPES API Gateway.
-        Automatically attempts browser-session bridge acquisition if stored token
-        is absent, expired, or near expiry.
+        Coordinates authentication through resolve_session and execute_with_retry.
         """
-        session_info = self.service.get_upes_session(user_id)
-        now = time.time()
+        def _call(token, student_code):
+            full = self.service.get_full_upes_session(user_id)
+            api_url = full.get("api_url") if full else config.UPES_TIMETABLE_API_URL
+            return fetch_upes_timetable(token, student_code, api_url)
 
-        # 1. If stored session is missing or expiring soon, attempt browser bridge acquisition
-        if not session_info or (session_info[3] and now >= (session_info[3] - 300)):
-            acquired = self.browser_bridge.acquire_session_from_browser(user_id)
-            if acquired:
-                session_info = acquired
-
-        if not session_info:
-            bridge_hint = self.browser_bridge.last_check_status
-            return None, f"auth_required: No valid UPES session found (Bridge: {bridge_hint}). Please log into UPES portal in browser."
-
-        token, student_code, api_url, expires_at = session_info
-
-        # 2. Check if token is expired
-        if expires_at and now >= (expires_at - 300):
-            exp_iso = datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-            return None, f"auth_required: UPES access token expired at {exp_iso}. Interactive login required."
-
-        # 3. Live HTTP request
-        items, err = fetch_upes_timetable(token, student_code, api_url)
-
-        # 4. If token was invalidated server-side (401/403), attempt one re-acquisition via bridge
-        if err and "auth_required" in err:
-            acquired = self.browser_bridge.acquire_session_from_browser(user_id)
-            if acquired:
-                token, student_code, api_url, expires_at = acquired
-                items, err = fetch_upes_timetable(token, student_code, api_url)
-
-        return items, err
+        return self.execute_with_retry(user_id, _call)
 
 
 class TimetableService:
@@ -1657,7 +2065,6 @@ class TimetableService:
         finally:
             conn.close()
 
-        # Also save to storage_vault/upes_timetable.json as persistent backup if admin or single-user
         try:
             with open(config.UPES_TIMETABLE_JSON_PATH, "w", encoding="utf-8") as f:
                 f.write(raw_json_str)
@@ -1666,39 +2073,98 @@ class TimetableService:
 
         return True, "Timetable stored successfully.", len(sessions)
 
-    def save_upes_session(self, user_id: str, access_token: str, student_code: str, api_url: Optional[str] = None, expires_at: Optional[float] = None):
-        """Encrypts and persists UPES portal session access token and student SAP ID / UUID, tracking expiration."""
-        token_clean = access_token.strip()
-        encrypted = OAuthTokenCrypto.encrypt({"access_token": token_clean})
+    def save_upes_session(
+        self,
+        user_id: str,
+        access_token: str,
+        student_code: str,
+        api_url: Optional[str] = None,
+        expires_at: Optional[float] = None,
+        refresh_token: Optional[str] = None,
+        cookies: Optional[Dict[str, Any]] = None,
+        cookie_expires_at: Optional[float] = None,
+        credential_generation: int = 1,
+        last_refresh_at: Optional[float] = None,
+        last_refresh_status: Optional[str] = None
+    ):
+        """Encrypts and persists complete UPES portal session bundle."""
+        token_clean = access_token.strip() if access_token else ""
+        enc_access = OAuthTokenCrypto.encrypt({"access_token": token_clean})
+        enc_refresh = OAuthTokenCrypto.encrypt({"refresh_token": refresh_token.strip()}) if refresh_token else None
+        enc_cookies = OAuthTokenCrypto.encrypt(cookies) if cookies else None
         now = time.time()
 
-        if expires_at is None:
+        if expires_at is None and token_clean:
             expires_at = decode_jwt_expiration(token_clean)
 
         conn = self.conn_factory()
         try:
             conn.execute("""
                 INSERT OR REPLACE INTO upes_auth_sessions
-                (user_id, encrypted_access_token, student_code, api_url, expires_at, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM upes_auth_sessions WHERE user_id = ?), ?), ?)
-            """, (user_id, encrypted, student_code.strip(), api_url, expires_at, user_id, now, now))
+                (user_id, encrypted_access_token, student_code, api_url, expires_at,
+                 encrypted_refresh_token, encrypted_cookies, cookie_expires_at,
+                 credential_generation, last_refresh_at, last_refresh_status,
+                 created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        COALESCE((SELECT created_at FROM upes_auth_sessions WHERE user_id = ?), ?), ?)
+            """, (
+                user_id, enc_access, student_code.strip() if student_code else "", api_url, expires_at,
+                enc_refresh, enc_cookies, cookie_expires_at,
+                credential_generation, last_refresh_at, last_refresh_status,
+                user_id, now, now
+            ))
             conn.commit()
         finally:
             conn.close()
 
-    def get_upes_session(self, user_id: str) -> Optional[Tuple[str, str, str, Optional[float]]]:
-        """Returns (access_token, student_code, api_url, expires_at) or fallback to config if present."""
+    def get_full_upes_session(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieves and decrypts complete UPES session bundle without leaking credentials."""
         conn = self.conn_factory()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT encrypted_access_token, student_code, api_url, expires_at FROM upes_auth_sessions WHERE user_id = ?", (user_id,))
+            cur.execute("""
+                SELECT encrypted_access_token, student_code, api_url, expires_at,
+                       encrypted_refresh_token, encrypted_cookies, cookie_expires_at,
+                       credential_generation, last_refresh_at, last_refresh_status,
+                       created_at, updated_at
+                FROM upes_auth_sessions WHERE user_id = ?
+            """, (user_id,))
             row = cur.fetchone()
-            if row:
-                token_data = OAuthTokenCrypto.decrypt(row[0])
-                if token_data and "access_token" in token_data:
-                    return token_data["access_token"], row[1] or "", row[2] or config.UPES_TIMETABLE_API_URL, row[3]
+            if not row:
+                return None
+
+            access_data = OAuthTokenCrypto.decrypt(row[0]) if row[0] else None
+            access_token = access_data.get("access_token") if access_data else None
+
+            refresh_data = OAuthTokenCrypto.decrypt(row[4]) if row[4] else None
+            refresh_token = refresh_data.get("refresh_token") if refresh_data else None
+
+            cookies_data = OAuthTokenCrypto.decrypt(row[5]) if row[5] else None
+            cookies = cookies_data if isinstance(cookies_data, dict) else None
+
+            return {
+                "user_id": user_id,
+                "access_token": access_token,
+                "student_code": row[1] or "",
+                "api_url": row[2] or config.UPES_TIMETABLE_API_URL,
+                "expires_at": row[3],
+                "refresh_token": refresh_token,
+                "cookies": cookies,
+                "cookie_expires_at": row[6],
+                "credential_generation": row[7] or 1,
+                "last_refresh_at": row[8],
+                "last_refresh_status": row[9],
+                "created_at": row[10],
+                "updated_at": row[11]
+            }
         finally:
             conn.close()
+
+    def get_upes_session(self, user_id: str) -> Optional[Tuple[str, str, str, Optional[float]]]:
+        """Backwards-compatible accessor returning (access_token, student_code, api_url, expires_at)."""
+        full = self.get_full_upes_session(user_id)
+        if full and full.get("access_token"):
+            return full["access_token"], full["student_code"], full["api_url"], full["expires_at"]
 
         # Fallback to config environment variables if configured
         if config.UPES_ACCESS_TOKEN and config.UPES_STUDENT_CODE:
@@ -1708,7 +2174,8 @@ class TimetableService:
         return None
 
     def delete_upes_session(self, user_id: str) -> bool:
-        """Removes stored UPES portal session credentials."""
+        """Removes stored UPES portal session credentials and recovery journal."""
+        UpesSessionJournal.cleanup_journal()
         conn = self.conn_factory()
         try:
             conn.execute("DELETE FROM upes_auth_sessions WHERE user_id = ?", (user_id,))
@@ -1943,41 +2410,43 @@ class TimetableService:
         except Exception:
             pass
 
-        token_expires_at = upes_session[3] if upes_session else None
-        token_expired = False
-        token_ttl_seconds = None
-        if token_expires_at:
-            token_expired = time.time() >= token_expires_at
-            token_ttl_seconds = max(0, int(token_expires_at - time.time()))
-
+        broker_status = self.session_broker.get_session_status(user_id)
         bridge = self.session_broker.browser_bridge
-        browser_available = bridge.is_cdp_available()
-        browser_authenticated = bridge.find_upes_target() is not None if browser_available else False
-
-        auth_status = "not_configured"
-        if upes_configured:
-            auth_status = "expired" if token_expired else "active"
 
         return {
             "upes_configured": upes_configured,
-            "auth_status": auth_status,
-            "browser_available": browser_available,
-            "browser_authenticated": browser_authenticated,
-            "authorization_available": upes_configured and not token_expired,
-            "authorization_expires_at": token_expires_at,
-            "authorization_ttl_seconds": token_ttl_seconds,
+            "auth_status": broker_status.get("auth_status", "NOT_CONFIGURED"),
+            "access_token_available": broker_status.get("access_token_available", False),
+            "access_token_expires_at": broker_status.get("access_token_expires_at"),
+            "access_token_ttl_seconds": broker_status.get("access_token_ttl_seconds", 0),
+            "refresh_token_available": broker_status.get("refresh_token_available", False),
+            "sso_cookie_available": broker_status.get("sso_cookie_available", False),
+            "sso_cookie_expires_at": broker_status.get("sso_cookie_expires_at"),
+            "sso_cookie_ttl_seconds": broker_status.get("sso_cookie_ttl_seconds", 0),
+            "credential_generation": broker_status.get("credential_generation", 1),
+            "last_refresh_at": broker_status.get("last_refresh_at"),
+            "last_refresh_status": broker_status.get("last_refresh_status"),
+            "browser_available": broker_status.get("browser_bridge_available", False),
+            "browser_authenticated": broker_status.get("browser_authenticated", False),
+            "authorization_available": broker_status.get("auth_status") in ("ACTIVE", "REFRESH_AVAILABLE"),
+            "authorization_expires_at": broker_status.get("access_token_expires_at"),
+            "authorization_ttl_seconds": broker_status.get("access_token_ttl_seconds"),
+            "upes_token_expires_at": broker_status.get("access_token_expires_at"),
+            "upes_token_expired": broker_status.get("auth_status") not in ("ACTIVE", "REFRESH_AVAILABLE"),
+            "upes_token_ttl_seconds": broker_status.get("access_token_ttl_seconds"),
             "last_browser_session_check": bridge.last_check_timestamp,
             "last_bridge_status": bridge.last_check_status,
             "upes_student_code_masked": student_code_display,
             "upes_api_url": config.UPES_TIMETABLE_API_URL,
-            "upes_token_expires_at": token_expires_at,
-            "upes_token_expired": token_expired,
-            "upes_token_ttl_seconds": token_ttl_seconds,
             "google_connected": is_connected,
             "connected_email": connected_email,
+            "google_email": connected_email,
             "calendar_id": calendar_id,
-            "scheduled_enabled": enabled,
+            "google_calendar_id": calendar_id,
             "sync_interval_seconds": interval_seconds,
+            "sync_enabled": enabled,
+            "scheduled_enabled": enabled,
+            "next_sync_run": next_run,
             "next_scheduled_run": next_run,
             "last_sync": last_sync,
             "last_upes_fetch": last_upes_fetch

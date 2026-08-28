@@ -36,6 +36,7 @@ from flask import Flask, request, jsonify, render_template, send_file, Response,
 import config
 from resource_governor import governor, ResourceGovernor
 import timetable_sync
+import attendance_sync
 
 # ==============================================================================
 # FLASK APP SETUP & LOCKS
@@ -76,6 +77,7 @@ def get_db_connection(db_file: str = None) -> sqlite3.Connection:
 
 
 timetable_service = timetable_sync.TimetableService(get_db_connection)
+attendance_service = attendance_sync.AttendanceService(get_db_connection, timetable_service.session_broker)
 
 
 # --- PBKDF2 Password Helpers (must be defined before init_unified_db seeding) ---
@@ -403,6 +405,8 @@ def init_unified_db():
 
             # Initialize Google OAuth and Timetable Synchronization tables
             timetable_sync.init_timetable_tables(conn)
+            # Initialize Authoritative UPES Attendance tables
+            attendance_sync.init_attendance_tables(conn)
 
             # Seed Default Scheduled Jobs
             default_jobs = [
@@ -2033,11 +2037,11 @@ class SchedulerDaemon(threading.Thread):
 
 
 def run_timetable_sync_job(task_obj: dict = None):
-    """Executes scheduled 3-hour timetable synchronization for all active users."""
+    """Executes scheduled 3-hour timetable and attendance synchronization for all active users."""
     if task_obj is None:
         task_obj = {'logs': []}
-    task_obj.setdefault('logs', []).append("Executing scheduled 3-hour UPES Timetable -> Google Calendar sync...")
-    log_event("INFO", "TIMETABLE", "Timetable 3-hour sync job started.")
+    task_obj.setdefault('logs', []).append("Executing scheduled 3-hour UPES Timetable & Attendance sync...")
+    log_event("INFO", "TIMETABLE", "Timetable & Attendance 3-hour sync job started.")
     try:
         results = timetable_service.sync_all_active_users()
         total_created = sum(r.get("created", 0) for r in results.values() if isinstance(r, dict))
@@ -2053,6 +2057,18 @@ def run_timetable_sync_job(task_obj: dict = None):
         err_msg = f"Timetable sync job error: {str(e)}"
         task_obj.setdefault('logs', []).append(err_msg)
         log_event("ERROR", "TIMETABLE", err_msg)
+
+    # Synchronize official UPES attendance in the same scheduled pass
+    try:
+        att_results = attendance_service.sync_all_active_users()
+        att_synced = sum(r.get("modules_synced", 0) for r in att_results.values() if isinstance(r, dict))
+        att_msg = f"Attendance sync completed for {len(att_results)} users ({att_synced} modules updated)."
+        task_obj.setdefault('logs', []).append(att_msg)
+        log_event("INFO", "ATTENDANCE", att_msg)
+    except Exception as e:
+        att_err_msg = f"Attendance sync job error: {str(e)}"
+        task_obj.setdefault('logs', []).append(att_err_msg)
+        log_event("ERROR", "ATTENDANCE", att_err_msg)
 
 
 scheduler_daemon = SchedulerDaemon()
@@ -4533,6 +4549,35 @@ def trigger_browser_bridge_scan():
         }), 200
 
 
+@app.route('/api/maintenance/timetable/refresh', methods=['POST'])
+@app.route('/api/timetable/refresh', methods=['POST'])
+@app.route('/api/attendance/refresh', methods=['POST'])
+def trigger_headless_token_refresh():
+    """Triggers headless UPES token refresh using persisted refresh token and idp_session_info cookie."""
+    err = require_privilege_or_admin("can_sync_timetable")
+    if err:
+        return err
+
+    target_user_id = g.user.get("user_id", "admin")
+    if g.user.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    broker = timetable_service.session_broker
+    success, reason, summary = broker.refresh_upes_session_headless(target_user_id)
+    if success:
+        return jsonify({
+            "status": "success",
+            "message": "UPES token refreshed headlessly and persisted successfully.",
+            "details": summary
+        }), 200
+    else:
+        return jsonify({
+            "status": "failed",
+            "reason": reason,
+            "message": f"Headless token refresh failed: {reason}"
+        }), 400
+
+
 @app.route('/api/auth/google/authorize', methods=['GET'])
 def get_google_authorize_url():
     err = require_privilege_or_admin("can_sync_timetable")
@@ -4644,37 +4689,177 @@ def select_google_calendar():
 
 
 # ==============================================================================
-# ATTENDANCE TRACKING & 75% BUNK CRITERIA ANALYTICS
+# ATTENDANCE TRACKING & 75% BUNK CRITERIA ANALYTICS (AUTHORITATIVE ENGINE)
 # ==============================================================================
 
-@app.route('/api/attendance/summary', methods=['GET'])
-@app.route('/api/attendance/analytics', methods=['GET'])
-def get_attendance_summary():
-    """Returns comprehensive semester attendance stats, 75% safe bunks, and today's schedule."""
+@app.route('/api/attendance/status', methods=['GET'])
+def get_attendance_status_endpoint():
+    """Returns authoritative attendance synchronization status and metadata."""
     err = require_auth()
     if err:
         return err
 
-    target_user_id = g.user.get("user_id", "admin")
-    if g.user.get("role") == "admin" and request.args.get("user_id"):
+    user_info = getattr(g, "user", None) or {}
+    target_user_id = user_info.get("user_id", "admin")
+    if user_info.get("role") == "admin" and request.args.get("user_id"):
         target_user_id = request.args.get("user_id")
 
     try:
-        analytics = timetable_service.get_attendance_analytics(target_user_id)
+        status_info = attendance_service.get_attendance_status(target_user_id)
+        return jsonify(status_info), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to load attendance status: {str(e)}"}), 500
+
+
+@app.route('/api/attendance/summary', methods=['GET'])
+@app.route('/api/attendance/analytics', methods=['GET'])
+def get_attendance_summary():
+    """Returns authoritative semester attendance stats, 75% safe bunks, and projections."""
+    err = require_auth()
+    if err:
+        return err
+
+    user_info = getattr(g, "user", None) or {}
+    target_user_id = user_info.get("user_id", "admin")
+    if user_info.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    threshold_val = 0.75
+    if request.args.get("threshold"):
+        try:
+            threshold_val = float(request.args.get("threshold"))
+            if threshold_val > 1.0:
+                threshold_val = threshold_val / 100.0
+        except Exception:
+            threshold_val = 0.75
+
+    try:
+        analytics = attendance_service.get_attendance_analytics(target_user_id, threshold=threshold_val)
         return jsonify(analytics), 200
     except Exception as e:
         return jsonify({"error": f"Failed to compute attendance analytics: {str(e)}"}), 500
 
 
-@app.route('/api/attendance/punches', methods=['GET'])
-def list_attendance_punches():
-    """Lists historical attendance punches for user."""
+@app.route('/api/attendance/modules', methods=['GET'])
+def get_attendance_modules():
+    """Returns enrolled academic modules and their official attendance summaries."""
     err = require_auth()
     if err:
         return err
 
-    target_user_id = g.user.get("user_id", "admin")
-    if g.user.get("role") == "admin" and request.args.get("user_id"):
+    user_info = getattr(g, "user", None) or {}
+    target_user_id = user_info.get("user_id", "admin")
+    if user_info.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    try:
+        analytics = attendance_service.get_attendance_analytics(target_user_id)
+        return jsonify({
+            "user_id": target_user_id,
+            "modules": analytics.get("subjects", [])
+        }), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to load attendance modules: {str(e)}"}), 500
+
+
+@app.route('/api/attendance/sessions', methods=['GET'])
+def list_attendance_sessions():
+    """Returns granular session ledger records with optional module and date filters."""
+    err = require_auth()
+    if err:
+        return err
+
+    user_info = getattr(g, "user", None) or {}
+    target_user_id = user_info.get("user_id", "admin")
+    if user_info.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    module_id = None
+    if request.args.get("module_id"):
+        try:
+            module_id = int(request.args.get("module_id"))
+        except Exception:
+            pass
+
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
+    limit = min(int(request.args.get("limit", 200)), 1000)
+
+    try:
+        sessions = attendance_service.get_sessions(
+            target_user_id,
+            module_id=module_id,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit
+        )
+        return jsonify({
+            "user_id": target_user_id,
+            "total": len(sessions),
+            "sessions": sessions
+        }), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to load attendance sessions: {str(e)}"}), 500
+
+
+@app.route('/api/attendance/today', methods=['GET'])
+def get_today_attendance():
+    """Returns today's classes and their live/official status."""
+    err = require_auth()
+    if err:
+        return err
+
+    user_info = getattr(g, "user", None) or {}
+    target_user_id = user_info.get("user_id", "admin")
+    if user_info.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    try:
+        analytics = attendance_service.get_attendance_analytics(target_user_id)
+        return jsonify({
+            "user_id": target_user_id,
+            "as_of_date": analytics.get("as_of_date"),
+            "today_classes": analytics.get("today_classes", [])
+        }), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to load today's attendance: {str(e)}"}), 500
+
+
+@app.route('/api/attendance/sync', methods=['POST'])
+def sync_attendance_endpoint():
+    """Triggers live synchronization with UPES Attendance microservices."""
+    err = require_auth()
+    if err:
+        return err
+
+    user_info = getattr(g, "user", None) or {}
+    target_user_id = user_info.get("user_id", "admin")
+    if user_info.get("role") == "admin" and request.args.get("user_id"):
+        target_user_id = request.args.get("user_id")
+
+    try:
+        log_event("INFO", "ATTENDANCE", f"Starting manual UPES attendance sync for user '{target_user_id}'...")
+        result = attendance_service.sync_user_attendance(target_user_id)
+        status_code = 200 if result.get("status") in ("ACTIVE", "PARTIAL") else 400
+        if result.get("status") == "AUTH_REQUIRED":
+            status_code = 401
+        return jsonify(result), status_code
+    except Exception as e:
+        return jsonify({"status": "ERROR", "message": f"Sync failed: {str(e)}"}), 500
+
+
+# --- Legacy / Manual Punch Endpoints (Retained for Backward Compatibility) ---
+
+@app.route('/api/attendance/punches', methods=['GET'])
+def list_attendance_punches():
+    """Lists historical legacy manual attendance punches for user."""
+    err = require_auth()
+    if err:
+        return err
+
+    user_info = getattr(g, "user", None) or {}
+    target_user_id = user_info.get("user_id", "admin")
+    if user_info.get("role") == "admin" and request.args.get("user_id"):
         target_user_id = request.args.get("user_id")
 
     course_code = request.args.get("course_code")
@@ -4697,7 +4882,7 @@ def list_attendance_punches():
 
 @app.route('/api/attendance/punch', methods=['POST'])
 def record_attendance_punch():
-    """Records an attendance punch with exact timestamp and subject details."""
+    """Records a manual attendance punch with exact timestamp and subject details."""
     err = require_auth()
     if err:
         return err
@@ -4742,15 +4927,15 @@ def record_attendance_punch():
             session_id=session_id,
             notes=notes
         )
-        log_event("INFO", "ATTENDANCE", f"Punch recorded for user '{target_user_id}' on {course_name} ({punch_date} {punch_time}) -> {status}")
-        return jsonify({"status": "success", "message": "Attendance punch recorded successfully.", "punch": record}), 200
+        log_event("INFO", "ATTENDANCE", f"Manual punch recorded for user '{target_user_id}' on {course_name} ({punch_date} {punch_time}) -> {status}")
+        return jsonify({"status": "success", "message": "Manual attendance punch recorded successfully.", "punch": record}), 200
     except Exception as e:
         return jsonify({"error": f"Failed to record attendance punch: {str(e)}"}), 500
 
 
 @app.route('/api/attendance/punch/<punch_id>', methods=['DELETE'])
 def delete_attendance_punch(punch_id):
-    """Deletes an attendance punch record."""
+    """Deletes a manual attendance punch record."""
     err = require_auth()
     if err:
         return err
@@ -4759,7 +4944,7 @@ def delete_attendance_punch(punch_id):
     try:
         deleted = timetable_service.delete_punch(target_user_id, punch_id)
         if deleted:
-            log_event("INFO", "ATTENDANCE", f"Punch '{punch_id}' deleted for user '{target_user_id}'")
+            log_event("INFO", "ATTENDANCE", f"Manual punch '{punch_id}' deleted for user '{target_user_id}'")
             return jsonify({"status": "success", "message": "Punch record deleted."}), 200
         else:
             return jsonify({"error": "Punch record not found."}), 404
@@ -4769,7 +4954,7 @@ def delete_attendance_punch(punch_id):
 
 @app.route('/api/attendance/bulk-punch', methods=['POST'])
 def bulk_attendance_punch():
-    """Bulk marks attendance (e.g. all of today's classes marked present)."""
+    """Bulk marks manual attendance for today's classes."""
     err = require_auth()
     if err:
         return err
@@ -4780,7 +4965,7 @@ def bulk_attendance_punch():
     status = (payload.get("status") or "present").strip().lower()
 
     if not items:
-        analytics = timetable_service.get_attendance_analytics(target_user_id)
+        analytics = attendance_service.get_attendance_analytics(target_user_id)
         items = analytics.get("today_classes", [])
 
     recorded = []
@@ -4798,19 +4983,19 @@ def bulk_attendance_punch():
     for it in items:
         c_name = it.get("course_name") or ""
         c_code = it.get("course_code") or ""
-        s_id = it.get("session_id") or ""
+        s_id = str(it.get("session_id") or "")
         rm = it.get("room") or ""
         if c_name or c_code:
             rec = timetable_service.record_punch(
                 user_id=target_user_id,
                 course_name=c_name,
                 course_code=c_code,
-                punch_date=it.get("date") or p_date,
+                punch_date=it.get("date") or it.get("session_date") or p_date,
                 punch_time=p_time,
                 status=status,
                 room=rm,
                 session_id=s_id,
-                notes="Bulk marked present"
+                notes="Bulk manual punch"
             )
             recorded.append(rec)
 

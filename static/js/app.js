@@ -3158,7 +3158,7 @@ function formatTimestamp(val) {
 // ==============================================================================
 // 12. INITIALIZATION ON DOM READY
 // ==============================================================================
-// 13. ATTENDANCE TRACKING & 75% BUNK PLANNER DATA SHEET
+// 13. ATTENDANCE TRACKING & 75% BUNK PLANNER DATA SHEET (AUTHORITATIVE ENGINE)
 // ==============================================================================
 
 let attendanceState = {
@@ -3171,21 +3171,49 @@ async function loadAttendanceData() {
   attendanceState.loading = true;
   
   try {
-    const res = await apiRequest('/api/attendance/analytics');
+    const res = await apiRequest('/api/attendance/summary');
     if (res && res.overall) {
       attendanceState.data = res;
       renderAttendanceMetrics(res);
       renderTodayClasses(res.today_classes || []);
       renderAttendanceSubjectsTable(res.subjects || []);
-      renderAttendancePunchesTable(res.recent_punches || []);
+      renderAttendancePunchesTable(res.recent_sessions || res.recent_punches || []);
     } else {
-      showToast('No attendance data available. Upload timetable first.', 'warning');
+      showToast('No attendance data available. Click Sync with UPES.', 'warning');
     }
   } catch (err) {
     console.error('Failed to load attendance analytics:', err);
     showToast('Failed to load attendance data.', 'error');
   } finally {
     attendanceState.loading = false;
+  }
+}
+
+async function triggerAttendanceSync() {
+  const btn = document.getElementById('btnSyncAttendance');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="material-symbols-outlined spin" style="font-size: 16px;">sync</span><span>Syncing...</span>`;
+  }
+  showToast('Connecting to UPES Attendance microservices...', 'info');
+  try {
+    const res = await apiRequest('/api/attendance/sync', 'POST');
+    if (res && (res.status === 'ACTIVE' || res.status === 'PARTIAL')) {
+      showToast(res.message || 'Official attendance synchronized successfully!', 'success');
+      loadAttendanceData();
+    } else if (res && res.status === 'AUTH_REQUIRED') {
+      showToast('UPES login required in browser. Please open portal tab.', 'warning');
+    } else {
+      showToast(res.message || res.error || 'Attendance sync failed.', 'error');
+    }
+  } catch (err) {
+    console.error('Attendance sync error:', err);
+    showToast('Failed to trigger attendance sync.', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<span class="material-symbols-outlined" style="font-size: 16px;">cloud_sync</span><span>Sync with UPES</span>`;
+    }
   }
 }
 
@@ -3225,17 +3253,16 @@ function renderAttendanceMetrics(data) {
   
   const slotsEl = document.getElementById('attSemesterTotalSlots');
   if (slotsEl) {
-    slotsEl.textContent = overall.total_classes || 384;
+    slotsEl.textContent = overall.conducted_classes || 0;
   }
   
   const condEl = document.getElementById('attConductedVsRemaining');
   if (condEl) {
-    const rem = (overall.total_classes || 384) - (overall.conducted_classes || 0);
-    condEl.textContent = `${overall.conducted_classes || 0} done · ${rem} remaining`;
+    condEl.textContent = `${overall.attended_classes || 0} attended · ${overall.missed_classes || 0} missed`;
   }
   
   const todayClasses = data.today_classes || [];
-  const todayPunched = todayClasses.filter(c => c.punched && c.punch_status === 'present').length;
+  const todayPunched = todayClasses.filter(c => c.is_punched || (c.punched && c.punch_status === 'present')).length;
   const todayCountEl = document.getElementById('attTodayCount');
   if (todayCountEl) {
     todayCountEl.textContent = `${todayPunched} / ${todayClasses.length}`;
@@ -3243,7 +3270,7 @@ function renderAttendanceMetrics(data) {
   
   const todayLabelEl = document.getElementById('attTodayDateLabel');
   if (todayLabelEl) {
-    todayLabelEl.textContent = `Today: ${data.as_of_date || ''} (${todayClasses.length} slots)`;
+    todayLabelEl.textContent = `Today: ${data.as_of_date || ''} (${todayClasses.length} sessions)`;
   }
 }
 
@@ -3252,61 +3279,51 @@ function renderTodayClasses(classes) {
   if (!container) return;
   
   if (!classes || classes.length === 0) {
-    container.innerHTML = `<div style="color: var(--text-muted); font-size: 13px; padding: 12px; grid-column: 1 / -1; text-align: center;">No classes scheduled for today (${new Date().toLocaleDateString()}). Enjoy your day off! 🎉</div>`;
+    container.innerHTML = `<div style="color: var(--text-muted); font-size: 13px; padding: 12px; grid-column: 1 / -1; text-align: center;">No sessions scheduled for today (${new Date().toLocaleDateString()}). Enjoy your day! 🎉</div>`;
     return;
   }
   
   container.innerHTML = classes.map(c => {
-    const isPunched = c.punched && c.punch_status === 'present';
-    const isOnline = c.is_online || (c.room && c.room.toLowerCase().includes('team'));
-    const badgeColor = isOnline ? '#ec4899' : 'var(--primary)';
+    const isPresent = c.attendance_status === 'PRESENT' || c.punch_status === 'present';
+    const isAbsent = c.attendance_status === 'ABSENT';
+    const isPunched = bool(c.is_punched || c.punch_in_time);
+    const punchTime = c.punch_in_time || c.punch_time || '';
+    const roomText = c.room || 'Classroom';
     
+    let statusPill = `<span class="status-pill status-healthy" style="font-size: 10px;">✓ PRESENT (Punched ${escapeHtml(punchTime || 'on-time')})</span>`;
+    if (isAbsent) {
+      statusPill = `<span class="status-pill status-critical" style="font-size: 10px;">✗ ABSENT</span>`;
+    } else if (!isPresent) {
+      statusPill = `<span style="font-size: 11px; color: var(--text-muted);">SCHEDULED</span>`;
+    }
+
     return `
       <div style="background: var(--bg-surface-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between;">
         <div>
           <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
-            <span style="font-size: 11px; font-weight: 700; color: ${badgeColor}; background: rgba(236,72,153,0.1); padding: 2px 6px; border-radius: 4px;">
-              ${escapeHtml(c.course_code || 'CLASS')}
+            <span style="font-size: 11px; font-weight: 700; color: var(--primary); background: rgba(59,130,246,0.1); padding: 2px 6px; border-radius: 4px;">
+              ${escapeHtml(c.course_code || 'MODULE')}
             </span>
             <span style="font-size: 11px; color: var(--text-muted);">
-              ${escapeHtml(c.start_time.substring(0, 5))} - ${escapeHtml(c.end_time.substring(0, 5))}
+              ${escapeHtml((c.start_time || '').substring(0, 5))} - ${escapeHtml((c.end_time || '').substring(0, 5))}
             </span>
           </div>
           <div style="font-weight: 600; font-size: 13px; color: var(--text-primary); margin-bottom: 4px;">
             ${escapeHtml(c.course_name)}
           </div>
           <div style="font-size: 11px; color: var(--text-secondary);">
-            📍 ${escapeHtml(c.room)} · 👤 ${escapeHtml(c.faculty)}
+            📍 ${escapeHtml(roomText)} · 👤 ${escapeHtml(c.faculty || 'Faculty')}
           </div>
-          ${c.meeting_link ? `
-            <div style="margin-top: 6px;">
-              <a href="${escapeHtml(c.meeting_link)}" target="_blank" style="font-size: 11px; color: #ec4899; text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;">
-                <span class="material-symbols-outlined" style="font-size: 14px;">videocam</span> Join MS Teams
-              </a>
-            </div>
-          ` : ''}
         </div>
         
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
           <div>
-            ${isPunched ? `
-              <span class="status-pill status-healthy" style="font-size: 10px;">
-                ✓ Punched at ${escapeHtml(c.punch_time || '')}
-              </span>
-            ` : `
-              <span style="font-size: 11px; color: var(--text-muted);">Not punched yet</span>
-            `}
+            ${statusPill}
           </div>
           <div>
-            ${isPunched ? `
-              <button class="btn btn-sm btn-secondary" style="font-size: 11px; padding: 2px 8px;" onclick="handleDeletePunch('${c.punch_id}')">
-                Undo
-              </button>
-            ` : `
-              <button class="btn btn-sm btn-primary" style="font-size: 11px; padding: 4px 10px;" onclick="handlePunchClass('${c.session_id}', '${escapeHtml(c.course_name)}', '${escapeHtml(c.course_code)}', '${escapeHtml(c.room)}')">
-                Punch Present
-              </button>
-            `}
+            <span style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);">
+              ${c.attendance_subtype ? escapeHtml(c.attendance_subtype) : 'CRA'}
+            </span>
           </div>
         </div>
       </div>
@@ -3319,7 +3336,7 @@ function renderAttendanceSubjectsTable(subjects) {
   if (!tbody) return;
   
   if (!subjects || subjects.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No subjects found in timetable.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No subjects found in official UPES attendance. Click "Sync with UPES" to refresh.</td></tr>`;
     return;
   }
   
@@ -3330,7 +3347,7 @@ function renderAttendanceSubjectsTable(subjects) {
     
     if (pct < 75) {
       badgeClass = 'status-critical';
-      adviceHtml = `<span style="color: #ef4444; font-weight: 600; font-size: 11px;">⚠️ Attend next ${s.catchup_needed} classes</span>`;
+      adviceHtml = `<span style="color: #ef4444; font-weight: 600; font-size: 11px;">⚠️ Attend next ${s.recovery_classes_required || 1} classes</span>`;
     } else if (pct < 80) {
       badgeClass = 'status-warning';
       adviceHtml = `<span style="color: #f59e0b; font-size: 11px;">⚠️ Borderline (Can skip ${s.safe_bunks_remaining})</span>`;
@@ -3338,25 +3355,33 @@ function renderAttendanceSubjectsTable(subjects) {
       badgeClass = 'status-healthy';
       adviceHtml = `<span style="color: #10b981; font-size: 11px;">✓ Safe (Can skip ${s.safe_bunks_remaining})</span>`;
     }
+
+    let projHtml = '<span style="color: var(--text-muted); font-size: 11px;">No upcoming slots</span>';
+    if (s.next_session) {
+      const n = s.next_session;
+      projHtml = `
+        <div style="font-size: 11px; color: var(--text-primary);">
+          📅 ${escapeHtml(n.date)} (${escapeHtml((n.start_time || '').substring(0, 5))})
+        </div>
+        <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">
+          Attend: <strong style="color: #10b981;">${n.projected_pct_if_attended}%</strong> · Skip: <strong style="color: #ef4444;">${n.projected_pct_if_skipped}%</strong>
+        </div>
+      `;
+    }
     
     return `
       <tr>
         <td>
           <div style="font-weight: 600; color: var(--text-primary); font-size: 13px;">${escapeHtml(s.course_name)}</div>
-          <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(s.course_code || 'N/A')}</div>
+          <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">ID: ${s.module_id || '--'}</div>
         </td>
         <td>
-          <div style="font-size: 12px;">${escapeHtml(s.faculty)}</div>
-          <div style="font-size: 11px; color: var(--text-muted);">📍 ${escapeHtml(s.room)}</div>
-        </td>
-        <td style="font-weight: 600;">${s.total_classes}</td>
-        <td>
-          <span style="color: var(--text-primary);">${s.conducted_classes} done</span>
-          <span style="color: var(--text-muted); font-size: 11px;"> · ${s.remaining_classes} left</span>
+          <span style="color: var(--text-primary); font-weight: 600;">${s.conducted_classes}</span>
+          <span style="color: var(--text-muted); font-size: 11px;"> conducted</span>
         </td>
         <td>
           <span style="color: #10b981; font-weight: 600;">${s.attended_classes}</span>
-          <span style="color: #ef4444; font-size: 11px;"> / ${s.missed_classes} missed</span>
+          <span style="color: #ef4444; font-size: 11px;"> / ${s.absent_classes || 0} absent</span>
         </td>
         <td>
           <div style="display: flex; align-items: center; gap: 8px;">
@@ -3370,59 +3395,64 @@ function renderAttendanceSubjectsTable(subjects) {
           <div style="font-weight: 700; font-size: 14px; color: ${s.safe_bunks_remaining > 0 ? '#10b981' : '#ef4444'};">
             ${s.safe_bunks_remaining} <span style="font-size: 11px; font-weight: 400; color: var(--text-muted);">classes</span>
           </div>
-          <div style="font-size: 10px; color: var(--text-muted);">Max allowed abs: ${s.max_allowed_absences}</div>
+          <div style="font-size: 10px; color: var(--text-muted);">${adviceHtml}</div>
         </td>
         <td>
-          ${adviceHtml}
-        </td>
-        <td>
-          <button class="btn btn-sm btn-secondary" style="font-size: 11px;" onclick="handlePunchClass('', '${escapeHtml(s.course_name)}', '${escapeHtml(s.course_code)}', '${escapeHtml(s.room)}')">
-            Punch Today
-          </button>
+          ${projHtml}
         </td>
       </tr>
     `;
   }).join('');
 }
 
-function renderAttendancePunchesTable(punches) {
+function renderAttendancePunchesTable(sessions) {
   const tbody = document.getElementById('attendancePunchesTbody');
   if (!tbody) return;
   
-  if (!punches || punches.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No attendance punches logged yet.</td></tr>`;
+  if (!sessions || sessions.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No official session records logged yet. Click "Sync with UPES" to load ledger.</td></tr>`;
     return;
   }
   
-  tbody.innerHTML = punches.map(p => {
-    const isPresent = p.status === 'present';
+  tbody.innerHTML = sessions.map(s => {
+    const isPresent = (s.attendance_status === 'PRESENT' || s.status === 'present');
+    const isAbsent = (s.attendance_status === 'ABSENT' || s.status === 'absent');
+    const isCondoned = (s.attendance_status === 'CONDONED');
+
+    let statusBadge = `<span class="status-pill status-healthy" style="font-size: 11px;">PRESENT</span>`;
+    if (isAbsent) {
+      statusBadge = `<span class="status-pill status-critical" style="font-size: 11px;">ABSENT</span>`;
+    } else if (isCondoned) {
+      statusBadge = `<span class="status-pill status-warning" style="font-size: 11px;">CONDONED</span>`;
+    }
+
+    const punchIn = s.punch_in_time || s.punch_time || '—';
+    const subType = s.attendance_subtype || s.sub_type_code || (s.status ? 'MANUAL' : 'CRA');
+    const subDesc = s.subtype_desc || (subType === 'CRA' ? 'Classroom RFID' : (subType === 'OA' ? 'Online' : subType));
+
     return `
       <tr>
         <td>
-          <div style="font-weight: 600;">${escapeHtml(p.punch_date)}</div>
+          <div style="font-weight: 600;">${escapeHtml(s.session_date || s.punch_date || '')}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(s.start_time ? `${s.start_time} - ${s.end_time}` : '')}</div>
         </td>
-        <td style="font-family: var(--font-mono); font-size: 12px; color: var(--primary);">
-          ${escapeHtml(p.punch_time)}
-        </td>
-        <td>
-          <div style="font-weight: 600;">${escapeHtml(p.course_name)}</div>
-          <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(p.course_code)}</div>
+        <td style="font-family: var(--font-mono); font-size: 12px; color: var(--primary); font-weight: 600;">
+          ${escapeHtml(punchIn)}
         </td>
         <td>
-          <span style="font-size: 12px;">${escapeHtml(p.room || 'Classroom')}</span>
+          <div style="font-weight: 600;">${escapeHtml(s.course_name)}</div>
+          <div style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);">${s.session_id ? `Session #${s.session_id}` : ''}</div>
         </td>
         <td>
-          <span class="status-pill ${isPresent ? 'status-healthy' : 'status-critical'}" style="font-size: 11px;">
-            ${escapeHtml(p.status.toUpperCase())}
-          </span>
-        </td>
-        <td style="font-size: 11px; color: var(--text-muted);">
-          ${escapeHtml(p.notes || '--')}
+          <div style="font-size: 12px;">📍 ${escapeHtml(s.room || 'Classroom')}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">👤 ${escapeHtml(s.faculty || '--')}</div>
         </td>
         <td>
-          <button class="btn btn-sm btn-secondary" style="font-size: 11px; color: #ef4444;" onclick="handleDeletePunch('${p.id}')">
-            Delete
-          </button>
+          ${statusBadge}
+        </td>
+        <td>
+          <span style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">${escapeHtml(subType)}</span>
+          <div style="font-size: 10px; color: var(--text-muted);">${escapeHtml(subDesc)}</div>
         </td>
       </tr>
     `;
