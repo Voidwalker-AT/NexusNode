@@ -179,6 +179,22 @@ async function apiFetch(url, options = {}) {
   }
 }
 
+async function apiRequest(url, method = 'GET', body = null) {
+  const options = { method };
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+  const res = await apiFetch(url, options);
+  if (!res.ok) {
+    let errData = {};
+    try {
+      errData = await res.json();
+    } catch (e) {}
+    throw new Error(errData.error || errData.message || `HTTP ${res.status}`);
+  }
+  return await res.json();
+}
+
 function clearLockoutCountdown() {
   if (authState.lockoutTimer) {
     clearInterval(authState.lockoutTimer);
@@ -3286,7 +3302,7 @@ function renderTodayClasses(classes) {
   container.innerHTML = classes.map(c => {
     const isPresent = c.attendance_status === 'PRESENT' || c.punch_status === 'present';
     const isAbsent = c.attendance_status === 'ABSENT';
-    const isPunched = bool(c.is_punched || c.punch_in_time);
+    const isPunched = Boolean(c.is_punched || c.punch_in_time);
     const punchTime = c.punch_in_time || c.punch_time || '';
     const roomText = c.room || 'Classroom';
     
