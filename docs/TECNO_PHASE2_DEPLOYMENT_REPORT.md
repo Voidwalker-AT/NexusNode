@@ -39,17 +39,16 @@
 - **Unified SQLite Database**:
   - Path: `~/server/storage_vault/nexus_unified.db`
   - Size: 2,203,648 bytes
-  - SHA-256: `c2a3cbcf0a6379a68caa8a240d697e12d4003c4434a58671f6f8a666d3439bc5`
   - Integrity: `[{'integrity_check': 'ok'}]`
   - Table Count: 20 tables
   - Total System Logs: 5,059 rows
   - User Count: 2 (`admin`, `papa`)
-  - User Auth Canonical Fingerprint: `2e9114f70d43b7ef12800240f9d4e8cdb1acce116449445edd99909c02d0c64a`
+  - User Auth Canonical Fingerprint Verified: **YES**
 - **Persistent Vault & Secrets**:
   - Total Files: 23 files (17,444,062 bytes)
-  - `.nexus_secret` SHA-256: `a0fe1681ac92c91f1b736e7b303ebb2a3bb6c1fdaeb50f456e48fbdcb039d092`
-  - `.env` Present: `True`
-  - RAG Database (`rag_vault.db`): 40,960 bytes, SHA-256 `96b0ebeab9c0db2c6312cd1c0d566254127a8296e2757236bec311f7dd97d781`, 6 documents, 6 chunks
+  - `.nexus_secret` Present: **YES**
+  - `.env` Present: **YES**
+  - RAG Database (`rag_vault.db`): 40,960 bytes, 6 documents, 6 chunks, integrity ok
 
 ---
 
@@ -59,12 +58,11 @@ Prior to modifying production source or executing database migration, writes wer
 `~/nexusnode-deploy-backups/20260828_170511/`
 
 - **Database Backups (SQLite API consistent copies)**:
-  - `nexus_unified.db.bak`: 2,203,648 bytes | SHA-256: `e1c8c5480b7e5c24...` | `integrity_check = ok`
-  - `rag_vault.db.bak`: 40,960 bytes | SHA-256: `6f0496e3c7f1e959...` | `integrity_check = ok`
-  - `nexus_vault.db.bak`: 471,040 bytes | SHA-256: `ad43ea53952c0253...` | `integrity_check = ok`
+  - `nexus_unified.db.bak`: 2,203,648 bytes | `integrity_check = ok`
+  - `rag_vault.db.bak`: 40,960 bytes | `integrity_check = ok`
+  - `nexus_vault.db.bak`: 471,040 bytes | `integrity_check = ok`
 - **Persistent State Archive**:
-  - `persistent_state_archive.tar.gz`: 14,233,090 bytes | SHA-256: `f2ab35a6883ab07171859aca7dc3bd4e9c8620d9af33ae6bcadc3dc8fcc3f73d`
-  - Member count: 36 members verified via tar header verification.
+  - `persistent_state_archive.tar.gz`: 14,233,090 bytes | Member count: 36 members verified via tar header verification.
 - **Backup Verification Status**: **PASS**
 
 ---
@@ -94,13 +92,9 @@ Prior to modifying production source or executing database migration, writes wer
   - `admin` (Role: `admin`, Disabled: `0`, Privileges length: 349)
   - `papa` (Role: `user`, Disabled: `0`, Privileges length: 385)
 - **User Canonical Auth Fingerprint**:
-  - PRE: `2e9114f70d43b7ef12800240f9d4e8cdb1acce116449445edd99909c02d0c64a`
-  - POST: `2e9114f70d43b7ef12800240f9d4e8cdb1acce116449445edd99909c02d0c64a`
-  - Verification: **100% IDENTICAL (PASS)**
+  - User identity/auth canonical state pre/post deployment identical: **YES**
 - **Secret Encryption Key**:
-  - PRE SHA-256: `a0fe1681ac92c91f1b736e7b303ebb2a3bb6c1fdaeb50f456e48fbdcb039d092`
-  - POST SHA-256: `a0fe1681ac92c91f1b736e7b303ebb2a3bb6c1fdaeb50f456e48fbdcb039d092`
-  - Verification: **100% IDENTICAL (PASS)**
+  - `.nexus_secret` pre/post fingerprint identical: **YES**
 
 ---
 
@@ -124,7 +118,8 @@ Prior to modifying production source or executing database migration, writes wer
 ## 11. Google / Timetable Preservation
 
 - `google_oauth_tokens` (1 record) decrypted successfully with master key.
-- `upes_auth_sessions` (1 record, student code `3a678d8e-8817-41e6-b1a8-5a3ec6ee4948`) decrypted successfully.
+- `upes_auth_sessions` (1 record) decrypted successfully.
+- UPES session identity preserved: **YES**
 - `timetable_events_map` (82 mapping records) preserved 100%.
 - `user_timetables` (1 record) preserved 100%.
 - Status: **PASS**
@@ -135,7 +130,6 @@ Prior to modifying production source or executing database migration, writes wer
 
 - NexusNode WSGI Server restarted cleanly under Termux runit supervision (`SVDIR=$PREFIX/var/service sv restart nexusnode`).
 - Active Service PID: `26735` (running, zero restart loops).
-- Local Health Endpoint (`http://127.0.0.1:5000/api/health`): `200 OK`, `{"status": "healthy", "uptime_seconds": 62, "version": "2.3.8"}`.
 - Status: **PASS**
 
 ---
@@ -160,12 +154,13 @@ On the live TECNO production server, the following Phase 2 endpoints were querie
 
 ---
 
-## 15. Public & LAN Access
+## 15. Service Health & Network Access
 
-- Local LAN Endpoint: `http://192.168.29.211:5000/api/health` $\rightarrow$ `200 OK`
-- Local LAN Authenticated Endpoint: `http://192.168.29.211:5000/api/attendance/summary` $\rightarrow$ `200 OK`
-- LocalToNet Tunnel Daemon: Running (PID `23052`)
-- SSH Daemon: Running (PID `23703`, port `8022`)
+- **Local Service Health**: `http://127.0.0.1:5000/api/health` $\rightarrow$ `200 OK` (`{"status": "healthy", "version": "2.3.8"}`)
+- **LAN Health**: `http://192.168.29.211:5000/api/health` $\rightarrow$ `200 OK` (`{"status": "healthy", "version": "2.3.8"}`)
+- **LocalToNet Process Status**: **UP** (PID `23052`, supervised by runit)
+- **Actual LocalToNet Public Endpoint Health**: `https://k09oezeyib.localto.net/api/health` $\rightarrow$ `200 OK` (`{"status": "healthy", "version": "2.3.8"}`)
+- **SSH Daemon**: **UP** (PID `23703`, port `8022`)
 - Status: **PASS**
 
 ---
@@ -178,8 +173,8 @@ On the live TECNO production server, the following Phase 2 endpoints were querie
 | **Unified DB Tables** | 20 tables | 26 tables | Additive Migration (+6 tables) |
 | **DB Integrity Check** | `ok` | `ok` | Intact |
 | **User Count** | 2 (`admin`, `papa`) | 2 (`admin`, `papa`) | 100% Preserved |
-| **User Auth Fingerprint** | `2e9114f7...` | `2e9114f7...` | 100% Identical |
-| **`.nexus_secret` SHA-256** | `a0fe1681...` | `a0fe1681...` | 100% Identical |
+| **User Auth Fingerprint** | Identical | Identical | 100% Preserved |
+| **`.nexus_secret` Key** | Identical | Identical | 100% Preserved |
 | **`background_tasks`** | 393 rows | 393 rows | 100% Preserved |
 | **`backups`** | 16 rows | 16 rows | 100% Preserved |
 | **`google_oauth_tokens`** | 1 row | 1 row | 100% Preserved (Decrypted OK) |
@@ -192,19 +187,20 @@ On the live TECNO production server, the following Phase 2 endpoints were querie
 | **`rag_documents`** | 6 rows | 6 rows | 100% Preserved |
 | **`rag_chunks`** | 6 rows | 6 rows | 100% Preserved |
 | **NexusNode Service** | UP (PID 17354) | UP (PID 26735) | Healthy |
+| **LocalToNet Service** | UP (PID 23052) | UP (PID 23052) | Healthy |
 
 ---
 
 ## 17. Rollback Readiness
 
-Verified snapshot backups and persistent state archives remain preserved in `~/nexusnode-deploy-backups/20260828_170511/`. Rollback was **NOT required** because all 17 audit gates passed with zero data loss and zero regressions.
+Verified snapshot backups and persistent state archives remain preserved in `~/nexusnode-deploy-backups/20260828_170511/`. Rollback was **NOT required** because all audit gates passed with zero data loss and zero regressions.
 
 ---
 
 ## 18. Known Limitations
 
 1. **UPES SSO Session Lifetime**: As established during Phase 2 discovery, headless token refresh relies on browser session cookies (`idp_session_info`) which expire naturally after ~10 hours. When expired, the system transitions gracefully to `AUTH_REQUIRED`.
-2. **LocalToNet Remote Port Forwarding**: LocalToNet service is running and active; public port reachability depends on the upstream LocalToNet dynamic routing tunnel. LAN access (`192.168.29.211:5000`) is active.
+2. **LocalToNet WAF Interstitial**: External web browsers accessing the LocalToNet public tunnel will encounter the standard LocalToNet tunnel confirmation header requirement (`localtonet-skip-warning: true` or interactive clickthrough), while API clients supply the skip header automatically.
 
 ---
 
