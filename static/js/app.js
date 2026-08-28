@@ -3235,17 +3235,23 @@ async function triggerAttendanceSync() {
 
 function renderAttendanceMetrics(data) {
   const overall = data.overall || {};
-  const pct = overall.attendance_percentage !== undefined ? overall.attendance_percentage : 0;
+  const pct = overall.attendance_percentage;
+  const hasData = Boolean(overall.has_data !== false && pct !== null && pct !== undefined && overall.conducted_classes > 0);
   
   const pctEl = document.getElementById('attOverallPct');
   if (pctEl) {
-    pctEl.textContent = `${pct}%`;
-    pctEl.style.color = pct >= 80 ? 'var(--primary)' : (pct >= 75 ? '#f59e0b' : '#ef4444');
+    pctEl.textContent = hasData ? `${pct}%` : '--%';
+    pctEl.style.color = hasData ? (pct >= 80 ? 'var(--primary)' : (pct >= 75 ? '#f59e0b' : '#ef4444')) : 'var(--text-muted)';
   }
   
   const badgeEl = document.getElementById('attOverallBadge');
   if (badgeEl) {
-    if (pct >= 80) {
+    if (!hasData) {
+      badgeEl.className = 'status-pill';
+      badgeEl.style.color = 'var(--text-muted)';
+      badgeEl.style.background = 'var(--bg-surface-secondary)';
+      badgeEl.textContent = 'No Data Synced';
+    } else if (pct >= 80) {
       badgeEl.className = 'status-pill status-healthy';
       badgeEl.textContent = 'Safe (≥80%)';
     } else if (pct >= 75) {
@@ -3259,12 +3265,16 @@ function renderAttendanceMetrics(data) {
   
   const countEl = document.getElementById('attOverallCount');
   if (countEl) {
-    countEl.textContent = `${overall.attended_classes || 0} / ${overall.conducted_classes || 0} classes attended (${overall.missed_classes || 0} missed)`;
+    if (hasData) {
+      countEl.textContent = `${overall.attended_classes || 0} / ${overall.conducted_classes || 0} classes attended (${overall.missed_classes || 0} missed)`;
+    } else {
+      countEl.textContent = '0 / 0 classes attended · No authoritative data synced yet';
+    }
   }
   
   const bunksEl = document.getElementById('attSafeBunksTotal');
   if (bunksEl) {
-    bunksEl.textContent = overall.total_safe_bunks !== undefined ? overall.total_safe_bunks : '--';
+    bunksEl.textContent = hasData ? (overall.total_safe_bunks !== undefined ? overall.total_safe_bunks : '--') : '--';
   }
   
   const slotsEl = document.getElementById('attSemesterTotalSlots');
@@ -3274,7 +3284,11 @@ function renderAttendanceMetrics(data) {
   
   const condEl = document.getElementById('attConductedVsRemaining');
   if (condEl) {
-    condEl.textContent = `${overall.attended_classes || 0} attended · ${overall.missed_classes || 0} missed`;
+    if (hasData) {
+      condEl.textContent = `${overall.attended_classes || 0} attended · ${overall.missed_classes || 0} missed`;
+    } else {
+      condEl.textContent = '0 conducted sessions';
+    }
   }
   
   const todayClasses = data.today_classes || [];
@@ -3357,11 +3371,15 @@ function renderAttendanceSubjectsTable(subjects) {
   }
   
   tbody.innerHTML = subjects.map(s => {
-    const pct = s.attendance_percentage !== undefined ? s.attendance_percentage : 100;
+    const pct = s.attendance_percentage;
+    const hasConducted = Boolean(s.conducted_classes > 0 && pct !== null && pct !== undefined);
     let badgeClass = 'status-healthy';
     let adviceHtml = '';
     
-    if (pct < 75) {
+    if (!hasConducted) {
+      badgeClass = '';
+      adviceHtml = `<span style="color: var(--text-muted); font-size: 11px;">Not Started (0 conducted)</span>`;
+    } else if (pct < 75) {
       badgeClass = 'status-critical';
       adviceHtml = `<span style="color: #ef4444; font-weight: 600; font-size: 11px;">⚠️ Attend next ${s.recovery_classes_required || 1} classes</span>`;
     } else if (pct < 80) {
@@ -3401,15 +3419,15 @@ function renderAttendanceSubjectsTable(subjects) {
         </td>
         <td>
           <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="status-pill ${badgeClass}" style="font-weight: 700; font-size: 12px;">${pct}%</span>
+            <span class="status-pill ${badgeClass}" style="font-weight: 700; font-size: 12px; ${!hasConducted ? 'color: var(--text-muted); background: var(--bg-surface-secondary);' : ''}">${hasConducted ? `${pct}%` : 'N/A'}</span>
           </div>
           <div style="background: rgba(255,255,255,0.08); height: 4px; border-radius: 2px; margin-top: 4px; overflow: hidden; width: 60px;">
-            <div style="background: ${pct >= 75 ? '#10b981' : '#ef4444'}; width: ${Math.min(100, pct)}%; height: 100%;"></div>
+            <div style="background: ${hasConducted ? (pct >= 75 ? '#10b981' : '#ef4444') : 'transparent'}; width: ${hasConducted ? Math.min(100, pct) : 0}%; height: 100%;"></div>
           </div>
         </td>
         <td>
-          <div style="font-weight: 700; font-size: 14px; color: ${s.safe_bunks_remaining > 0 ? '#10b981' : '#ef4444'};">
-            ${s.safe_bunks_remaining} <span style="font-size: 11px; font-weight: 400; color: var(--text-muted);">classes</span>
+          <div style="font-weight: 700; font-size: 14px; color: ${hasConducted ? (s.safe_bunks_remaining > 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)'};">
+            ${hasConducted ? s.safe_bunks_remaining : '--'} <span style="font-size: 11px; font-weight: 400; color: var(--text-muted);">${hasConducted ? 'classes' : ''}</span>
           </div>
           <div style="font-size: 10px; color: var(--text-muted);">${adviceHtml}</div>
         </td>

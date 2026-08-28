@@ -96,8 +96,15 @@ class TestAttendanceMathematics(unittest.TestCase):
     def test_compute_attendance_percentage(self):
         self.assertEqual(compute_attendance_percentage(9, 10), 90.0)
         self.assertEqual(compute_attendance_percentage(8, 10, condoned=1), 90.0)
-        self.assertEqual(compute_attendance_percentage(0, 0), 100.0)
+        self.assertIsNone(compute_attendance_percentage(0, 0))
         self.assertEqual(compute_attendance_percentage(1, 3), 33.33)
+
+    def test_compute_attendance_percentage_semantics(self):
+        """Verify that 0 conducted returns None (undefined/not started) rather than false 100%."""
+        self.assertIsNone(compute_attendance_percentage(0, 0))
+        self.assertIsNone(compute_attendance_percentage(0, -1))
+        self.assertEqual(compute_attendance_percentage(0, 5), 0.0)
+        self.assertEqual(compute_attendance_percentage(5, 5), 100.0)
 
 
 class TestAttendanceDatabaseAndService(unittest.TestCase):

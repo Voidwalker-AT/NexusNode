@@ -210,11 +210,11 @@ def calculate_recovery_classes(attended: int, conducted: int, threshold: float =
     return max(0, int(recovery))
 
 
-def compute_attendance_percentage(attended: int, conducted: int, condoned: int = 0) -> float:
-    """Computes round-off attendance percentage handling C=0 gracefully."""
+def compute_attendance_percentage(attended: int, conducted: int, condoned: int = 0) -> Optional[float]:
+    """Computes round-off attendance percentage handling C=0 gracefully as None (undefined)."""
     effective_attended = attended + condoned
     if conducted <= 0:
-        return 100.0
+        return None
     pct = (effective_attended / conducted) * 100.0
     return round(min(100.0, max(0.0, pct)), 2)
 
@@ -818,7 +818,9 @@ class AttendanceService:
                 discrepancy = (sess_stat["total"] > 0 and sess_stat["total"] != conducted)
 
                 # Status pill
-                if pct < 75.0:
+                if conducted == 0 or pct is None:
+                    status_badge = "not_started"
+                elif pct < 75.0:
                     status_badge = "critical"
                     critical_count += 1
                 elif pct < 80.0:
@@ -935,6 +937,7 @@ class AttendanceService:
 
             overall_pct = compute_attendance_percentage(overall_attended, overall_conducted, overall_condoned)
             overall_missed = max(0, overall_conducted - overall_attended - overall_condoned)
+            has_data = bool(overall_conducted > 0)
 
             return {
                 "user_id": user_id,
@@ -949,7 +952,8 @@ class AttendanceService:
                     "attendance_percentage": overall_pct,
                     "total_safe_bunks": overall_safe_bunks,
                     "critical_subjects": critical_count,
-                    "total_subjects": len(subject_reports)
+                    "total_subjects": len(subject_reports),
+                    "has_data": has_data
                 },
                 "subjects": subject_reports,
                 "today_classes": today_sessions,
