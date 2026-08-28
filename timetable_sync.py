@@ -1350,7 +1350,6 @@ class UpesSessionJournal:
             return False
 
     @classmethod
-    @classmethod
     def recover_and_replay_journal(cls, service: 'TimetableService', target_user_id: Optional[str] = None) -> Optional[str]:
         """
         Inspects for an uncommitted recovery journal, validates integrity and required fields,
