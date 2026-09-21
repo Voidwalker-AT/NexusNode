@@ -1,0 +1,617 @@
+<USER_REQUEST>
+PHASE 4.3A-R3 — LOCALTONET IS NOW ENABLED: FULL PUBLIC-INTERNET ACCEPTANCE
+
+I have manually turned the LocalToNet HTTP tunnel ON.
+
+DO NOT change tunnel providers.
+DO NOT create another tunnel.
+DO NOT change the hostname unless verification proves LocalToNet changed it.
+DO NOT perform Stage 4 second-user onboarding yet.
+
+The expected public origin is:
+
+    https://k09oezeyib.localto.net
+
+Expected canonical MCP endpoint:
+
+    https://k09oezeyib.localto.net/api/mcp
+
+The previous investigation showed that the BG6 daemon was healthy while the
+LocalToNet control-plane tunnel was stopped. I have now manually enabled that
+tunnel.
+
+Your job is to VERIFY the real internet deployment end-to-end.
+
+IMPORTANT ACCEPTANCE POLICY:
+
+    PUBLIC INTERNET URL = production
+    LAN URL = diagnostics only
+
+Every production-facing acceptance test below must use the public HTTPS URL
+unless the step explicitly says BG6/LAN diagnostics.
+
+============================================================
+1. CONFIRM THE CONTROL-PLANE CHANGE
+============================================================
+
+Inspect the BG6 LocalToNet logs.
+
+Confirm a new ADDED/started event corresponding to:
+
+    k09oezeyib.localto.net
+        ->
+    127.0.0.1:5000
+
+Record:
+
+    LocalToNet process state
+    LocalToNet tunnel state
+    public hostname
+    local target
+    reconnect timestamp
+
+Do not infer ONLINE merely because the process exists.
+
+============================================================
+2. VERIFY FROM THE INTERNET
+============================================================
+
+From the Windows workstation call:
+
+    https://k09oezeyib.localto.net/api/health
+
+WITHOUT:
+
+    192.168.29.21
+    localhost
+    SSH port forwarding
+
+Required:
+
+    HTTP 200
+    Content-Type: application/json
+    NexusNode health payload
+
+Explicitly verify the body is NOT:
+
+    LocalToNet Tunnel Stopped HTML
+    warning/interstitial HTML
+    redirect page
+
+Record latency.
+
+Then repeat several times to ensure this is not a stale/cached edge response.
+
+============================================================
+3. VERIFY THE PUBLIC WEB APPLICATION
+============================================================
+
+Open ONLY:
+
+    https://k09oezeyib.localto.net/
+
+Login legitimately as admin.
+
+Verify these pages through the public URL:
+
+    Dashboard
+    Academics
+    Accounts
+    Vault
+    MCP
+    Diagnostics
+    Settings
+
+Inspect Network + Console.
+
+Required:
+
+    zero HTTP 500
+    zero uncaught JS exceptions
+
+Critically verify browser requests do NOT contain:
+
+    http://192.168.29.21
+    https://192.168.29.21
+    localhost
+    127.0.0.1
+
+Frontend APIs should be same-origin relative requests.
+
+============================================================
+4. PUBLIC ACADEMICS — VERIFY REAL DATA
+============================================================
+
+Do not merely check that cards exist.
+
+Through:
+
+    https://k09oezeyib.localto.net/#tab-academics
+
+verify actual rendered production values.
+
+Expected current baseline from BG6:
+
+TIMETABLE:
+    ~384 sessions
+    CACHED unless refreshed
+    course names visible
+    times visible
+    rooms visible
+    weekday filters working
+
+ATTENDANCE:
+    9 subjects
+    66 conducted
+    59 attended
+    ~89.39%
+    11 safe bunks
+    module rows visible
+
+RESULTS:
+    1 semester currently stored
+    calculated CGPA 8.5
+    graded courses visible
+
+LMS:
+    currently 0 course shells if upstream still returns none
+    must display truthful LIVE/EMPTY state
+    must NOT fabricate course data
+
+Verify provenance and timestamps are visible.
+
+============================================================
+5. TEST THE ACADEMICS CONTROLS THROUGH PUBLIC HTTPS
+============================================================
+
+Exercise only SAFE controls.
+
+Test:
+
+    timetable day filtering
+    attendance What-If calculator
+    Results semester display
+    LMS empty-state rendering
+
+Do not mutate Calendar yet.
+
+Do not perform consequential LMS actions.
+
+Do not create the second student yet.
+
+============================================================
+6. PUBLIC MCP DISCOVERY
+============================================================
+
+All requests in this section MUST go through:
+
+    https://k09oezeyib.localto.net
+
+Test:
+
+    HEAD /api/mcp
+
+    GET /.well-known/oauth-protected-resource/api/mcp
+
+    GET /.well-known/oauth-authorization-server
+
+    unauthenticated POST /api/mcp
+
+Verify expected OAuth challenge/discovery behavior.
+
+Metadata must advertise:
+
+    resource:
+      https://k09oezeyib.localto.net/api/mcp
+
+    issuer:
+      https://k09oezeyib.localto.net
+
+    authorization_endpoint:
+      https://k09oezeyib.localto.net/oauth/authorize
+
+    token_endpoint:
+      https://k09oezeyib.localto.net/oauth/token
+
+No private IP or stale hostname may appear.
+
+============================================================
+7. PUBLIC MCP AUTHENTICATED HANDSHAKE
+============================================================
+
+Perform the safe real MCP OAuth flow through PUBLIC HTTPS.
+
+Use existing test client infrastructure where possible.
+
+Execute:
+
+    OAuth discovery
+    authorization/token exchange
+    initialize
+    notifications/initialized
+    tools/list
+
+Verify:
+
+    negotiated protocol compatible with client
+    catalog = nexus-semantic-v1
+    semantic tool count = exactly 11
+
+Record latency for:
+
+    initialize
+    tools/list
+
+============================================================
+8. PUBLIC MCP READ-ONLY TOOL EXECUTION
+============================================================
+
+Through PUBLIC HTTPS execute:
+
+    nexus.status
+
+Then:
+
+    academic.query
+        operation = next_classes
+
+    academic.query
+        operation = attendance
+
+    academic.query
+        operation = results
+
+    lms.query
+        operation = courses
+
+Verify returned information matches the same authenticated tenant's stored/live
+data.
+
+No LAN MCP request may substitute for these tests.
+
+============================================================
+9. MCP PAGE PRESENTATION
+============================================================
+
+Open the MCP page through the public site.
+
+Verify it displays:
+
+PRIMARY:
+    https://k09oezeyib.localto.net/api/mcp
+
+labelled clearly as:
+
+    Public Internet MCP Endpoint
+
+SECONDARY:
+    http://192.168.29.21:5000/api/mcp
+
+labelled:
+
+    LAN / Local Diagnostic Endpoint
+
+Test both copy buttons.
+
+The primary Copy button MUST copy the public HTTPS endpoint.
+
+============================================================
+10. GOOGLE OAUTH PUBLIC CALLBACK
+============================================================
+
+Verify NexusNode currently computes:
+
+    https://k09oezeyib.localto.net/api/auth/google/callback
+
+as the public Google OAuth redirect URI.
+
+Compare this against the application's expected Google OAuth configuration.
+
+Do NOT modify Google Cloud automatically.
+
+Report:
+
+    exact redirect URI
+    whether Google Console requires a change
+
+This is mandatory before second-user onboarding.
+
+============================================================
+11. TEST PUBLIC INGRESS RESTART PERSISTENCE
+============================================================
+
+We need to know whether today's manual LocalToNet toggle will remain useful.
+
+Safely restart ONLY the local LocalToNet runit service:
+
+    sv restart localtonet
+
+Do NOT disable the tunnel in the LocalToNet web dashboard.
+
+Then measure:
+
+    time until daemon reconnects
+    time until public /api/health returns 200 again
+
+Expected:
+
+    control-plane tunnel remains enabled
+    daemon reconnects automatically
+    public hostname remains identical
+
+Then restart NexusNode itself and verify:
+
+    public URL recovers automatically
+    LocalToNet remains online
+
+Do not reboot Android yet.
+
+============================================================
+12. INGRESS HEALTH TELEMETRY
+============================================================
+
+Verify NexusNode now reports:
+
+    process_running = true
+    public_healthy = true
+    public_origin = https://k09oezeyib.localto.net
+
+The UI must distinguish:
+
+    APPLIANCE HEALTH
+from:
+    PUBLIC INGRESS HEALTH
+
+Both should currently be HEALTHY.
+
+============================================================
+13. VERIFY 3-HOUR AUTOMATION REMAINS INDEPENDENT
+============================================================
+
+Do not run a destructive Calendar sync.
+
+Re-run the deterministic scheduler tests proving:
+
+    cadence = 10800 seconds
+
+    2h59 -> no run
+    3h00 -> exactly one run
+    6h00 -> exactly two runs
+
+    restart recovery -> PASS
+
+Also verify the scheduler's architecture does NOT call:
+
+    k09oezeyib.localto.net
+
+for its internal work.
+
+Its path must remain:
+
+    BG6
+      -> UPES outbound APIs
+      -> local reconciliation
+      -> Google Calendar outbound API
+
+LocalToNet is inbound ingress only.
+
+============================================================
+14. CHROMIUM RESOURCE INVARIANT
+============================================================
+
+Measure actual BG6 Chromium processes:
+
+BEFORE public tests
+DURING public Dashboard/Academics/MCP reads
+AFTER public tests
+
+Expected:
+
+    0 / 0 / 0
+
+These operations are API-first.
+
+Also record:
+
+    MemAvailable
+    NexusNode RSS
+
+============================================================
+15. SECURITY CHECK ON PUBLIC SURFACE
+============================================================
+
+From the PUBLIC hostname verify:
+
+Unauthenticated:
+
+    private dashboard APIs -> 401/403
+    academic data -> 401/403
+    Vault -> 401/403
+    admin APIs -> 401/403
+
+Authenticated regular user:
+
+    admin-only APIs -> 403
+
+Verify:
+
+    Flask debug = false
+    Waitress production server active
+    no stack traces publicly exposed
+    no secret/token/cookie leakage
+    no arbitrary filesystem access
+    no public SSH
+    consequential MCP actions still require approval
+
+============================================================
+16. INTERNET-ONLY ACCEPTANCE RULE
+============================================================
+
+For the remainder of Phase 4.3A:
+
+Production UI testing:
+    PUBLIC HTTPS ONLY
+
+Production MCP testing:
+    PUBLIC HTTPS ONLY
+
+Second-user onboarding:
+    PUBLIC HTTPS ONLY
+
+Gemini Spark:
+    PUBLIC HTTPS ONLY
+
+Mistral:
+    PUBLIC HTTPS ONLY
+
+LAN may still be used for:
+
+    SSH
+    logs
+    deployment
+    emergency recovery
+    diagnostics
+
+Do not count LAN success as production acceptance.
+
+============================================================
+17. FINAL REPORT
+============================================================
+
+Return:
+
+LOCALTONET PROCESS:
+RUNNING / STOPPED
+
+LOCALTONET CONTROL-PLANE TUNNEL:
+ONLINE / OFFLINE
+
+PUBLIC ORIGIN:
+<url>
+
+PUBLIC HEALTH:
+PASS / FAIL
+
+PUBLIC HEALTH LATENCY:
+<ms>
+
+PUBLIC UI:
+PASS / FAIL
+
+PUBLIC LOGIN:
+PASS / FAIL
+
+PUBLIC DASHBOARD:
+PASS / FAIL
+
+PUBLIC ACADEMICS:
+PASS / FAIL
+
+PUBLIC ACCOUNTS:
+PASS / FAIL
+
+PUBLIC VAULT:
+PASS / FAIL
+
+PUBLIC MCP PAGE:
+PASS / FAIL
+
+PUBLIC DIAGNOSTICS:
+PASS / FAIL
+
+PUBLIC SETTINGS:
+PASS / FAIL
+
+TIMETABLE:
+<count> + provenance
+
+ATTENDANCE:
+<count/modules/percentage> + provenance
+
+RESULTS:
+<count/cgpa> + provenance
+
+LMS:
+<count> + provenance
+
+PUBLIC MCP URL:
+<url>
+
+PUBLIC MCP DISCOVERY:
+PASS / FAIL
+
+PUBLIC MCP INITIALIZE:
+PASS / FAIL
+
+PUBLIC MCP TOOLS/LIST:
+<count>
+
+PUBLIC nexus.status:
+PASS / FAIL
+
+PUBLIC academic.query NEXT_CLASSES:
+PASS / FAIL
+
+PUBLIC academic.query ATTENDANCE:
+PASS / FAIL
+
+PUBLIC academic.query RESULTS:
+PASS / FAIL
+
+PUBLIC lms.query:
+PASS / FAIL
+
+GOOGLE CALLBACK URI:
+<uri>
+
+GOOGLE CONSOLE CHANGE REQUIRED:
+YES / NO
+
+LOCALTONET SERVICE RESTART RECOVERY:
+PASS / FAIL + seconds
+
+NEXUSNODE SERVICE RESTART RECOVERY:
+PASS / FAIL + seconds
+
+3-HOUR SCHEDULER:
+PASS / FAIL
+
+SCHEDULER DEPENDS ON PUBLIC TUNNEL:
+NO / YES
+
+CHROMIUM:
+before / during / after
+
+MEMAVAILABLE:
+<MB>
+
+NEXUSNODE RSS:
+<MB>
+
+PUBLIC SECURITY CHECK:
+PASS / FAIL
+
+PRODUCTION DATA MUTATED:
+NO / YES — explain
+
+READY FOR REAL SECOND USER:
+YES / NO
+
+============================================================
+18. HARD STOP
+============================================================
+
+If every mandatory public acceptance gate passes:
+
+STOP.
+
+Do NOT create the second student's account.
+
+Give me the verified public URL.
+
+I will visually inspect it and then we will perform the real second-user
+onboarding ourselves.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-21T20:48:28+05:30.
+</ADDITIONAL_METADATA>

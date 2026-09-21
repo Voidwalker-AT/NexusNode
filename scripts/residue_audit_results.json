@@ -1,0 +1,2121 @@
+{
+  "total": 301,
+  "summary": {
+    "UNKNOWN": 79,
+    "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)": 63,
+    "COMPATIBILITY (Default config flags)": 22,
+    "ACTIVE / COMPATIBILITY (Safe governor threshold)": 9,
+    "HISTORICAL DOCUMENTATION": 71,
+    "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)": 12,
+    "COMPATIBILITY / TEST": 45
+  },
+  "matches": [
+    {
+      "file": "./API.md",
+      "line": 37,
+      "pattern": "ollama",
+      "snippet": "- `GET /api/services/status`: Probes OpenSSH (8022), LocalToNet, and Ollama statuses.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./API.md",
+      "line": 38,
+      "pattern": "ollama",
+      "snippet": "- `GET /api/system/status`: Comprehensive dashboard telemetry (RAM PSS + Ollama, Swap, Disk, CPU The",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./API.md",
+      "line": 98,
+      "pattern": "ollama",
+      "snippet": "- `GET /api/ai/models`: Queries Ollama `/api/tags` for authoritative installed models list.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./API.md",
+      "line": 98,
+      "pattern": "ai/models",
+      "snippet": "- `GET /api/ai/models`: Queries Ollama `/api/tags` for authoritative installed models list.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./API.md",
+      "line": 100,
+      "pattern": "ollama",
+      "snippet": "- `POST /api/ai/start` & `POST /api/ai/stop`: Canonical endpoints to start/stop the Ollama daemon vi",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./API.md",
+      "line": 100,
+      "pattern": "ai/start",
+      "snippet": "- `POST /api/ai/start` & `POST /api/ai/stop`: Canonical endpoints to start/stop the Ollama daemon vi",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./API.md",
+      "line": 100,
+      "pattern": "ai/stop",
+      "snippet": "- `POST /api/ai/start` & `POST /api/ai/stop`: Canonical endpoints to start/stop the Ollama daemon vi",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./API.md",
+      "line": 101,
+      "pattern": "ai/models",
+      "snippet": "- `POST /api/ai/models/select`: Selects active target model.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./API.md",
+      "line": 103,
+      "pattern": "ollama",
+      "snippet": "- `POST /api/models/pull`: Enqueues Ollama model pull task.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./API.md",
+      "line": 106,
+      "pattern": "rag/index",
+      "snippet": "- `POST /api/rag/index`: Triggers serialized SQLite FTS5 knowledge base rebuild.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./API.md",
+      "line": 107,
+      "pattern": "rag/compact",
+      "snippet": "- `POST /api/rag/compact`: Compacts SQLite FTS5 database and migrates legacy JSON indices.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./app.py",
+      "line": 5,
+      "pattern": "ollama",
+      "snippet": "- Authoritative Ollama Model Registry & Runit Supervisor Controls (No Popen/pkill)",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1267,
+      "pattern": "ollama",
+      "snippet": "# 4. AUTHORITATIVE OLLAMA MODEL REGISTRY & RUNTIME LIFECYCLE",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1270,
+      "pattern": "ollama",
+      "snippet": "class OllamaModelRegistry:",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1272,
+      "pattern": "ollama",
+      "snippet": "Authoritative single source of truth for Ollama models and runtime state.",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1273,
+      "pattern": "ollama",
+      "snippet": "Uses official Ollama endpoints: /api/tags, /api/show, /api/ps, /api/version.",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1277,
+      "pattern": "ollama",
+      "snippet": "self.host = config.OLLAMA_HOST",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1381,
+      "pattern": "ollama",
+      "snippet": "res = subprocess.run([\"sv\", \"status\", \"ollama\"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, ",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1435,
+      "pattern": "ollama",
+      "snippet": "return False, f\"Model '{model_name}' is not installed in Ollama.\"",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1440,
+      "pattern": "ollama",
+      "snippet": "\"\"\"Starts Ollama using runit supervision only.\"\"\"",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1442,
+      "pattern": "ollama",
+      "snippet": "res = subprocess.run([\"sv\", \"up\", \"ollama\"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=Tr",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1444,
+      "pattern": "ollama",
+      "snippet": "log_event(\"INFO\", \"OLLAMA\", \"Issued 'sv up ollama' to runit supervisor.\")",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1445,
+      "pattern": "ollama",
+      "snippet": "return True, \"Ollama service start signal sent to runit.\"",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1448,
+      "pattern": "ollama",
+      "snippet": "return False, \"Failed to start Ollama via supervisor.\"",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1451,
+      "pattern": "ollama",
+      "snippet": "\"\"\"Stops Ollama using runit supervision only.\"\"\"",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1453,
+      "pattern": "ollama",
+      "snippet": "res = subprocess.run([\"sv\", \"down\", \"ollama\"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1455,
+      "pattern": "ollama",
+      "snippet": "log_event(\"INFO\", \"OLLAMA\", \"Issued 'sv down ollama' to runit supervisor.\")",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1456,
+      "pattern": "ollama",
+      "snippet": "return True, \"Ollama service stop signal sent to runit.\"",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1459,
+      "pattern": "ollama",
+      "snippet": "return False, \"Failed to stop Ollama via supervisor.\"",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1462,
+      "pattern": "ollama",
+      "snippet": "ollama_registry = OllamaModelRegistry()",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1463,
+      "pattern": "ollama",
+      "snippet": "ollama_mgr = ollama_registry",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 1464,
+      "pattern": "ollama",
+      "snippet": "status_service.ai_service = ollama_registry",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3188,
+      "pattern": "ollama",
+      "snippet": "ai_state = ollama_registry.get_ai_state()",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3195,
+      "pattern": "ollama",
+      "snippet": "ollama_running = (ai_state.get(\"engine\") == \"running\")",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3257,
+      "pattern": "ollama",
+      "snippet": "\"ollama\": {\"status\": ai_state.get(\"engine\", \"stopped\"), \"running\": ollama_running, \"online\": ollama_",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3280,
+      "pattern": "ollama",
+      "snippet": "ai_state = ollama_registry.get_ai_state()",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3285,
+      "pattern": "ollama",
+      "snippet": "ollama_running = (ai_state.get(\"engine\") == \"running\")",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3311,
+      "pattern": "ollama",
+      "snippet": "\"ollama\": {",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3313,
+      "pattern": "ollama",
+      "snippet": "\"running\": ollama_running,",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3314,
+      "pattern": "ollama",
+      "snippet": "\"online\": ollama_running,",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3329,
+      "pattern": "ollama",
+      "snippet": "return jsonify(ollama_registry.get_ai_state())",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3332,
+      "pattern": "ai/models",
+      "snippet": "@app.route('/api/ai/models', methods=['GET'])",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3337,
+      "pattern": "ollama",
+      "snippet": "return jsonify(ollama_registry.get_installed_models())",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3340,
+      "pattern": "ai/models",
+      "snippet": "@app.route('/api/ai/models/<model_name>', methods=['GET'])",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3345,
+      "pattern": "ollama",
+      "snippet": "details = ollama_registry.get_model_details(model_name)",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3351,
+      "pattern": "ai/models",
+      "snippet": "@app.route('/api/ai/models/select', methods=['POST'])",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3361,
+      "pattern": "ollama",
+      "snippet": "success, msg = ollama_registry.select_model(model_name)",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3364,
+      "pattern": "ollama",
+      "snippet": "return jsonify({\"selected_model\": ollama_registry.selected_model, \"message\": msg})",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3378,
+      "pattern": "ollama",
+      "snippet": "installed = ollama_registry.get_installed_models()",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3410,
+      "pattern": "ollama",
+      "snippet": "\"\"\"Legacy alias returning list of installed model names from Ollama.\"\"\"",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3411,
+      "pattern": "ollama",
+      "snippet": "installed = ollama_registry.get_installed_models()",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3415,
+      "pattern": "ai/start",
+      "snippet": "@app.route('/api/ai/start', methods=['POST'])",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3422,
+      "pattern": "ollama",
+      "snippet": "res_check = governor.can_start_ollama()",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3424,
+      "pattern": "ollama",
+      "snippet": "log_event(\"WARN\", \"OLLAMA\", f\"AI Engine start blocked by Resource Governor: {res_check['reason']}\")",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3432,
+      "pattern": "ollama",
+      "snippet": "success, msg = ollama_registry.start_service()",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3434,
+      "pattern": "ollama",
+      "snippet": "log_event(\"ERROR\", \"OLLAMA\", f\"Failed to start AI engine: {msg}\")",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3438,
+      "pattern": "ai/stop",
+      "snippet": "@app.route('/api/ai/stop', methods=['POST'])",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3445,
+      "pattern": "ollama",
+      "snippet": "success, msg = ollama_registry.stop_service()",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3447,
+      "pattern": "ollama",
+      "snippet": "log_event(\"ERROR\", \"OLLAMA\", f\"Failed to stop AI engine: {msg}\")",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3464,
+      "pattern": "ollama",
+      "snippet": "requested_model = str(data.get('model', '')).strip() or ollama_registry.selected_model",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3471,
+      "pattern": "ollama",
+      "snippet": "installed = ollama_registry.get_installed_models()",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3481,
+      "pattern": "ollama",
+      "snippet": "keep_alive_val = config.OLLAMA_KEEP_ALIVE_CRITICAL",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3484,
+      "pattern": "ollama",
+      "snippet": "keep_alive_val = config.OLLAMA_KEEP_ALIVE_PRESSURE",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3487,
+      "pattern": "ollama",
+      "snippet": "keep_alive_val = config.OLLAMA_KEEP_ALIVE_NORMAL",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3507,
+      "pattern": "ollama",
+      "snippet": "f\"{config.OLLAMA_HOST}/api/generate\",",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3585,
+      "pattern": "rag/compact",
+      "snippet": "@app.route('/api/rag/compact', methods=['POST'])",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 3611,
+      "pattern": "rag/index",
+      "snippet": "@app.route('/api/rag/index', methods=['POST'])",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 6225,
+      "pattern": "GGUF",
+      "snippet": "elif ext in ['.bin', '.gguf']: breakdown[\"models_bytes\"] += sz",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 6336,
+      "pattern": "ollama",
+      "snippet": "\"ollama_model_mb\": config.BUDGET_OLLAMA_MODEL_MB,",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 6358,
+      "pattern": "ollama",
+      "snippet": "ai_state = ollama_registry.get_ai_state()",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 6375,
+      "pattern": "ollama",
+      "snippet": "# Rule 2: Ollama Loaded Model vs RAM",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 6382,
+      "pattern": "ollama",
+      "snippet": "\"problem\": \"Active Ollama model footprint consumes >70% of available RAM.\",",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 7188,
+      "pattern": "ollama",
+      "snippet": "elif target == 'ollama':",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./app.py",
+      "line": 7189,
+      "pattern": "ollama",
+      "snippet": "ver = ollama_registry.get_version()",
+      "classification": "DEAD_CODE_CANDIDATE (Backend Route - Phase 4.2C analysis)"
+    },
+    {
+      "file": "./ARCHITECTURE.md",
+      "line": 19,
+      "pattern": "ollama",
+      "snippet": "To solve these constraints, NexusNode implements **deterministic resource governance, bounded sequen",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./ARCHITECTURE.md",
+      "line": 37,
+      "pattern": "ollama",
+      "snippet": "\u2514\u2500\u2500 ollama        (Optional Local AI Engine, supervised strictly via sv)",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./ARCHITECTURE.md",
+      "line": 44,
+      "pattern": "ollama",
+      "snippet": "- **Ollama Engine (:11434, Optional)**: AI inference engine, kept down by default to protect the 4 G",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./ARCHITECTURE.md",
+      "line": 44,
+      "pattern": "11434",
+      "snippet": "- **Ollama Engine (:11434, Optional)**: AI inference engine, kept down by default to protect the 4 G",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./ARCHITECTURE.md",
+      "line": 84,
+      "pattern": "ollama",
+      "snippet": "- `CRITICAL` ($\\ge 55^\\circ\\text{C}$): **Strictly blocks** new heavy tasks (`yt-dlp`, transcoding, m",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./ARCHITECTURE.md",
+      "line": 99,
+      "pattern": "ollama",
+      "snippet": "### 3.4. Authoritative Ollama Model Serving Architecture",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./ARCHITECTURE.md",
+      "line": 105,
+      "pattern": "ollama",
+      "snippet": "- **Supervision Rule**: Server never executes raw `ollama serve` or `pkill -f ollama`. All lifecycle",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./CHANGELOG.md",
+      "line": 95,
+      "pattern": "ai/start",
+      "snippet": "- **AI Studio Engine Power Switch (`/api/ai/start`, `/api/ai/stop`)**:",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./CHANGELOG.md",
+      "line": 95,
+      "pattern": "ai/stop",
+      "snippet": "- **AI Studio Engine Power Switch (`/api/ai/start`, `/api/ai/stop`)**:",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./CHANGELOG.md",
+      "line": 169,
+      "pattern": "ollama",
+      "snippet": "- Resolved `[ERROR] Failed to fetch AI models (HTTP 200)` caused by rigid dictionary assumptions on ",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./CHANGELOG.md",
+      "line": 169,
+      "pattern": "ai/models",
+      "snippet": "- Resolved `[ERROR] Failed to fetch AI models (HTTP 200)` caused by rigid dictionary assumptions on ",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./CHANGELOG.md",
+      "line": 251,
+      "pattern": "ollama",
+      "snippet": "- Reduced `/api/ai/state` probe latency from ~3.5s to ~1.0s (>70% reduction) with immediate exit whe",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./CHANGELOG.md",
+      "line": 255,
+      "pattern": "ollama",
+      "snippet": "- Aligned OpenSSH, LocalToNet, and Ollama service telemetry parsing across all backend states.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./CHANGELOG.md",
+      "line": 258,
+      "pattern": "ai/models",
+      "snippet": "- Concurrently queried `/api/ai/models` and `/api/ai/state` via `Promise.allSettled()`.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./CHANGELOG.md",
+      "line": 281,
+      "pattern": "ollama",
+      "snippet": "- **Authoritative Ollama Model Serving & Memory Architecture**:",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./CHANGELOG.md",
+      "line": 284,
+      "pattern": "ollama",
+      "snippet": "- Single authoritative runit supervision (`sv up/down/restart ollama`), zero unmanaged subprocesses.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./CHANGELOG.md",
+      "line": 360,
+      "pattern": "ollama",
+      "snippet": "- Local Ollama AI chat integration.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./config.py",
+      "line": 89,
+      "pattern": "ollama",
+      "snippet": "OLLAMA_PORT = int(",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 90,
+      "pattern": "ollama",
+      "snippet": "os.environ.get(\"NEXUS_OLLAMA_PORT\", 11434)",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 90,
+      "pattern": "11434",
+      "snippet": "os.environ.get(\"NEXUS_OLLAMA_PORT\", 11434)",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 93,
+      "pattern": "ollama",
+      "snippet": "OLLAMA_HOST = os.environ.get(",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 94,
+      "pattern": "ollama",
+      "snippet": "\"OLLAMA_HOST\",",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 95,
+      "pattern": "ollama",
+      "snippet": "f\"http://127.0.0.1:{OLLAMA_PORT}\"",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 193,
+      "pattern": "ollama",
+      "snippet": "BUDGET_OLLAMA_MODEL_MB = 1200",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 358,
+      "pattern": "GGUF",
+      "snippet": "\".gguf\",",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 386,
+      "pattern": "ollama",
+      "snippet": "# OLLAMA MANAGEMENT & KEEP-ALIVE POLICY",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 389,
+      "pattern": "ollama",
+      "snippet": "OLLAMA_AUTO_START = (",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 391,
+      "pattern": "ollama",
+      "snippet": "\"NEXUS_OLLAMA_AUTO_START\",",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 396,
+      "pattern": "ollama",
+      "snippet": "OLLAMA_AUTO_RESTART = (",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 398,
+      "pattern": "ollama",
+      "snippet": "\"NEXUS_OLLAMA_AUTO_RESTART\",",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 403,
+      "pattern": "ollama",
+      "snippet": "OLLAMA_KEEP_ALIVE_NORMAL = os.environ.get(",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 404,
+      "pattern": "ollama",
+      "snippet": "\"NEXUS_OLLAMA_KEEP_ALIVE_NORMAL\",",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 408,
+      "pattern": "ollama",
+      "snippet": "OLLAMA_KEEP_ALIVE_PRESSURE = os.environ.get(",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 409,
+      "pattern": "ollama",
+      "snippet": "\"NEXUS_OLLAMA_KEEP_ALIVE_PRESSURE\",",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 413,
+      "pattern": "ollama",
+      "snippet": "OLLAMA_KEEP_ALIVE_CRITICAL = os.environ.get(",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 414,
+      "pattern": "ollama",
+      "snippet": "\"NEXUS_OLLAMA_KEEP_ALIVE_CRITICAL\",",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 680,
+      "pattern": "ollama",
+      "snippet": "\"description\": \"Access local Ollama LLM chat and streaming generation\",",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 706,
+      "pattern": "ollama",
+      "snippet": "\"label\": \"Ollama Model Management\",",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./config.py",
+      "line": 707,
+      "pattern": "ollama",
+      "snippet": "\"description\": \"Pull, delete, and switch quantized Ollama models\",",
+      "classification": "COMPATIBILITY (Default config flags)"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 163,
+      "pattern": "ollama",
+      "snippet": "print(\"  models            Manage Ollama models (pull, delete, inspect)\")",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 197,
+      "pattern": "ollama",
+      "snippet": "ai_state = server_app.ollama_mgr.get_ai_state()",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 199,
+      "pattern": "ollama",
+      "snippet": "print(f\"Ollama Service:     {'ONLINE' if is_online else 'OFFLINE'}\")",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 485,
+      "pattern": "ollama",
+      "snippet": "ai models                 List installed Ollama models",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 499,
+      "pattern": "ollama",
+      "snippet": "models = server_app.ollama_mgr.get_installed_models()",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 513,
+      "pattern": "ollama",
+      "snippet": "st = server_app.ollama_mgr.get_ai_state()",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 519,
+      "pattern": "ollama",
+      "snippet": "print(f\"Keep-Alive:         {st.get('keep_alive', getattr(config, 'OLLAMA_KEEP_ALIVE_NORMAL', '5m'))",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 527,
+      "pattern": "ollama",
+      "snippet": "success, msg = server_app.ollama_mgr.select_model(mname)",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 538,
+      "pattern": "ollama",
+      "snippet": "state = server_app.ollama_mgr.get_ai_state()",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 551,
+      "pattern": "ollama",
+      "snippet": "f\"{config.OLLAMA_HOST}/api/generate\",",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 564,
+      "pattern": "ollama",
+      "snippet": "print(f\"\\nError communicating with Ollama: {e}\\n\")",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 771,
+      "pattern": "ollama",
+      "snippet": "if srv == \"ollama\":",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 773,
+      "pattern": "ollama",
+      "snippet": "succ, msg = server_app.ollama_mgr.start_service()",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 775,
+      "pattern": "ollama",
+      "snippet": "succ, msg = server_app.ollama_mgr.stop_service()",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 777,
+      "pattern": "ollama",
+      "snippet": "server_app.ollama_mgr.stop_service()",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus_shell.py",
+      "line": 778,
+      "pattern": "ollama",
+      "snippet": "succ, msg = server_app.ollama_mgr.start_service()",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./README.md",
+      "line": 21,
+      "pattern": "ai/start",
+      "snippet": "- \ud83e\udd16 **AI Studio & Authoritative Model Serving**: Strict separation of *Selected Model*, *Installed M",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./README.md",
+      "line": 21,
+      "pattern": "ai/stop",
+      "snippet": "- \ud83e\udd16 **AI Studio & Authoritative Model Serving**: Strict separation of *Selected Model*, *Installed M",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./README.md",
+      "line": 83,
+      "pattern": "ollama",
+      "snippet": "\u2514\u2500\u2500 ollama        (Optional Local AI Engine, controlled via sv)",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./resource_governor.py",
+      "line": 589,
+      "pattern": "ollama",
+      "snippet": "def can_start_ollama(self) -> dict:",
+      "classification": "ACTIVE / COMPATIBILITY (Safe governor threshold)"
+    },
+    {
+      "file": "./resource_governor.py",
+      "line": 590,
+      "pattern": "ollama",
+      "snippet": "\"\"\"Evaluates whether the optional heavy Ollama AI engine can be started.\"\"\"",
+      "classification": "ACTIVE / COMPATIBILITY (Safe governor threshold)"
+    },
+    {
+      "file": "./resource_governor.py",
+      "line": 600,
+      "pattern": "ollama",
+      "snippet": "\"reason\": \"Ollama startup blocked: Device thermal critical.\"",
+      "classification": "ACTIVE / COMPATIBILITY (Safe governor threshold)"
+    },
+    {
+      "file": "./resource_governor.py",
+      "line": 608,
+      "pattern": "ollama",
+      "snippet": "\"reason\": f\"Ollama startup blocked: only {mem['available_mb']} MB RAM available (minimum required: {",
+      "classification": "ACTIVE / COMPATIBILITY (Safe governor threshold)"
+    },
+    {
+      "file": "./resource_governor.py",
+      "line": 614,
+      "pattern": "ollama",
+      "snippet": "\"reason\": \"Ollama startup permitted.\"",
+      "classification": "ACTIVE / COMPATIBILITY (Safe governor threshold)"
+    },
+    {
+      "file": "./resource_governor.py",
+      "line": 714,
+      "pattern": "ollama",
+      "snippet": "\"ollama\": {\"status\": \"offline\", \"uptime_seconds\": 0, \"details\": f\"port {config.OLLAMA_PORT}\"},",
+      "classification": "ACTIVE / COMPATIBILITY (Safe governor threshold)"
+    },
+    {
+      "file": "./resource_governor.py",
+      "line": 719,
+      "pattern": "ollama",
+      "snippet": "# Check Ollama socket/health",
+      "classification": "ACTIVE / COMPATIBILITY (Safe governor threshold)"
+    },
+    {
+      "file": "./resource_governor.py",
+      "line": 723,
+      "pattern": "ollama",
+      "snippet": "if s.connect_ex(('127.0.0.1', config.OLLAMA_PORT)) == 0:",
+      "classification": "ACTIVE / COMPATIBILITY (Safe governor threshold)"
+    },
+    {
+      "file": "./resource_governor.py",
+      "line": 724,
+      "pattern": "ollama",
+      "snippet": "services[\"ollama\"][\"status\"] = \"online\"",
+      "classification": "ACTIVE / COMPATIBILITY (Safe governor threshold)"
+    },
+    {
+      "file": "./start_nexus.sh",
+      "line": 131,
+      "pattern": "ollama",
+      "snippet": "# Stop optional Ollama if active",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./start_nexus.sh",
+      "line": 132,
+      "pattern": "ollama",
+      "snippet": "if [ -d \"$SVDIR/ollama\" ]; then",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./start_nexus.sh",
+      "line": 133,
+      "pattern": "ollama",
+      "snippet": "sv down ollama > /dev/null 2>&1 || true",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./start_nexus.sh",
+      "line": 188,
+      "pattern": "ollama",
+      "snippet": "# 4. Ollama",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./start_nexus.sh",
+      "line": 189,
+      "pattern": "ollama",
+      "snippet": "if [ -d \"$SVDIR/ollama\" ]; then",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./start_nexus.sh",
+      "line": 190,
+      "pattern": "ollama",
+      "snippet": "echo -n \"  \u2022 ollama      : \"",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./start_nexus.sh",
+      "line": 191,
+      "pattern": "ollama",
+      "snippet": "sv status ollama 2>&1 || echo \"down (optional)\"",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./verify_bg6_live.py",
+      "line": 46,
+      "pattern": "ollama",
+      "snippet": "assert \"ollama\" not in html.lower()",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./agent/status_service.py",
+      "line": 87,
+      "pattern": "ollama",
+      "snippet": "ai_status = ai_st.get(\"ollama_state\", \"UNKNOWN\")",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./docs/LEGACY_AND_DEAD_CODE_AUDIT.md",
+      "line": 18,
+      "pattern": "ollama",
+      "snippet": "| **1. Deprecated Ollama Runit Services** | `2` | Low | Delete directory `services/ollama/` |",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/LEGACY_AND_DEAD_CODE_AUDIT.md",
+      "line": 30,
+      "pattern": "ollama",
+      "snippet": "### Category 1: Deprecated Ollama Runit Services (2 Files)",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/LEGACY_AND_DEAD_CODE_AUDIT.md",
+      "line": 32,
+      "pattern": "ollama",
+      "snippet": "- `services/ollama/run`",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/LEGACY_AND_DEAD_CODE_AUDIT.md",
+      "line": 33,
+      "pattern": "ollama",
+      "snippet": "- `services/ollama/log/run`",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/LEGACY_AND_DEAD_CODE_AUDIT.md",
+      "line": 34,
+      "pattern": "ollama",
+      "snippet": "- **Current State**: Dead code. The Ollama service is not supervised by `runit` on the production TE",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/LEGACY_AND_DEAD_CODE_AUDIT.md",
+      "line": 36,
+      "pattern": "ollama",
+      "snippet": "- **Retirement Strategy**: Delete `services/ollama/` in Phase 4.2C.",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/LEGACY_AND_DEAD_CODE_AUDIT.md",
+      "line": 68,
+      "pattern": "ollama",
+      "snippet": "- **Current State**: Subcommands in the administrative CLI client (`nexus_shell.py` / `nexus`) attem",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/LEGACY_AND_DEAD_CODE_AUDIT.md",
+      "line": 68,
+      "pattern": "GGUF",
+      "snippet": "- **Current State**: Subcommands in the administrative CLI client (`nexus_shell.py` / `nexus`) attem",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/LEGACY_AND_DEAD_CODE_AUDIT.md",
+      "line": 105,
+      "pattern": "ollama",
+      "snippet": "- Stage 2: Service runner scripts (`services/ollama/`).",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/NEXUSNODE_ALL_FILES_GUIDE.md",
+      "line": 110,
+      "pattern": "ollama",
+      "snippet": "- `services/ollama/*`: *[DEAD-CODE]* Deprecated runit runner scripts for discontinued Ollama engine.",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/README.md",
+      "line": 50,
+      "pattern": "ollama",
+      "snippet": "\u2502   \u251c\u2500\u2500 ADR-002-remote-ai-reasoning-over-local-ollama.md",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/architecture/DATABASE_ARCHITECTURE.md",
+      "line": 150,
+      "pattern": "ollama",
+      "snippet": "- `ai_inference_metrics`: Legacy tracking for deprecated local Ollama inference.",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/decisions/ADR-002-remote-ai-reasoning-over-local-ollama.md",
+      "line": 1,
+      "pattern": "ollama",
+      "snippet": "# ADR-002: Remote AI Reasoning Instead of Local Ollama",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/decisions/ADR-002-remote-ai-reasoning-over-local-ollama.md",
+      "line": 11,
+      "pattern": "ollama",
+      "snippet": "Initial iterations of NexusNode included a local Ollama daemon, quantized GGUF models, RAG vector in",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/decisions/ADR-002-remote-ai-reasoning-over-local-ollama.md",
+      "line": 11,
+      "pattern": "GGUF",
+      "snippet": "Initial iterations of NexusNode included a local Ollama daemon, quantized GGUF models, RAG vector in",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/decisions/ADR-002-remote-ai-reasoning-over-local-ollama.md",
+      "line": 14,
+      "pattern": "ollama",
+      "snippet": "Permanently decommission and eliminate all local LLM inference, Ollama services, and in-process neur",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/decisions/ADR-002-remote-ai-reasoning-over-local-ollama.md",
+      "line": 25,
+      "pattern": "ollama",
+      "snippet": "- Elimination of Ollama reduced idle system memory footprint from critical pressure (<400 MB free) t",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/decisions/ADR-002-remote-ai-reasoning-over-local-ollama.md",
+      "line": 26,
+      "pattern": "ollama",
+      "snippet": "- Live BG6 telemetry confirms 0 Ollama processes active.",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/decisions/ADR-002-remote-ai-reasoning-over-local-ollama.md",
+      "line": 31,
+      "pattern": "ollama",
+      "snippet": "- `services/ollama` (marked as DEAD_CODE_CANDIDATE)",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/AGENT_BROWSER_ARCHITECTURE_FEASIBILITY.md",
+      "line": 380,
+      "pattern": "ollama",
+      "snippet": "# Block heavy browser launch if Ollama model inference is actively running",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/AGENT_BROWSER_ARCHITECTURE_FEASIBILITY.md",
+      "line": 381,
+      "pattern": "ollama",
+      "snippet": "if getattr(self, \"ollama_active\", False) and mem[\"available_mb\"] < 600:",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/AGENT_BROWSER_ARCHITECTURE_FEASIBILITY.md",
+      "line": 385,
+      "pattern": "ollama",
+      "snippet": "\"reason\": \"Browser launch queued: Ollama LLM is active under memory pressure.\"",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/DOCKER.md",
+      "line": 14,
+      "pattern": "ollama",
+      "snippet": "|   |   nexusnode container    |          |     ollama container      |   |",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/DOCKER.md",
+      "line": 15,
+      "pattern": "ollama",
+      "snippet": "|   |  (Python 3.11-slim)      |          |  (ollama/ollama:latest)   |   |",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/DOCKER.md",
+      "line": 19,
+      "pattern": "11434",
+      "snippet": "|   |  - yt-dlp & FFmpeg       | -------> |  - Port :11434            |   |",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/DOCKER.md",
+      "line": 25,
+      "pattern": "ollama",
+      "snippet": "|   | Persistent Named Volumes |          |    ollama_models Volume   |   |",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/DOCKER.md",
+      "line": 26,
+      "pattern": "ollama",
+      "snippet": "|   | - nexus_vault (DB/Files) |          |    (/root/.ollama)        |   |",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/DOCKER.md",
+      "line": 68,
+      "pattern": "ollama",
+      "snippet": "| `ollama_models` | `/root/.ollama` | Downloaded local AI models (Qwen, Llama, etc.) |",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 13,
+      "pattern": "ollama",
+      "snippet": "NexusNode is an established, resilient mobile server appliance and backend platform running natively",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 19,
+      "pattern": "ollama",
+      "snippet": "* **AI & RAG Subsystems**: Operational for local Ollama LLM inference (with dynamic memory budget go",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 44,
+      "pattern": "ollama",
+      "snippet": "\u2502   \u251c\u2500\u2500 ollama/run                    # Ollama local LLM server runscript",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 111,
+      "pattern": "ollama",
+      "snippet": "Runit --> SV_Ollama[\"sv: ollama (port 11434)\"]",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 111,
+      "pattern": "11434",
+      "snippet": "Runit --> SV_Ollama[\"sv: ollama (port 11434)\"]",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 135,
+      "pattern": "ollama",
+      "snippet": "OllamaDaemon[\"Local Ollama Daemon (:11434)\"]",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 135,
+      "pattern": "11434",
+      "snippet": "OllamaDaemon[\"Local Ollama Daemon (:11434)\"]",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 144,
+      "pattern": "ollama",
+      "snippet": "Core_Appliance --> OllamaDaemon",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 159,
+      "pattern": "ollama",
+      "snippet": "| **Ollama Lifecycle** | `app.py` | **IMPLEMENTED** | Supervisor-backed start/stop, model selection,",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 222,
+      "pattern": "ollama",
+      "snippet": "| `can_use_ai` | AI | Yes | Yes | Query Ollama chat endpoints and stream responses |",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 225,
+      "pattern": "ollama",
+      "snippet": "| `can_manage_models` | System Control | No | Yes | Select and manage Ollama AI models |",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 377,
+      "pattern": "ollama",
+      "snippet": "## 9. AI / Ollama / RAG Audit",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 379,
+      "pattern": "ollama",
+      "snippet": "### 9.1 Ollama Runtime Lifecycle",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 380,
+      "pattern": "ollama",
+      "snippet": "* **Supervisor Integration**: Service start/stop is mediated through `runit` (`sv up ollama`, `sv do",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 381,
+      "pattern": "ollama",
+      "snippet": "* **Model Discovery**: Queries official Ollama endpoints (`/api/tags`, `/api/ps`, `/api/show`, `/api",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 407,
+      "pattern": "ollama",
+      "snippet": "Agent[\"Orchestrator (Gemini / Local Ollama)\"]",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 456,
+      "pattern": "ollama",
+      "snippet": "| **Switch Ollama Model** | `ollama_registry.select_model()`| `can_manage_models` | `OPERATIONAL` | ",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 487,
+      "pattern": "ollama",
+      "snippet": "* **Process Supervision**: Managed exclusively via `runit` (`termux-services`). All daemons (`nexusn",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 580,
+      "pattern": "ollama",
+      "snippet": "P7[\"7. Integrate Local Ollama Sub-Agent Delegation\"]",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/phases/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "line": 602,
+      "pattern": "ollama",
+      "snippet": "7. **Integrate Local Ollama Sub-Agents**: Enable delegation of local sub-tasks to on-device quantize",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/00_COMPLETE_REFERENCE.md",
+      "line": 69,
+      "pattern": "ollama",
+      "snippet": "| **[ADR-002](file:///e:/Workspace/Active/server/docs/decisions/ADR-002-remote-ai-reasoning-over-loc",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/01_PROJECT_OVERVIEW.md",
+      "line": 14,
+      "pattern": "ollama",
+      "snippet": "NexusNode is **NOT** a local AI workstation, an Ollama manager, or a local chatbot. It does not run ",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/01_PROJECT_OVERVIEW.md",
+      "line": 101,
+      "pattern": "ollama",
+      "snippet": "- **NOT a local model runner**: Zero Ollama daemons, zero PyTorch/llama.cpp inference processes.",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/01_PROJECT_OVERVIEW.md",
+      "line": 101,
+      "pattern": "local model",
+      "snippet": "- **NOT a local model runner**: Zero Ollama daemons, zero PyTorch/llama.cpp inference processes.",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/04_IMPLEMENTATION_HISTORY.md",
+      "line": 13,
+      "pattern": "ollama",
+      "snippet": "1. **Phase 1\u20132 (General-Purpose AI Media Server)**: Conceived as a home server running Ollama, RAG i",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/04_IMPLEMENTATION_HISTORY.md",
+      "line": 13,
+      "pattern": "local model",
+      "snippet": "1. **Phase 1\u20132 (General-Purpose AI Media Server)**: Conceived as a home server running Ollama, RAG i",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/04_IMPLEMENTATION_HISTORY.md",
+      "line": 15,
+      "pattern": "ollama",
+      "snippet": "3. **Phase 4.0\u20134.1 (BG6 Ephemeral Browser & Semantic Facade)**: Decommissioned local Ollama; proved ",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/04_IMPLEMENTATION_HISTORY.md",
+      "line": 16,
+      "pattern": "ollama",
+      "snippet": "4. **Phase 4.2 (Product Rebase & Canonical Freeze)**: Permanently eliminated obsolete AI Studio/Olla",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/04_IMPLEMENTATION_HISTORY.md",
+      "line": 22,
+      "pattern": "ollama",
+      "snippet": "### Transition 1: Decommissioning Local Ollama & AI Workstation Identity",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/04_IMPLEMENTATION_HISTORY.md",
+      "line": 23,
+      "pattern": "ollama",
+      "snippet": "- **Problem**: On the TECNO BG6's ~3.77 GB RAM, running Ollama (even small 1.5B/3B models) consumed ",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/04_IMPLEMENTATION_HISTORY.md",
+      "line": 24,
+      "pattern": "ollama",
+      "snippet": "- **Old Approach**: Local Ollama server process supervised by runit, exposed via local chat UI.",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/04_IMPLEMENTATION_HISTORY.md",
+      "line": 27,
+      "pattern": "local model",
+      "snippet": "- **New Approach**: Lightweight appliance exposing MCP tools over HTTPS; zero local model inference.",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/04_IMPLEMENTATION_HISTORY.md",
+      "line": 28,
+      "pattern": "ollama",
+      "snippet": "- **Current Status**: VERIFIED CURRENT (See [ADR-002](file:///E:/Workspace/Active/server/docs/decisi",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/04_IMPLEMENTATION_HISTORY.md",
+      "line": 55,
+      "pattern": "ollama",
+      "snippet": "- **Problem**: The web frontend (`index.html`) was a 126 KB monolith containing obsolete AI Studio c",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/05_CONFIGURATION.md",
+      "line": 117,
+      "pattern": "ollama",
+      "snippet": "- `NEXUS_OLLAMA_PORT` / `OLLAMA_HOST`: Inactive. Local Ollama is decommissioned (ADR-002).",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/05_CONFIGURATION.md",
+      "line": 118,
+      "pattern": "ollama",
+      "snippet": "- `NEXUS_OLLAMA_AUTO_START` / `NEXUS_OLLAMA_AUTO_RESTART`: Inactive. Defaults to `false`.",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/05_CONFIGURATION.md",
+      "line": 119,
+      "pattern": "ollama",
+      "snippet": "- `NEXUS_CTX_NORMAL` / `NEXUS_CTX_PRESSURE` / `NEXUS_CTX_CRITICAL`: Inactive. Used by legacy Ollama ",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/09_TESTING_AND_VERIFICATION.md",
+      "line": 42,
+      "pattern": "ollama",
+      "snippet": "- [`test_ui_rebase_contract.py`](file:///e:/Workspace/Active/server/tests/test_ui_rebase_contract.py",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/09_TESTING_AND_VERIFICATION.md",
+      "line": 42,
+      "pattern": "model download",
+      "snippet": "- [`test_ui_rebase_contract.py`](file:///e:/Workspace/Active/server/tests/test_ui_rebase_contract.py",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/10_ROADMAP.md",
+      "line": 23,
+      "pattern": "ollama",
+      "snippet": "- Identified severe resource exhaustion (OOM crashes, CPU throttling) caused by running local LLMs (",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/10_ROADMAP.md",
+      "line": 38,
+      "pattern": "ollama",
+      "snippet": "- Removed legacy AI Studio, Ollama controls, local chat UI, and model manager.",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/10_ROADMAP.md",
+      "line": 59,
+      "pattern": "ollama",
+      "snippet": "- Remove deprecated local AI engines (`src/ai/` Ollama managers, model downloaders).",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./docs/reference/10_ROADMAP.md",
+      "line": 59,
+      "pattern": "model download",
+      "snippet": "- Remove deprecated local AI engines (`src/ai/` Ollama managers, model downloaders).",
+      "classification": "HISTORICAL DOCUMENTATION"
+    },
+    {
+      "file": "./nexus/normalize.py",
+      "line": 35,
+      "pattern": "ai/models",
+      "snippet": "Normalizes /api/ai/models response into list of model dictionaries.",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus/shell.py",
+      "line": 130,
+      "pattern": "ollama",
+      "snippet": "print(\"  ai models             List installed Ollama LLM models\")",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus/__main__.py",
+      "line": 142,
+      "pattern": "ollama",
+      "snippet": "p_svc.add_argument(\"service_name\", nargs=\"?\", default=None, help=\"Service name (e.g. ollama, cloudfl",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus/__main__.py",
+      "line": 147,
+      "pattern": "ollama",
+      "snippet": "p_mod.add_argument(\"model_name\", nargs=\"?\", default=None, help=\"Ollama model name (e.g. llama3.2:1b)",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus/__main__.py",
+      "line": 152,
+      "pattern": "ollama",
+      "snippet": "p_diag.add_argument(\"--target\", default=\"internet\", choices=[\"internet\", \"tunnel\", \"ollama\", \"nexusn",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./nexus/commands/ai.py",
+      "line": 3,
+      "pattern": "ai/models",
+      "snippet": "Communicates with /api/ai/models, /api/ai/state, /api/ai/models/select, and /chat/stream.",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./nexus/commands/ai.py",
+      "line": 35,
+      "pattern": "ai/models",
+      "snippet": "status_code, resp = client.get(\"/api/ai/models\")",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./nexus/commands/ai.py",
+      "line": 119,
+      "pattern": "ai/models",
+      "snippet": "status_code, resp = client.post(\"/api/ai/models/select\", data=payload)",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./nexus/commands/models.py",
+      "line": 3,
+      "pattern": "ai/models",
+      "snippet": "Communicates with /api/ai/models, /api/ai/models/<model_name>, and /api/models/estimate.",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./nexus/commands/models.py",
+      "line": 28,
+      "pattern": "ai/models",
+      "snippet": "status_code, resp = client.get(\"/api/ai/models\")",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./nexus/commands/models.py",
+      "line": 77,
+      "pattern": "ai/models",
+      "snippet": "status_code, resp = client.get(f\"/api/ai/models/{name}\")",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./nexus/commands/rag.py",
+      "line": 3,
+      "pattern": "rag/index",
+      "snippet": "Communicates with /api/rag/diagnostics, /api/rag/sources, /api/rag/index, and /api/rag/compact.",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./nexus/commands/rag.py",
+      "line": 3,
+      "pattern": "rag/compact",
+      "snippet": "Communicates with /api/rag/diagnostics, /api/rag/sources, /api/rag/index, and /api/rag/compact.",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./nexus/commands/rag.py",
+      "line": 154,
+      "pattern": "rag/index",
+      "snippet": "status_code, resp = client.post(\"/api/rag/index\")",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./nexus/commands/rag.py",
+      "line": 176,
+      "pattern": "rag/compact",
+      "snippet": "status_code, resp = client.post(\"/api/rag/compact\")",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./nexus/commands/services.py",
+      "line": 81,
+      "pattern": "ollama",
+      "snippet": "output.print_error(\"Service name is required (e.g. ollama, cloudflared, localtonet).\")",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./nexus/commands/services.py",
+      "line": 108,
+      "pattern": "ollama",
+      "snippet": "output.print_error(\"Service name is required (e.g. ollama, cloudflared, localtonet).\")",
+      "classification": "DEAD_CODE_CANDIDATE (CLI retired in Stage 3)"
+    },
+    {
+      "file": "./scripts/audit_file_inventory.py",
+      "line": 78,
+      "pattern": "ollama",
+      "snippet": "if \"ollama\" in norm:",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/audit_inventory.json",
+      "line": 1263,
+      "pattern": "ollama",
+      "snippet": "\"path\": \"services/ollama/run\",",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/audit_inventory.json",
+      "line": 1271,
+      "pattern": "ollama",
+      "snippet": "\"path\": \"services/ollama/log/run\",",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/install_services.sh",
+      "line": 24,
+      "pattern": "ollama",
+      "snippet": "mkdir -p \"$HOME/nexus_logs/ollama\"",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/install_services.sh",
+      "line": 44,
+      "pattern": "ollama",
+      "snippet": "for SVC in nexusnode localtonet ollama sshd; do",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/install_services.sh",
+      "line": 66,
+      "pattern": "ollama",
+      "snippet": "if [ \"$SVC\" = \"ollama\" ]; then",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/install_services.sh",
+      "line": 92,
+      "pattern": "ollama",
+      "snippet": "echo \"  \u2022 sv up ollama           - Start optional Ollama AI engine\"",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/install_services.sh",
+      "line": 93,
+      "pattern": "ollama",
+      "snippet": "echo \"  \u2022 sv down ollama         - Stop optional Ollama AI engine\"",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/residue_audit.py",
+      "line": 6,
+      "pattern": "ollama",
+      "snippet": "\"ollama\": re.compile(r\"ollama\", re.I),",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/residue_audit.py",
+      "line": 7,
+      "pattern": "11434",
+      "snippet": "\"11434\": re.compile(r\"11434\"),",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/residue_audit.py",
+      "line": 8,
+      "pattern": "GGUF",
+      "snippet": "\"GGUF\": re.compile(r\"GGUF\", re.I),",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/residue_audit.py",
+      "line": 9,
+      "pattern": "local model",
+      "snippet": "\"local model\": re.compile(r\"local model\", re.I),",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/residue_audit.py",
+      "line": 10,
+      "pattern": "model download",
+      "snippet": "\"model download\": re.compile(r\"model download\", re.I),",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/residue_audit.py",
+      "line": 11,
+      "pattern": "ai/start",
+      "snippet": "\"ai/start\": re.compile(r\"ai/start\", re.I),",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/residue_audit.py",
+      "line": 12,
+      "pattern": "ai/stop",
+      "snippet": "\"ai/stop\": re.compile(r\"ai/stop\", re.I),",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/residue_audit.py",
+      "line": 13,
+      "pattern": "ai/models",
+      "snippet": "\"ai/models\": re.compile(r\"ai/models\", re.I),",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/residue_audit.py",
+      "line": 14,
+      "pattern": "rag/index",
+      "snippet": "\"rag/index\": re.compile(r\"rag/index\", re.I),",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./scripts/residue_audit.py",
+      "line": 15,
+      "pattern": "rag/compact",
+      "snippet": "\"rag/compact\": re.compile(r\"rag/compact\", re.I)",
+      "classification": "UNKNOWN"
+    },
+    {
+      "file": "./tests/test_docker_setup.py",
+      "line": 55,
+      "pattern": "ollama",
+      "snippet": "\"\"\"docker-compose.yml must define nexusnode, ollama, and named persistent volumes.\"\"\"",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_docker_setup.py",
+      "line": 61,
+      "pattern": "ollama",
+      "snippet": "self.assertIn(\"ollama:\", content)",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_docker_setup.py",
+      "line": 63,
+      "pattern": "11434",
+      "snippet": "self.assertIn(\"11434:11434\", content)",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_docker_setup.py",
+      "line": 66,
+      "pattern": "ollama",
+      "snippet": "self.assertIn(\"ollama_models:\", content, \"Must declare ollama_models named volume.\")",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_docker_setup.py",
+      "line": 76,
+      "pattern": "ollama",
+      "snippet": "self.assertIn(\"OLLAMA_HOST\", content)",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_functionality_pass.py",
+      "line": 8,
+      "pattern": "ai/start",
+      "snippet": "5. AI Engine Start/Stop/State Controls (canonical /api/ai/start & /api/ai/stop, supervisor state)",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_functionality_pass.py",
+      "line": 8,
+      "pattern": "ai/stop",
+      "snippet": "5. AI Engine Start/Stop/State Controls (canonical /api/ai/start & /api/ai/stop, supervisor state)",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_functionality_pass.py",
+      "line": 218,
+      "pattern": "ai/start",
+      "snippet": "\"\"\"Verify /api/ai/start and /api/ai/stop require service control permissions.\"\"\"",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_functionality_pass.py",
+      "line": 218,
+      "pattern": "ai/stop",
+      "snippet": "\"\"\"Verify /api/ai/start and /api/ai/stop require service control permissions.\"\"\"",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_functionality_pass.py",
+      "line": 220,
+      "pattern": "ai/start",
+      "snippet": "res_usr_start = self.client.post('/api/ai/start', headers=self.user_headers)",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_functionality_pass.py",
+      "line": 224,
+      "pattern": "ai/stop",
+      "snippet": "res_adm_stop = self.client.post('/api/ai/stop', headers=self.admin_headers)",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_nexus_client.py",
+      "line": 145,
+      "pattern": "ollama",
+      "snippet": "\"ollama\": {\"status\": \"running\", \"running\": True, \"online\": True, \"selected_model\": \"qwen2.5:0.5b\", \"",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_nexus_client.py",
+      "line": 205,
+      "pattern": "ai/models",
+      "snippet": "elif path == \"/api/ai/models\":",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_nexus_client.py",
+      "line": 206,
+      "pattern": "ollama",
+      "snippet": "# Authoritative top-level JSON array from Ollama registry",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_nexus_client.py",
+      "line": 212,
+      "pattern": "ai/models",
+      "snippet": "elif path.startswith(\"/api/ai/models/\"):",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_nexus_client.py",
+      "line": 213,
+      "pattern": "ai/models",
+      "snippet": "model_name = path.replace(\"/api/ai/models/\", \"\")",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_nexus_client.py",
+      "line": 265,
+      "pattern": "ollama",
+      "snippet": "\"ollama\": {\"status\": \"running\", \"running\": True, \"online\": True, \"selected_model\": \"qwen2.5:0.5b\", \"",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_nexus_client.py",
+      "line": 459,
+      "pattern": "ai/models",
+      "snippet": "elif path == \"/api/ai/models/select\":",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_nexus_client.py",
+      "line": 487,
+      "pattern": "rag/index",
+      "snippet": "elif path == \"/api/rag/index\":",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_nexus_client.py",
+      "line": 490,
+      "pattern": "rag/compact",
+      "snippet": "elif path == \"/api/rag/compact\":",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_nexus_client.py",
+      "line": 1114,
+      "pattern": "ollama",
+      "snippet": "self.assertIn(\"ollama\", out)",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 16,
+      "pattern": "ollama",
+      "snippet": "13. Authoritative Ollama Model Serving, Registry, and Runtime Lifecycle",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 119,
+      "pattern": "ollama",
+      "snippet": "self.assertIn('ollama', data)",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 147,
+      "pattern": "ollama",
+      "snippet": "self.assertTrue(gov.can_start_ollama()[\"allowed\"])",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 160,
+      "pattern": "ollama",
+      "snippet": "self.assertFalse(gov.can_start_ollama()[\"allowed\"])",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 278,
+      "pattern": "ollama",
+      "snippet": "def test_14_low_memory_rejection_for_ollama(self):",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 655,
+      "pattern": "ollama",
+      "snippet": "def test_38_user_cannot_control_ollama(self):",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 656,
+      "pattern": "ollama",
+      "snippet": "\"\"\"Verify normal user cannot start or stop Ollama engine.\"\"\"",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 685,
+      "pattern": "ai/models",
+      "snippet": "res_models = self.client.get('/api/ai/models', headers={'Authorization': f'Bearer {user_tok}'})",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 723,
+      "pattern": "ollama",
+      "snippet": "# 13. Authoritative Ollama Model Serving & Lifecycle Tests",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 725,
+      "pattern": "ai/models",
+      "snippet": "\"\"\"Verify GET /api/ai/models and /api/ai/state return authoritative data.\"\"\"",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 726,
+      "pattern": "ollama",
+      "snippet": "with patch.object(server_app.ollama_registry, 'get_installed_models', return_value=[",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 729,
+      "pattern": "ai/models",
+      "snippet": "res_models = self.client.get('/api/ai/models', headers={'Authorization': f'Bearer {self.admin_token}",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 743,
+      "pattern": "ai/models",
+      "snippet": "\"\"\"Verify POST /api/ai/models/select validates model against installed list.\"\"\"",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 744,
+      "pattern": "ollama",
+      "snippet": "with patch.object(server_app.ollama_registry, 'get_installed_models', return_value=[",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 749,
+      "pattern": "ai/models",
+      "snippet": "'/api/ai/models/select',",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 758,
+      "pattern": "ai/models",
+      "snippet": "'/api/ai/models/select',",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 783,
+      "pattern": "rag/compact",
+      "snippet": "\"\"\"Verify POST /api/rag/compact migrates legacy JSON into SQLite FTS5.\"\"\"",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 792,
+      "pattern": "rag/compact",
+      "snippet": "res = self.client.post('/api/rag/compact', headers={'Authorization': f'Bearer {self.admin_token}'})",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_server.py",
+      "line": 2157,
+      "pattern": "ollama",
+      "snippet": "shell.onecmd(\"services stop ollama\")",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_tab_preloading_cache.py",
+      "line": 70,
+      "pattern": "ai/models",
+      "snippet": "('/api/ai/models', 'ai models list'),",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_tab_preloading_cache.py",
+      "line": 99,
+      "pattern": "ai/models",
+      "snippet": "'/api/ai/models',",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_ui_rebase_contract.py",
+      "line": 4,
+      "pattern": "ollama",
+      "snippet": "- Strict frontend cleanliness: complete removal of legacy AI Studio, Media, Tasks, Ollama",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_ui_rebase_contract.py",
+      "line": 47,
+      "pattern": "ollama",
+      "snippet": "# Check for legacy AI/Ollama/media controls",
+      "classification": "COMPATIBILITY / TEST"
+    },
+    {
+      "file": "./tests/test_ui_rebase_contract.py",
+      "line": 49,
+      "pattern": "ollama",
+      "snippet": "assert \"ollama\" not in html.lower()",
+      "classification": "COMPATIBILITY / TEST"
+    }
+  ]
+}

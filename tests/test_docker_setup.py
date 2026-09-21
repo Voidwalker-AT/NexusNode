@@ -18,7 +18,9 @@ class TestDockerApplianceSetup(unittest.TestCase):
         cls.compose_path = os.path.join(cls.root_dir, "docker-compose.yml")
         cls.dockerignore_path = os.path.join(cls.root_dir, ".dockerignore")
         cls.env_example_path = os.path.join(cls.root_dir, ".env.example")
-        cls.docker_doc_path = os.path.join(cls.root_dir, "docs", "DOCKER.md")
+        cls.docker_doc_path = os.path.join(cls.root_dir, "docs", "phases", "DOCKER.md")
+        if not os.path.exists(cls.docker_doc_path):
+            cls.docker_doc_path = os.path.join(cls.root_dir, "docs", "DOCKER.md")
 
     def test_dockerfile_exists_and_configured(self):
         """Dockerfile must exist with non-root security, FFmpeg, and healthcheck."""

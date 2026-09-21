@@ -335,9 +335,10 @@ class AttendanceService:
     classroom card-punch tracking, and safe bunk analytics.
     """
 
-    def __init__(self, conn_factory, session_broker=None):
+    def __init__(self, conn_factory, session_broker=None, timetable_service=None):
         self.conn_factory = conn_factory
         self.session_broker = session_broker
+        self.timetable_service = timetable_service
 
     def get_attendance_status(self, user_id: str) -> Dict[str, Any]:
         """Returns non-sensitive health and synchronization status for a user."""
@@ -429,12 +430,17 @@ class AttendanceService:
 
         now = time.time()
         try:
-            # 1. Resolve UPES Session & Credentials via Broker State Machine
-            if not self.session_broker:
-                return {"status": "ERROR", "message": "UpesSessionBroker not configured on service."}
-
             session_tuple = None
             auth_err = None
+
+            if hasattr(self, "auth_manager") and self.auth_manager:
+                try:
+                    tok, code, api_url, exp = self.auth_manager.ensure_authenticated(user_id)
+                    session_tuple = (tok, code, api_url, exp)
+                except Exception as e:
+                    auth_err = str(e)
+            elif not self.session_broker:
+                return {"status": "ERROR", "message": "UpesSessionBroker not configured on service."}
 
             if hasattr(self.session_broker, "resolve_session"):
                 try:
@@ -444,21 +450,24 @@ class AttendanceService:
                 except Exception:
                     pass
 
-            if not session_tuple and hasattr(self.session_broker, "service"):
+            if not session_tuple and not auth_err and hasattr(self.session_broker, "service"):
                 try:
                     direct = self.session_broker.service.get_upes_session(user_id)
                     if direct and isinstance(direct, (tuple, list)) and len(direct) >= 4:
-                        session_tuple = direct
-                        auth_err = None
+                        d_tok, d_uuid, d_url, d_exp = direct
+                        if d_exp and d_exp > time.time() and d_tok and not d_tok.startswith("SENTINEL_"):
+                            session_tuple = direct
+                            auth_err = None
                 except Exception:
                     pass
 
             if auth_err or not session_tuple:
                 bridge_status = getattr(getattr(self.session_broker, "browser_bridge", None), "last_check_status", "unknown")
-                self._record_sync_history(user_id, now, 0, 0, "AUTH_REQUIRED", {"error": f"No valid UPES session ({auth_err}). Bridge: {bridge_status}"})
+                clean_err = auth_err or "Session expired or unavailable"
+                self._record_sync_history(user_id, now, 0, 0, "AUTH_REQUIRED", {"error": f"No valid UPES session ({clean_err}). Bridge: {bridge_status}"})
                 return {
                     "status": "AUTH_REQUIRED",
-                    "message": f"No valid UPES portal session available ({auth_err}). Please log in to UPES Connect Portal."
+                    "message": f"UPES authentication session has expired or requires attention ({clean_err}). Please re-authenticate your UPES credentials to sync live attendance."
                 }
 
             token, student_uuid, _, expires_at = session_tuple
@@ -905,6 +914,34 @@ class AttendanceService:
                 }
                 for r in cur.fetchall()
             ]
+
+            # If academic_sessions has no records for today, fallback to scheduled timetable classes
+            if not today_sessions and getattr(self, "timetable_service", None):
+                try:
+                    tt_sessions, _ = self.timetable_service.load_timetable_sessions(user_id)
+                    punches = self.timetable_service.get_punches(user_id, date_from=today_str, date_to=today_str)
+                    punch_map = {p.get("course_code"): p for p in punches}
+                    for s in tt_sessions:
+                        if getattr(s, "date", "") == today_str:
+                            p_entry = punch_map.get(getattr(s, "course_code", ""))
+                            today_sessions.append({
+                                "session_id": getattr(s, "session_id", ""),
+                                "module_id": 0,
+                                "course_name": getattr(s, "course_name", ""),
+                                "course_code": getattr(s, "course_code", ""),
+                                "session_date": today_str,
+                                "start_time": getattr(s, "start_time", ""),
+                                "end_time": getattr(s, "end_time", ""),
+                                "faculty": getattr(s, "faculty", ""),
+                                "room": getattr(s, "room", ""),
+                                "attendance_status": "SCHEDULED",
+                                "attendance_subtype": "SCHEDULED",
+                                "punch_in_time": p_entry.get("punch_time") if p_entry else None,
+                                "is_punched": bool(p_entry)
+                            })
+                    today_sessions.sort(key=lambda x: x.get("start_time", ""))
+                except Exception as e:
+                    logger.debug(f"Error falling back to timetable sessions for today: {e}")
 
             # 5. Recent session history (latest 50)
             cur.execute("""

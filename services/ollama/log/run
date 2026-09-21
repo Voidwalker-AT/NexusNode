@@ -1,4 +1,0 @@
-#!/data/data/com.termux/files/usr/bin/sh
-LOG_DIR="/data/data/com.termux/files/home/nexus_logs/ollama"
-mkdir -p "$LOG_DIR"
-exec svlogd -tt "$LOG_DIR"

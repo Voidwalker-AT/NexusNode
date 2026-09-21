@@ -57,6 +57,11 @@ BACKUP_DIR = os.environ.get(
     os.path.join(STORAGE_DIR, "backups")
 )
 
+AGENT_VAULT_ROOT = os.environ.get(
+    "NEXUS_AGENT_VAULT_ROOT",
+    os.path.join(STORAGE_DIR, "user_files")
+)
+
 CONFIG_FILE = os.path.join(STORAGE_DIR, "server_config.json")
 
 EMERGENCY_LOG_FILE = os.environ.get(
@@ -69,6 +74,7 @@ EMERGENCY_LOG_FILE = os.environ.get(
 
 os.makedirs(STORAGE_DIR, exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)
+os.makedirs(AGENT_VAULT_ROOT, exist_ok=True)
 
 
 # ==============================================================================
@@ -154,6 +160,13 @@ PASSWORD_KDF_ITERATIONS = int(
         100000
     )
 )
+
+# ==============================================================================
+# MODEL CONTEXT PROTOCOL (MCP) CONFIGURATION
+# ==============================================================================
+
+MCP_CATALOG_MODE = os.environ.get("MCP_CATALOG_MODE", "semantic")
+MCP_CATALOG_VERSION = "nexus-semantic-v1"
 
 LOCKOUT_THRESHOLD = int(
     os.environ.get(
@@ -544,6 +557,19 @@ UPES_TIMETABLE_API_URL = os.environ.get(
     "https://myupes-beta.upes.ac.in/apigateway/api/timetable"
 ).strip()
 
+UPES_SSO_LOGIN_URL = os.environ.get(
+    "UPES_SSO_LOGIN_URL",
+    "https://myupes-beta.upes.ac.in/sso/api/account/oauth2/token"
+).strip()
+
+UPES_SSO_TOKEN_URL = os.environ.get(
+    "UPES_SSO_TOKEN_URL",
+    "https://myupes-beta.upes.ac.in/sso/oauth2/access_token"
+).strip()
+
+UPES_SSO_CLIENT_ID = int(os.environ.get("UPES_SSO_CLIENT_ID", "3"))
+UPES_SSO_CLIENT_SECRET = os.environ.get("UPES_SSO_CLIENT_SECRET", "ku7GUMtyT8er51rTfTc7HC").strip()
+
 UPES_STUDENT_CODE = os.environ.get(
     "UPES_STUDENT_CODE",
     ""
@@ -748,3 +774,32 @@ USER_DEFAULT_PRIVILEGES = {
     p: PRIVILEGE_METADATA[p]["default_user"]
     for p in ALL_PRIVILEGES
 }
+
+
+# ==============================================================================
+# BROWSER AUTOMATION & PINCHTAB CONFIGURATION
+# ==============================================================================
+
+PINCHTAB_ENABLED = os.environ.get("NEXUS_PINCHTAB_ENABLED", "true").lower() in ("1", "true", "yes")
+PINCHTAB_BASE_URL = os.environ.get("NEXUS_PINCHTAB_URL", "http://127.0.0.1:9867")
+PINCHTAB_AUTH_TOKEN = os.environ.get("NEXUS_PINCHTAB_TOKEN", None)
+PINCHTAB_TIMEOUT = float(os.environ.get("NEXUS_PINCHTAB_TIMEOUT", "15.0"))
+
+BROWSER_REMOTE_MIN_RAM_MB = int(os.environ.get("NEXUS_BROWSER_REMOTE_MIN_RAM_MB", "100"))
+BROWSER_LOCAL_MIN_RAM_MB = int(os.environ.get("NEXUS_BROWSER_LOCAL_MIN_RAM_MB", "800"))
+
+
+# ==============================================================================
+# MODEL CONTEXT PROTOCOL (MCP) GATEWAY CONFIGURATION
+# ==============================================================================
+
+MCP_ENABLED = os.environ.get("NEXUS_MCP_ENABLED", "true").lower() in ("1", "true", "yes")
+MCP_DEFAULT_RATE_LIMIT = int(os.environ.get("NEXUS_MCP_RATE_LIMIT", "60"))  # Requests / min
+MCP_TOOL_TIMEOUT_DEFAULT = float(os.environ.get("NEXUS_MCP_TIMEOUT_DEFAULT", "15.0"))
+MCP_SERVER_NAME = os.environ.get("NEXUS_MCP_SERVER_NAME", "nexusnode-mcp")
+MCP_SERVER_VERSION = os.environ.get("NEXUS_MCP_SERVER_VERSION", "2.3.2")
+MCP_PROTOCOL_VERSION = "2026-07-28"
+MCP_SUPPORTED_PROTOCOL_VERSIONS = ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
+# Tool catalog exposure filter: None exposes all tools; comma-separated list filters tools/list
+_exposed_tools_env = os.environ.get("NEXUS_MCP_EXPOSED_TOOLS", "nexus.status,upes.auth_status,upes.get_attendance,upes.get_timetable,upes.get_next_classes,upes.get_courses,lms.list_courses,lms.list_assignments,lms.get_assignment,lms.list_resources,vault.list,vault.search,vault.read")
+MCP_EXPOSED_TOOLS = [t.strip() for t in _exposed_tools_env.split(",") if t.strip()] if _exposed_tools_env and _exposed_tools_env.lower() not in ("all", "none", "") else None

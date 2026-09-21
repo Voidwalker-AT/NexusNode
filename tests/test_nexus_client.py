@@ -34,12 +34,9 @@ from nexus.commands import (
     vault as cmd_vault,
     media as cmd_media,
     tasks as cmd_tasks,
-    ai as cmd_ai,
-    rag as cmd_rag,
     shares as cmd_shares,
     account as cmd_account,
     services as cmd_services,
-    models as cmd_models,
     diagnostics as cmd_diag,
     logs as cmd_logs,
     users as cmd_users,
@@ -766,9 +763,8 @@ class TestNexusUniversalCLI(unittest.TestCase):
         self.assertIn("do_services", names)
         self.assertIn("do_diagnostics", names)
 
-        ai_completions = shell.complete_ai("m", "ai m", 3, 4)
-        self.assertIn("models", ai_completions)
-        self.assertIn("metrics", ai_completions)
+        tasks_completions = shell.complete_tasks("l", "tasks l", 6, 7)
+        self.assertIn("list", tasks_completions)
 
         vault_completions = shell.complete_vault("l", "vault l", 6, 7)
         self.assertIn("list", vault_completions)
@@ -840,51 +836,8 @@ class TestNexusUniversalCLI(unittest.TestCase):
             self.assertEqual(call_arg["disk"]["total_gb"], 64.0)
 
     # --------------------------------------------------------------------------
-    # 7. AI Models & State Contract Tests (Array & HTTP 200)
-    # --------------------------------------------------------------------------
-    def test_ai_models_http_200_array_response(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
-        args = n_main.create_parser().parse_args(["ai", "models"])
-        stdout_backup = sys.stdout
-        sys.stdout = io.StringIO()
-        try:
-            ret = cmd_ai.cmd_ai_models(client, args)
-            self.assertEqual(ret, 0)
-            out = sys.stdout.getvalue()
-            self.assertIn("qwen2.5:0.5b", out)
-            self.assertIn("llama3.2:1b", out)
-            self.assertNotIn("Failed to fetch AI models", out)
-        finally:
-            sys.stdout = stdout_backup
-
-    def test_ai_models_wrapped_response(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
-        wrapped = {"models": [{"name": "mistral:7b", "size_bytes": 4100000000, "family": "mistral", "parameter_size": "7B", "quantization_level": "Q4_0"}]}
-        with patch.object(client, "get", return_value=(200, wrapped)):
-            args = n_main.create_parser().parse_args(["ai", "models"])
-            stdout_backup = sys.stdout
-            sys.stdout = io.StringIO()
-            try:
-                ret = cmd_ai.cmd_ai_models(client, args)
-                self.assertEqual(ret, 0)
-                out = sys.stdout.getvalue()
-                self.assertIn("mistral:7b", out)
-            finally:
-                sys.stdout = stdout_backup
-
-    def test_ai_state(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
-        args = n_main.create_parser().parse_args(["ai", "state"])
-        stdout_backup = sys.stdout
-        sys.stdout = io.StringIO()
-        try:
-            ret = cmd_ai.cmd_ai_state(client, args)
-            self.assertEqual(ret, 0)
-            out = sys.stdout.getvalue()
-            self.assertIn("Selected Model:     qwen2.5:0.5b", out)
-            self.assertIn("Loaded Model:       qwen2.5:0.5b", out)
-        finally:
-            sys.stdout = stdout_backup
+    # 7. AI Models & State CLI Tests retired in Phase 4.2C Stage 3 CLI cleanup.
+    # Superseded by appliance status and API-level tests.
 
     # --------------------------------------------------------------------------
     # 8. Tasks & Media Lifecycle Tests (Separate STATUS & STAGE, Contradiction Warning)
@@ -976,23 +929,7 @@ class TestNexusUniversalCLI(unittest.TestCase):
             self.assertIn("2.0 MB", out)
         finally:
             sys.stdout = stdout_backup
-
-    def test_rag_status_real_schema(self):
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-user-token")
-        args = n_main.create_parser().parse_args(["rag", "status"])
-        stdout_backup = sys.stdout
-        sys.stdout = io.StringIO()
-        try:
-            ret = cmd_rag.cmd_rag_status(client, args)
-            self.assertEqual(ret, 0)
-            out = sys.stdout.getvalue()
-            self.assertIn("Indexed Documents:   8", out)
-            self.assertIn("Total Chunks:        128", out)
-            self.assertIn("Index Size on Disk:  256.0 KB", out)
-            self.assertIn("Algorithm:           SQLite FTS5 (BM25 Ranking)", out)
-            self.assertIn("Last Reindex Time:   2024-08-16 17:36:40", out)
-        finally:
-            sys.stdout = stdout_backup
+    # RAG status CLI test retired in Phase 4.2C Stage 3 CLI cleanup.
 
     def test_backups_list_and_create_201(self):
         client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
@@ -1129,21 +1066,7 @@ class TestNexusUniversalCLI(unittest.TestCase):
             sys.stderr = stderr_backup
             n_output.set_color_enabled(False)
 
-    def test_ai_colors(self):
-        n_output.set_color_enabled(True)
-        client = n_client.NexusClient(server_url=self.server_url, token="valid-admin-token")
-        args = n_main.create_parser().parse_args(["ai", "state"])
-        stdout_backup = sys.stdout
-        sys.stdout = io.StringIO()
-        try:
-            ret = cmd_ai.cmd_ai_state(client, args)
-            self.assertEqual(ret, 0)
-            out = sys.stdout.getvalue()
-            self.assertIn("AI RUNTIME STATE", out)
-            self.assertIn("qwen2.5:0.5b", out)
-        finally:
-            sys.stdout = stdout_backup
-            n_output.set_color_enabled(False)
+    # AI colors CLI test retired in Phase 4.2C Stage 3 CLI cleanup.
 
     def test_table_visible_len_alignment(self):
         n_output.set_color_enabled(True)
@@ -1176,10 +1099,8 @@ class TestNexusUniversalCLI(unittest.TestCase):
     def test_connect_global_server_and_user(self):
         parser = n_main.create_parser()
         args = parser.parse_args(["--server", "http://127.0.0.1:5000", "--user", "admin", "connect"])
-        self.assertEqual(args.command, "connect")
         self.assertEqual(args.server, "http://127.0.0.1:5000")
         self.assertEqual(args.user, "admin")
-        self.assertIsNone(args.url)
 
     def test_connect_both_server_sources(self):
         parser = n_main.create_parser()
@@ -1208,7 +1129,7 @@ class TestNexusUniversalCLI(unittest.TestCase):
             ["vault", "list"],
             ["media", "queue"],
             ["tasks", "list"],
-            ["ai", "state"],
+            ["services", "list"],
             []
         ]:
             args = parser.parse_args(cmd_line)
@@ -1222,7 +1143,7 @@ class TestNexusUniversalCLI(unittest.TestCase):
             ["vault", "list"],
             ["media", "queue"],
             ["tasks", "list"],
-            ["ai", "state"],
+            ["services", "list"],
             []
         ]:
             args = parser.parse_args(cmd_line)

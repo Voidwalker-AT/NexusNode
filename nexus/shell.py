@@ -13,12 +13,9 @@ from .commands import (
     vault as cmd_vault_mod,
     media as cmd_media_mod,
     tasks as cmd_tasks_mod,
-    ai as cmd_ai_mod,
-    rag as cmd_rag_mod,
     shares as cmd_shares_mod,
     account as cmd_account_mod,
     services as cmd_services_mod,
-    models as cmd_models_mod,
     diagnostics as cmd_diag_mod,
     logs as cmd_logs_mod,
     users as cmd_users_mod,
@@ -126,16 +123,6 @@ class NexusShell(cmd.Cmd):
         print("  tasks status <id>     Detailed progress for specific task")
         print("  tasks cancel <id>     Safely cancel a running task")
 
-        print("\nAI:")
-        print("  ai models             List installed Ollama LLM models")
-        print("  ai state              Inspect active LLM inference engine state")
-        print("  ai select <model>     Switch active model")
-        print("  ai chat <prompt>      Run interactive prompt inference")
-
-        print("\nRAG:")
-        print("  rag status            View SQLite FTS5 RAG index stats")
-        print("  rag search <query>    Execute full-text semantic search")
-
         print("\nSHARES:")
         print("  shares list           List active public temporary links")
         print("  shares create <file>  Generate temporary download share")
@@ -149,7 +136,6 @@ class NexusShell(cmd.Cmd):
         if self.role == "admin":
             print("\nADMINISTRATION:")
             print("  services [status|start|stop|restart] <svc>")
-            print("  models   [list|details|estimate] <model>")
             print("  diagnostics [system|full|network]")
             print("  logs     [recent|stream]")
             print("  users    [list|create|delete|privileges]")
@@ -218,36 +204,7 @@ class NexusShell(cmd.Cmd):
         subcmds = ["list", "status", "cancel"]
         return [s for s in subcmds if s.startswith(text)]
 
-    def do_ai(self, arg):
-        """Remote AI inference & state: ai [models|state|select|chat|metrics]"""
-        parts = shlex.split(arg) if arg else []
-        action = parts[0] if parts else "state"
-        args_mock = argparse.Namespace(
-            ai_action=action,
-            model=parts[1] if len(parts) > 1 else None,
-            prompt=" ".join(parts[1:]) if action == "chat" and len(parts) > 1 else None,
-            json=False
-        )
-        cmd_ai_mod.cmd_ai(self.client, args_mock)
 
-    def complete_ai(self, text, line, begidx, endidx):
-        subcmds = ["models", "state", "select", "chat", "metrics"]
-        return [s for s in subcmds if s.startswith(text)]
-
-    def do_rag(self, arg):
-        """SQLite FTS5 RAG operations: rag [status|search|sources|index|compact]"""
-        parts = shlex.split(arg) if arg else []
-        action = parts[0] if parts else "status"
-        args_mock = argparse.Namespace(
-            rag_action=action,
-            query=" ".join(parts[1:]) if len(parts) > 1 else None,
-            json=False
-        )
-        cmd_rag_mod.cmd_rag(self.client, args_mock)
-
-    def complete_rag(self, text, line, begidx, endidx):
-        subcmds = ["status", "search", "sources", "index", "compact"]
-        return [s for s in subcmds if s.startswith(text)]
 
     def do_shares(self, arg):
         """Temporary share links: shares [list|create|revoke]"""
@@ -288,27 +245,7 @@ class NexusShell(cmd.Cmd):
         subcmds = ["status", "start", "stop", "restart"]
         return [s for s in subcmds if s.startswith(text)]
 
-    def do_models(self, arg):
-        """Admin: AI Model management & memory estimation: models [list|details|estimate]"""
-        if self.role != "admin":
-            output.print_error("Permission denied: model management requires administrator role.")
-            return
-        parts = shlex.split(arg) if arg else []
-        action = parts[0] if parts else "list"
-        args_mock = argparse.Namespace(
-            model_action=action,
-            model_name=parts[1] if len(parts) > 1 else None,
-            param="1.5b",
-            quant="q4_k_m",
-            json=False
-        )
-        cmd_models_mod.cmd_models(self.client, args_mock)
 
-    def complete_models(self, text, line, begidx, endidx):
-        if self.role != "admin":
-            return []
-        subcmds = ["list", "details", "estimate"]
-        return [s for s in subcmds if s.startswith(text)]
 
     def do_diagnostics(self, arg):
         """Admin: Technical diagnostics & root-cause report: diagnostics [system|full|profile|network]"""

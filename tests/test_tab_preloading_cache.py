@@ -49,6 +49,14 @@ class TestTabPreloadingAndCache(unittest.TestCase):
         cls.user_token = res_usr.get_json()["token"]
         cls.user_headers = {"Authorization": f"Bearer {cls.user_token}", "X-Session-Token": cls.user_token}
 
+    @classmethod
+    def tearDownClass(cls):
+        with app.DB_LOCK:
+            conn = app.get_db_connection()
+            conn.execute("DELETE FROM users WHERE user_id IN ('preload_admin', 'preload_user')")
+            conn.commit()
+            conn.close()
+
     def test_preload_endpoints_for_admin(self):
         """Verify all endpoints preloaded by preloadAppData() respond with 200 OK for admin."""
         endpoints = [
@@ -111,43 +119,34 @@ class TestTabPreloadingAndCache(unittest.TestCase):
                 self.assertIn(res.status_code, [403, 401], f"User should be restricted from {path}")
 
     def test_frontend_appdata_and_preloading_structure(self):
-        """Verify static/js/app.js contains appData cache, in-flight tracking, and preloading functions."""
+        """Verify static/js/app.js orchestrates tab navigation, polling, and auth gating."""
         app_js_path = os.path.join(os.path.dirname(__file__), '..', 'static', 'js', 'app.js')
         self.assertTrue(os.path.exists(app_js_path), "static/js/app.js must exist")
 
         with open(app_js_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # 1. Central cache definition
-        self.assertIn("const appData =", content)
-        self.assertIn("status:", content)
-        self.assertIn("vault:", content)
-        self.assertIn("media:", content)
-        self.assertIn("mediaQueue:", content)
-        self.assertIn("tasks:", content)
-        self.assertIn("aiState:", content)
-        self.assertIn("aiModels:", content)
-        self.assertIn("services:", content)
-        self.assertIn("events:", content)
-        self.assertIn("backups:", content)
-        self.assertIn("automation:", content)
-        self.assertIn("storageIntel:", content)
-        self.assertIn("settings:", content)
-        self.assertIn("users:", content)
-        self.assertIn("diagnostics:", content)
+        # 1. Valid tabs definition
+        self.assertIn("const VALID_TABS =", content)
+        for tab in ['dashboard', 'academics', 'accounts', 'vault', 'mcp', 'diagnostics', 'settings']:
+            self.assertIn(tab, content)
 
-        # 2. In-flight request tracking
-        self.assertIn("const inFlightRequests = new Map()", content)
-        self.assertIn("fetchJsonCached", content)
-        self.assertIn("clearAppDataCache", content)
+        # 2. Tab switcher and view loaders
+        self.assertIn("function switchTab", content)
+        self.assertIn("loadDashboard()", content)
+        self.assertIn("loadAcademics()", content)
+        self.assertIn("loadVault()", content)
+        self.assertIn("loadMcp()", content)
 
-        # 3. Preload routine
-        self.assertIn("async function preloadAppData()", content)
-        self.assertIn("Promise.allSettled(preloadTasks)", content)
-        self.assertIn("preloadAppData();", content)
+        # 3. Bounded polling helpers
+        self.assertIn("function startSystemPolling", content)
+        self.assertIn("function startMcpPolling", content)
+        self.assertIn("function stopMcpPolling", content)
 
-        # 4. Cache purge on logout and 401
-        self.assertIn("clearAppDataCache();", content)
+        # 4. Auth UI and lifecycle
+        self.assertIn("function updateAuthUI", content)
+        self.assertIn("handleLoginSubmit", content)
+        self.assertIn("handleLogout", content)
 
     def test_rag_status_route_alias(self):
         """Verify /api/rag/status alias correctly returns diagnostics."""

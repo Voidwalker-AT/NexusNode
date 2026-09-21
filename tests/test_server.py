@@ -67,10 +67,23 @@ class TestNexusNodeServer(unittest.TestCase):
                 "expires_at": time.time() + 86400
             }
         cls.admin_token = admin_token
+        # Preserve original real admin user record to prevent test overwrites
+        admin_rec = server_app.db_get_user("admin")
+        cls.orig_admin_record = dict(admin_rec) if admin_rec else None
 
     @classmethod
     def tearDownClass(cls):
         config.STORAGE_DIR = cls.orig_storage_dir
+        if cls.orig_admin_record:
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute("""
+                    UPDATE users
+                    SET password_hash = ?, salt = ?, failed_attempts = 0, locked_until = 0
+                    WHERE user_id = 'admin'
+                """, (cls.orig_admin_record["password_hash"], cls.orig_admin_record["salt"]))
+                conn.commit()
+                conn.close()
         if os.path.exists(cls.test_dir):
             shutil.rmtree(cls.test_dir, ignore_errors=True)
 
@@ -197,6 +210,8 @@ class TestNexusNodeServer(unittest.TestCase):
             cur = conn.cursor()
             cur.execute("SELECT status FROM background_tasks WHERE id = ?", (t_id,))
             st = cur.fetchone()[0]
+            conn.execute("DELETE FROM background_tasks WHERE id = ?", (t_id,))
+            conn.commit()
             conn.close()
         self.assertEqual(st, 'completed')
 
@@ -918,6 +933,17 @@ class TestNexusNodeServer(unittest.TestCase):
 
     def test_login_unlock_after_countdown(self):
         """Verify account automatically unlocks after lockout expiry timestamp."""
+        temp_user = f"lock_u1_{int(time.time()*1000)}"
+        h, s = server_app.hash_password("testpassword123")
+        with server_app.DB_LOCK:
+            conn = server_app.get_db_connection()
+            conn.execute("""
+                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
+                VALUES (?, ?, ?, 'admin', '{"can_manage_settings": true}', 1234567.0)
+            """, (temp_user, h, s))
+            conn.commit()
+            conn.close()
+
         server_app.clear_account_lockout()
         with server_app.FAILED_LOGINS_LOCK:
             server_app.FAILED_LOGINS["127.0.0.1"] = {
@@ -926,7 +952,7 @@ class TestNexusNodeServer(unittest.TestCase):
             }
 
         # Successful login after lockout expiry
-        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "adminpassword"})
+        res = self.client.post('/api/auth/login', json={"user_id": temp_user, "password": "testpassword123"})
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
         self.assertIn("token", data)
@@ -935,6 +961,17 @@ class TestNexusNodeServer(unittest.TestCase):
 
     def test_locked_login_submission_blocked(self):
         """Verify active lockout blocks all login attempts regardless of credentials."""
+        temp_user = f"lock_u2_{int(time.time()*1000)}"
+        h, s = server_app.hash_password("testpassword123")
+        with server_app.DB_LOCK:
+            conn = server_app.get_db_connection()
+            conn.execute("""
+                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
+                VALUES (?, ?, ?, 'admin', '{"can_manage_settings": true}', 1234567.0)
+            """, (temp_user, h, s))
+            conn.commit()
+            conn.close()
+
         server_app.clear_account_lockout()
         with server_app.FAILED_LOGINS_LOCK:
             server_app.FAILED_LOGINS["127.0.0.1"] = {
@@ -943,11 +980,13 @@ class TestNexusNodeServer(unittest.TestCase):
             }
 
         # Even correct credentials return 429 while locked
-        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "adminpassword"})
+        res = self.client.post('/api/auth/login', json={"user_id": temp_user, "password": "testpassword123"})
         self.assertEqual(res.status_code, 429)
         data = res.get_json()
         self.assertIn(data.get("error"), ["account_locked", "locked_out"])
         self.assertTrue(data.get("lockout_seconds") > 0)
+
+        server_app.clear_account_lockout()
 
         server_app.clear_account_lockout()
 
@@ -967,63 +1006,124 @@ class TestNexusNodeServer(unittest.TestCase):
             conn.commit()
             conn.close()
 
-        # Reset password via emergency script
-        success = emergency_reset_password(username=temp_user, new_password="newpass456_secure")
-        self.assertTrue(success)
+        try:
+            # Reset password via emergency script
+            success = emergency_reset_password(username=temp_user, new_password="newpass456_secure")
+            self.assertTrue(success)
 
-        # Old password rejected
-        res_old = self.client.post('/api/auth/login', json={"user_id": temp_user, "password": "oldpass123"})
-        self.assertEqual(res_old.status_code, 401)
+            # Old password rejected
+            res_old = self.client.post('/api/auth/login', json={"user_id": temp_user, "password": "oldpass123"})
+            self.assertEqual(res_old.status_code, 401)
 
-        # New password succeeds
-        res_new = self.client.post('/api/auth/login', json={"user_id": temp_user, "password": "newpass456_secure"})
-        self.assertEqual(res_new.status_code, 200)
+            # New password succeeds
+            res_new = self.client.post('/api/auth/login', json={"user_id": temp_user, "password": "newpass456_secure"})
+            self.assertEqual(res_new.status_code, 200)
+        finally:
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute("DELETE FROM users WHERE user_id = ?", (temp_user,))
+                conn.commit()
+                conn.close()
 
     def test_emergency_reset_preserves_role(self):
         """Verify emergency reset strictly preserves user role."""
         from scripts.reset_admin_password import emergency_reset_password
 
-        user_before = server_app.db_get_user("admin")
-        self.assertEqual(user_before["role"], "admin")
+        temp_adm = f"reset_adm_{int(time.time()*1000)}"
+        h, s = server_app.hash_password("oldpass123")
+        with server_app.DB_LOCK:
+            conn = server_app.get_db_connection()
+            conn.execute("""
+                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
+                VALUES (?, ?, ?, 'admin', '{"can_manage_settings": true}', 1234567.0)
+            """, (temp_adm, h, s))
+            conn.commit()
+            conn.close()
 
-        success = emergency_reset_password(username="admin", new_password="adminpassword")
-        self.assertTrue(success)
+        try:
+            user_before = server_app.db_get_user(temp_adm)
+            self.assertEqual(user_before["role"], "admin")
 
-        user_after = server_app.db_get_user("admin")
-        self.assertEqual(user_after["role"], "admin")
+            success = emergency_reset_password(username=temp_adm, new_password="newadminpassword")
+            self.assertTrue(success)
+
+            user_after = server_app.db_get_user(temp_adm)
+            self.assertEqual(user_after["role"], "admin")
+        finally:
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute("DELETE FROM users WHERE user_id = ?", (temp_adm,))
+                conn.commit()
+                conn.close()
 
     def test_emergency_reset_preserves_privileges(self):
         """Verify emergency reset strictly preserves user privileges and created_at timestamp."""
         from scripts.reset_admin_password import emergency_reset_password
 
-        user_before = server_app.db_get_user("admin")
-        created_at_before = user_before["created_at"]
-        privs_before = user_before["privileges"]
+        temp_adm = f"reset_adm_{int(time.time()*1000)}"
+        h, s = server_app.hash_password("oldpass123")
+        with server_app.DB_LOCK:
+            conn = server_app.get_db_connection()
+            conn.execute("""
+                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
+                VALUES (?, ?, ?, 'admin', '{"can_manage_settings": true}', 1234567.0)
+            """, (temp_adm, h, s))
+            conn.commit()
+            conn.close()
 
-        success = emergency_reset_password(username="admin", new_password="adminpassword")
-        self.assertTrue(success)
+        try:
+            user_before = server_app.db_get_user(temp_adm)
+            created_at_before = user_before["created_at"]
+            privs_before = user_before["privileges"]
 
-        user_after = server_app.db_get_user("admin")
-        self.assertEqual(user_after["created_at"], created_at_before)
-        self.assertEqual(user_after["privileges"], privs_before)
+            success = emergency_reset_password(username=temp_adm, new_password="newadminpassword")
+            self.assertTrue(success)
+
+            user_after = server_app.db_get_user(temp_adm)
+            self.assertEqual(user_after["created_at"], created_at_before)
+            self.assertEqual(user_after["privileges"], privs_before)
+        finally:
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute("DELETE FROM users WHERE user_id = ?", (temp_adm,))
+                conn.commit()
+                conn.close()
 
     def test_emergency_reset_clears_failed_login_lockout(self):
         """Verify emergency reset immediately clears active lockout state."""
         from scripts.reset_admin_password import emergency_reset_password
 
-        with server_app.FAILED_LOGINS_LOCK:
-            server_app.FAILED_LOGINS["127.0.0.1"] = {
-                "count": config.LOCKOUT_THRESHOLD,
-                "locked_until": time.time() + 600.0
-            }
+        temp_adm = f"reset_adm_{int(time.time()*1000)}"
+        h, s = server_app.hash_password("oldpass123")
+        with server_app.DB_LOCK:
+            conn = server_app.get_db_connection()
+            conn.execute("""
+                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
+                VALUES (?, ?, ?, 'admin', '{"can_manage_settings": true}', 1234567.0)
+            """, (temp_adm, h, s))
+            conn.commit()
+            conn.close()
 
-        # Emergency reset
-        success = emergency_reset_password(username="admin", new_password="adminpassword")
-        self.assertTrue(success)
+        try:
+            with server_app.FAILED_LOGINS_LOCK:
+                server_app.FAILED_LOGINS["127.0.0.1"] = {
+                    "count": config.LOCKOUT_THRESHOLD,
+                    "locked_until": time.time() + 600.0
+                }
 
-        # Account is immediately usable without waiting for lockout timer
-        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "adminpassword"})
-        self.assertEqual(res.status_code, 200)
+            # Emergency reset
+            success = emergency_reset_password(username=temp_adm, new_password="newadminpassword")
+            self.assertTrue(success)
+
+            # Account is immediately usable without waiting for lockout timer
+            res = self.client.post('/api/auth/login', json={"user_id": temp_adm, "password": "newadminpassword"})
+            self.assertEqual(res.status_code, 200)
+        finally:
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute("DELETE FROM users WHERE user_id = ?", (temp_adm,))
+                conn.commit()
+                conn.close()
 
     def test_emergency_reset_does_not_expose_password(self):
         """Verify emergency reset helper never returns or leaks password/hash/salt in output."""
@@ -1031,21 +1131,36 @@ class TestNexusNodeServer(unittest.TestCase):
         from contextlib import redirect_stdout, redirect_stderr
         from scripts.reset_admin_password import emergency_reset_password
 
-        out_buf = io.StringIO()
-        err_buf = io.StringIO()
-        secret_pass = "super_secret_test_password_12345"
+        temp_adm = f"reset_adm_{int(time.time()*1000)}"
+        h, s = server_app.hash_password("oldpass123")
+        with server_app.DB_LOCK:
+            conn = server_app.get_db_connection()
+            conn.execute("""
+                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
+                VALUES (?, ?, ?, 'admin', '{"can_manage_settings": true}', 1234567.0)
+            """, (temp_adm, h, s))
+            conn.commit()
+            conn.close()
 
-        with redirect_stdout(out_buf), redirect_stderr(err_buf):
-            emergency_reset_password(username="admin", new_password=secret_pass)
+        try:
+            out_buf = io.StringIO()
+            err_buf = io.StringIO()
+            secret_pass = "super_secret_test_password_12345"
 
-        full_output = out_buf.getvalue() + err_buf.getvalue()
-        self.assertNotIn(secret_pass, full_output)
-        self.assertNotIn("password_hash", full_output)
-        self.assertNotIn("salt", full_output)
-        self.assertIn("Password reset successfully", full_output)
+            with redirect_stdout(out_buf), redirect_stderr(err_buf):
+                emergency_reset_password(username=temp_adm, new_password=secret_pass)
 
-        # Reset admin password back
-        emergency_reset_password(username="admin", new_password="adminpassword")
+            full_output = out_buf.getvalue() + err_buf.getvalue()
+            self.assertNotIn(secret_pass, full_output)
+            self.assertNotIn("password_hash", full_output)
+            self.assertNotIn("salt", full_output)
+            self.assertIn("Password reset successfully", full_output)
+        finally:
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute("DELETE FROM users WHERE user_id = ?", (temp_adm,))
+                conn.commit()
+                conn.close()
 
     def test_emergency_reset_is_not_an_http_endpoint(self):
         """Verify emergency reset cannot be invoked through any HTTP route."""
@@ -1150,14 +1265,14 @@ class TestNexusNodeServer(unittest.TestCase):
         import nexus_admin
         from argparse import Namespace
 
-        code = nexus_admin.cmd_reset_password(Namespace(user="admin", password="new_admin_pass_789"))
+        uname = f"cli_adm_reset_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="admin", password="init_admin_pass", yes=True))
+
+        code = nexus_admin.cmd_reset_password(Namespace(user=uname, password="new_admin_pass_789"))
         self.assertEqual(code, 0)
 
-        success, _, _, _ = server_app.authenticate_user_credentials("admin", "new_admin_pass_789")
+        success, _, _, _ = server_app.authenticate_user_credentials(uname, "new_admin_pass_789")
         self.assertTrue(success)
-
-        # Revert admin password
-        nexus_admin.cmd_reset_password(Namespace(user="admin", password="adminpassword"))
 
     def test_cli_reset_password_user(self):
         """Verify resetting a normal user password via CLI resets credentials."""
@@ -1178,10 +1293,13 @@ class TestNexusNodeServer(unittest.TestCase):
         import nexus_admin
         from argparse import Namespace
 
+        uname = f"cli_u_lock_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="admin", password="initpass123", yes=True))
+
         with server_app.FAILED_LOGINS_LOCK:
             server_app.FAILED_LOGINS["127.0.0.1"] = {"count": 5, "locked_until": time.time() + 300.0}
 
-        code = nexus_admin.cmd_unlock(Namespace(user="admin"))
+        code = nexus_admin.cmd_unlock(Namespace(user=uname))
         self.assertEqual(code, 0)
 
         with server_app.FAILED_LOGINS_LOCK:
@@ -1195,13 +1313,15 @@ class TestNexusNodeServer(unittest.TestCase):
         import nexus_admin
         from argparse import Namespace
 
-        nexus_admin.emergency_reset_password("admin", "adminpassword")
+        uname = f"cli_adm_login_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="admin", password="adminpassword", yes=True))
+
         with server_app.FAILED_LOGINS_LOCK:
             server_app.FAILED_LOGINS.clear()
 
         out = io.StringIO()
         with redirect_stdout(out):
-            code = nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=False, show_token=False))
+            code = nexus_admin.cmd_login(Namespace(user=uname, password="adminpassword", session=False, show_token=False))
 
         self.assertEqual(code, 0)
         output = out.getvalue()
@@ -1284,18 +1404,21 @@ class TestNexusNodeServer(unittest.TestCase):
         import nexus_admin
         from argparse import Namespace
 
+        uname = f"cli_lock_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="admin", password="testpass123", yes=True))
+
         with server_app.FAILED_LOGINS_LOCK:
             server_app.FAILED_LOGINS.clear()
 
         # Fail 4 times via web API
         for _ in range(config.LOCKOUT_THRESHOLD - 1):
-            self.client.post('/api/auth/login', json={"user_id": "admin", "password": "wrongpassword"})
+            self.client.post('/api/auth/login', json={"user_id": uname, "password": "wrongpassword"})
 
         # 5th attempt fails via CLI, triggering the lockout threshold
-        nexus_admin.cmd_login(Namespace(user="admin", password="wrongpassword", session=False, show_token=False))
+        nexus_admin.cmd_login(Namespace(user=uname, password="wrongpassword", session=False, show_token=False))
 
         # 6th attempt on web API must return 429 locked out
-        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "adminpassword"})
+        res = self.client.post('/api/auth/login', json={"user_id": uname, "password": "testpass123"})
         self.assertEqual(res.status_code, 429)
 
         with server_app.FAILED_LOGINS_LOCK:
@@ -1306,12 +1429,15 @@ class TestNexusNodeServer(unittest.TestCase):
         import nexus_admin
         from argparse import Namespace
 
-        code = nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=True, show_token=False))
+        uname = f"cli_sess_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="admin", password="testpass123", yes=True))
+
+        code = nexus_admin.cmd_login(Namespace(user=uname, password="testpass123", session=True, show_token=False))
         self.assertEqual(code, 0)
 
         session_data = nexus_admin.read_local_session()
         self.assertIsNotNone(session_data)
-        self.assertEqual(session_data["user_id"], "admin")
+        self.assertEqual(session_data["user_id"], uname)
         self.assertEqual(session_data["role"], "admin")
         self.assertTrue(len(session_data["token"]) >= 32)
 
@@ -1322,8 +1448,11 @@ class TestNexusNodeServer(unittest.TestCase):
         import nexus_admin
         from argparse import Namespace
 
+        uname = f"cli_whoami_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="admin", password="testpass123", yes=True))
+
         # Login with session
-        nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=True, show_token=False))
+        nexus_admin.cmd_login(Namespace(user=uname, password="testpass123", session=True, show_token=False))
 
         out = io.StringIO()
         with redirect_stdout(out):
@@ -1332,7 +1461,7 @@ class TestNexusNodeServer(unittest.TestCase):
         self.assertEqual(code, 0)
         output = out.getvalue()
         self.assertIn("Authenticated", output)
-        self.assertIn("User: admin", output)
+        self.assertIn(f"User: {uname}", output)
         self.assertIn("Role: admin", output)
 
     def test_cli_logout(self):
@@ -1340,7 +1469,10 @@ class TestNexusNodeServer(unittest.TestCase):
         import nexus_admin
         from argparse import Namespace
 
-        nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=True, show_token=False))
+        uname = f"cli_logout_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="admin", password="testpass123", yes=True))
+
+        nexus_admin.cmd_login(Namespace(user=uname, password="testpass123", session=True, show_token=False))
         code = nexus_admin.cmd_logout(Namespace())
         self.assertEqual(code, 0)
         self.assertIsNone(nexus_admin.read_local_session())
@@ -1352,11 +1484,15 @@ class TestNexusNodeServer(unittest.TestCase):
         import nexus_admin
         from argparse import Namespace
 
+        uname = f"cli_tok_{int(time.time()*1000)}"
+        nexus_admin.cmd_create_user(Namespace(user=uname, role="admin", password="testpass123", yes=True))
+
         out = io.StringIO()
         with redirect_stdout(out):
-            nexus_admin.cmd_login(Namespace(user="admin", password="adminpassword", session=True, show_token=False))
+            nexus_admin.cmd_login(Namespace(user=uname, password="testpass123", session=True, show_token=False))
 
         session_data = nexus_admin.read_local_session()
+        self.assertIsNotNone(session_data)
         self.assertNotIn(session_data["token"], out.getvalue())
 
     def test_cli_no_password_output(self):
@@ -1460,71 +1596,103 @@ class TestNexusNodeServer(unittest.TestCase):
     def test_lockout_persistence_across_process_restart(self):
         """Verify account lockout stored in SQLite persists even when memory cache is wiped."""
         server_app.clear_account_lockout()
-
-        # Trigger lockout in SQLite
-        now = time.time()
+        lock_adm = f"lock_adm_{int(time.time()*1000)}"
+        h, s = server_app.hash_password("lockpass123")
         with server_app.DB_LOCK:
             conn = server_app.get_db_connection()
-            conn.execute(
-                "UPDATE users SET failed_attempts = ?, locked_until = ? WHERE user_id = 'admin'",
-                (config.LOCKOUT_THRESHOLD, now + 300.0)
-            )
+            conn.execute("""
+                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
+                VALUES (?, ?, ?, 'admin', '{"can_manage_settings": true}', 1234567.0)
+            """, (lock_adm, h, s))
             conn.commit()
             conn.close()
 
-        # Simulate fresh process restart by wiping in-memory structures
-        with server_app.FAILED_LOGINS_LOCK:
-            server_app.FAILED_LOGINS.clear()
+        try:
+            # Trigger lockout in SQLite
+            now = time.time()
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute(
+                    "UPDATE users SET failed_attempts = ?, locked_until = ? WHERE user_id = ?",
+                    (config.LOCKOUT_THRESHOLD, now + 300.0, lock_adm)
+                )
+                conn.commit()
+                conn.close()
 
-        # Query lockout status - must reflect SQLite persisted lockout
-        is_locked, remaining = server_app.get_account_lockout_status("admin", "127.0.0.1")
-        self.assertTrue(is_locked)
-        self.assertTrue(remaining > 250)
+            # Simulate fresh process restart by wiping in-memory structures
+            with server_app.FAILED_LOGINS_LOCK:
+                server_app.FAILED_LOGINS.clear()
 
-        # Login attempt must be rejected with 429 and exact remaining seconds
-        res = self.client.post('/api/auth/login', json={"user_id": "admin", "password": "adminpassword"})
-        self.assertEqual(res.status_code, 429)
-        data = res.get_json()
-        self.assertIn(data["error"], ["account_locked", "locked_out"])
-        self.assertTrue(data.get("lockout_seconds", 0) > 250)
+            # Query lockout status - must reflect SQLite persisted lockout
+            is_locked, remaining = server_app.get_account_lockout_status(lock_adm, "127.0.0.1")
+            self.assertTrue(is_locked)
+            self.assertTrue(remaining > 250)
 
-        server_app.clear_account_lockout()
+            # Login attempt must be rejected with 429 and exact remaining seconds
+            res = self.client.post('/api/auth/login', json={"user_id": lock_adm, "password": "lockpass123"})
+            self.assertEqual(res.status_code, 429)
+            data = res.get_json()
+            self.assertIn(data["error"], ["account_locked", "locked_out"])
+            self.assertTrue(data.get("lockout_seconds", 0) > 250)
+        finally:
+            server_app.clear_account_lockout()
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute("DELETE FROM users WHERE user_id = ?", (lock_adm,))
+                conn.commit()
+                conn.close()
 
     def test_lockout_status_endpoint_security_and_accuracy(self):
         """Verify GET /api/auth/lockout-status returns accurate remaining time and zero secrets."""
         server_app.clear_account_lockout()
-
-        # 1. Check unlocked state
-        res = self.client.get('/api/auth/lockout-status?user_id=admin')
-        self.assertEqual(res.status_code, 200)
-        data = res.get_json()
-        self.assertFalse(data["locked"])
-        self.assertEqual(data["remaining_seconds"], 0)
-        # Verify zero credential leaks
-        self.assertNotIn("password", data)
-        self.assertNotIn("password_hash", data)
-        self.assertNotIn("salt", data)
-        self.assertNotIn("token", data)
-
-        # 2. Lock account and check again
-        now = time.time()
+        lock_adm = f"lock_adm_{int(time.time()*1000)}"
+        h, s = server_app.hash_password("lockpass123")
         with server_app.DB_LOCK:
             conn = server_app.get_db_connection()
-            conn.execute(
-                "UPDATE users SET failed_attempts = ?, locked_until = ? WHERE user_id = 'admin'",
-                (5, now + 120.0)
-            )
+            conn.execute("""
+                INSERT INTO users (user_id, password_hash, salt, role, privileges, created_at)
+                VALUES (?, ?, ?, 'admin', '{"can_manage_settings": true}', 1234567.0)
+            """, (lock_adm, h, s))
             conn.commit()
             conn.close()
 
-        res = self.client.get('/api/auth/lockout-status?user_id=admin')
-        self.assertEqual(res.status_code, 200)
-        data = res.get_json()
-        self.assertTrue(data["locked"])
-        self.assertTrue(data["remaining_seconds"] > 100)
-        self.assertEqual(data["remaining_seconds"], data["lockout_seconds"])
+        try:
+            # 1. Check unlocked state
+            res = self.client.get(f'/api/auth/lockout-status?user_id={lock_adm}')
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertFalse(data["locked"])
+            self.assertEqual(data["remaining_seconds"], 0)
+            # Verify zero credential leaks
+            self.assertNotIn("password", data)
+            self.assertNotIn("password_hash", data)
+            self.assertNotIn("salt", data)
+            self.assertNotIn("token", data)
 
-        server_app.clear_account_lockout()
+            # 2. Lock account and check again
+            now = time.time()
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute(
+                    "UPDATE users SET failed_attempts = ?, locked_until = ? WHERE user_id = ?",
+                    (5, now + 120.0, lock_adm)
+                )
+                conn.commit()
+                conn.close()
+
+            res = self.client.get(f'/api/auth/lockout-status?user_id={lock_adm}')
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertTrue(data["locked"])
+            self.assertTrue(data["remaining_seconds"] > 100)
+            self.assertEqual(data["remaining_seconds"], data["lockout_seconds"])
+        finally:
+            server_app.clear_account_lockout()
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute("DELETE FROM users WHERE user_id = ?", (lock_adm,))
+                conn.commit()
+                conn.close()
 
     # 20. Real SSH Access & Restricted NexusNode Shell Tests
     # 20. Real SSH Access & Restricted NexusNode Shell Tests
@@ -1743,13 +1911,20 @@ class TestNexusNodeServer(unittest.TestCase):
             finally:
                 conn.close()
 
-        out = io.StringIO()
-        with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208', ghost_key, 'ssh-ed25519']):
-            with redirect_stdout(out):
-                nexus_ssh_auth.main()
+        try:
+            out = io.StringIO()
+            with patch.object(sys, 'argv', ['nexus_ssh_auth.py', 'u0_a208', ghost_key, 'ssh-ed25519']):
+                with redirect_stdout(out):
+                    nexus_ssh_auth.main()
 
-        output = out.getvalue()
-        self.assertNotIn("ghost_user", output)
+            output = out.getvalue()
+            self.assertNotIn("ghost_user", output)
+        finally:
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute("DELETE FROM ssh_keys WHERE fingerprint = ?", (ghost_fp,))
+                conn.commit()
+                conn.close()
 
     def test_cli_ssh_key_management(self):
         """Verify 'nexus_admin ssh-key' commands (add, list, revoke)."""
@@ -2301,22 +2476,29 @@ class TestNexusNodeServer(unittest.TestCase):
             finally:
                 conn.close()
 
-        # Execute init_unified_db() migration routine
-        server_app.init_unified_db()
+        try:
+            # Execute init_unified_db() migration routine
+            server_app.init_unified_db()
 
-        # Query database and verify all legacy rows repaired
-        runner = server_app.task_runner
-        t_comp = runner.get_task(tid_c)
-        self.assertEqual(t_comp["status"], "COMPLETED")
-        self.assertEqual(t_comp["stage"], "COMPLETED")
+            # Query database and verify all legacy rows repaired
+            runner = server_app.task_runner
+            t_comp = runner.get_task(tid_c)
+            self.assertEqual(t_comp["status"], "COMPLETED")
+            self.assertEqual(t_comp["stage"], "COMPLETED")
 
-        t_fail = runner.get_task(tid_f)
-        self.assertEqual(t_fail["status"], "FAILED")
-        self.assertEqual(t_fail["stage"], "FAILED")
+            t_fail = runner.get_task(tid_f)
+            self.assertEqual(t_fail["status"], "FAILED")
+            self.assertEqual(t_fail["stage"], "FAILED")
 
-        t_canc = runner.get_task(tid_x)
-        self.assertEqual(t_canc["status"], "CANCELLED")
-        self.assertEqual(t_canc["stage"], "CANCELLED")
+            t_canc = runner.get_task(tid_x)
+            self.assertEqual(t_canc["status"], "CANCELLED")
+            self.assertEqual(t_canc["stage"], "CANCELLED")
+        finally:
+            with server_app.DB_LOCK:
+                conn = server_app.get_db_connection()
+                conn.execute("DELETE FROM background_tasks WHERE id IN (?, ?, ?)", (tid_c, tid_f, tid_x))
+                conn.commit()
+                conn.close()
 
     def test_56_failed_media_task_persists_error(self):
         """

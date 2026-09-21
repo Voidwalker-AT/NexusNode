@@ -1,0 +1,6 @@
+
+=========================== short test summary info ===========================
+ERROR tests/test_academic_onboarding_ui.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 1.19s
+

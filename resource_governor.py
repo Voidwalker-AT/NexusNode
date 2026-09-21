@@ -186,18 +186,34 @@ class ResourceGovernor:
         battery_temp_c = None
         cpu_temp_c = None
 
-        # 1. Termux API tool check: termux-battery-status
-        if shutil.which("termux-battery-status"):
-            try:
-                out = subprocess.check_output(["termux-battery-status"], stderr=subprocess.DEVNULL, timeout=1.0, text=True)
-                data = json.loads(out)
-                battery_pct = data.get("percentage")
-                battery_status = data.get("status", "unavailable")
-                temp_raw = data.get("temperature")
-                if temp_raw is not None:
-                    battery_temp_c = round(float(temp_raw), 1)
-            except Exception:
-                pass
+        # 1. Non-blocking cached battery check (Termux API is slow: ~1.7s)
+        now = time.time()
+        if not hasattr(self, "_cached_battery_data"):
+            self._cached_battery_data = {"pct": None, "status": "unavailable", "temp": None}
+            self._cached_battery_ts = 0.0
+
+        # Refresh in background thread if older than 60 seconds
+        if (now - self._cached_battery_ts) > 60.0:
+            self._cached_battery_ts = now
+            import threading
+            def _refresh_battery_async():
+                try:
+                    if shutil.which("termux-battery-status"):
+                        out = subprocess.check_output(["termux-battery-status"], stderr=subprocess.DEVNULL, timeout=2.5, text=True)
+                        d = json.loads(out)
+                        t_raw = d.get("temperature")
+                        self._cached_battery_data = {
+                            "pct": d.get("percentage"),
+                            "status": d.get("status", "unavailable"),
+                            "temp": round(float(t_raw), 1) if t_raw is not None else None
+                        }
+                except Exception:
+                    pass
+            threading.Thread(target=_refresh_battery_async, daemon=True).start()
+
+        battery_pct = self._cached_battery_data["pct"]
+        battery_status = self._cached_battery_data["status"]
+        battery_temp_c = self._cached_battery_data["temp"]
 
         # 2. Sysfs fallback for battery if unpopulated
         if battery_pct is None and os.path.exists("/sys/class/power_supply/battery"):
@@ -612,6 +628,60 @@ class ResourceGovernor:
             "state": mem["state"],
             "available_mb": mem["available_mb"],
             "reason": "Ollama startup permitted."
+        }
+
+    def can_start_browser(self, provider_mode: str = "remote") -> dict:
+        """
+        Evaluates whether agent browser automation can be started.
+        Distinguishes remote browser control (low overhead ~100MB) from local engine rendering (~800MB).
+        """
+        snap = self.get_telemetry_snapshot()
+        mem = snap["memory"]
+        device = snap["device"]
+
+        # 1. Thermal Gate
+        if device["thermal_state"] == "CRITICAL":
+            return {
+                "allowed": False,
+                "state": "critical",
+                "available_mb": mem["available_mb"],
+                "provider_mode": provider_mode,
+                "reason": f"Browser automation blocked: Device thermal state is CRITICAL ({device.get('effective_temperature_c')}°C)."
+            }
+
+        # 2. Threshold by provider mode
+        min_ram = (
+            getattr(config, "BROWSER_REMOTE_MIN_RAM_MB", 100)
+            if provider_mode == "remote"
+            else getattr(config, "BROWSER_LOCAL_MIN_RAM_MB", 800)
+        )
+
+        # 3. Memory Gate
+        if mem["available_mb"] < min_ram:
+            return {
+                "allowed": False,
+                "state": "critical" if mem["available_mb"] < self.pressure_threshold_mb else "pressure",
+                "available_mb": mem["available_mb"],
+                "provider_mode": provider_mode,
+                "reason": f"Browser automation blocked ({provider_mode} mode): {mem['available_mb']} MB available < {min_ram} MB required."
+            }
+
+        # 4. Critical Pressure Rejection
+        if mem["state"] == "critical":
+            return {
+                "allowed": False,
+                "state": "critical",
+                "available_mb": mem["available_mb"],
+                "provider_mode": provider_mode,
+                "reason": f"Browser automation blocked: System memory under critical pressure ({mem['available_mb']} MB available)."
+            }
+
+        return {
+            "allowed": True,
+            "state": mem["state"],
+            "available_mb": mem["available_mb"],
+            "provider_mode": provider_mode,
+            "reason": f"Browser automation ({provider_mode} mode) permitted."
         }
 
     def get_ram_status(self) -> dict:

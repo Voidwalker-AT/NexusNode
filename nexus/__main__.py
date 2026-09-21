@@ -14,12 +14,9 @@ from .commands import (
     vault as cmd_vault_mod,
     media as cmd_media_mod,
     tasks as cmd_tasks_mod,
-    ai as cmd_ai_mod,
-    rag as cmd_rag_mod,
     shares as cmd_shares_mod,
     account as cmd_account_mod,
     services as cmd_services_mod,
-    models as cmd_models_mod,
     diagnostics as cmd_diag_mod,
     logs as cmd_logs_mod,
     users as cmd_users_mod,
@@ -111,17 +108,7 @@ def create_parser() -> NexusArgumentParser:
     p_tasks.add_argument("task_action", nargs="?", default="list", choices=["list", "ls", "status", "info", "cancel", "kill"], help="Action")
     p_tasks.add_argument("task_id", nargs="?", default=None, help="Task ID")
 
-    # --- ai ---
-    p_ai = subparsers.add_parser("ai", help="AI & LLM inference controls", parents=[common_parser])
-    p_ai.add_argument("ai_action", nargs="?", default="state", choices=["models", "state", "select", "chat", "metrics"], help="Action")
-    p_ai.add_argument("model_or_prompt", nargs="?", default=None, help="Model name or chat prompt")
-    p_ai.add_argument("--model", help="Specify AI model name", default=None)
-    p_ai.add_argument("--prompt", help="Specify chat prompt", default=None)
 
-    # --- rag ---
-    p_rag = subparsers.add_parser("rag", help="SQLite FTS5 RAG search & indexing", parents=[common_parser])
-    p_rag.add_argument("rag_action", nargs="?", default="status", choices=["status", "diagnostics", "search", "sources", "index", "compact"], help="Action")
-    p_rag.add_argument("query", nargs="?", default=None, help="Search query string")
 
     # --- shares ---
     p_shares = subparsers.add_parser("shares", help="Temporary public file shares", parents=[common_parser])
@@ -139,17 +126,12 @@ def create_parser() -> NexusArgumentParser:
     # --- services (Admin) ---
     p_svc = subparsers.add_parser("services", help="Admin: System services supervision", parents=[common_parser])
     p_svc.add_argument("service_action", nargs="?", default="status", choices=["status", "list", "start", "stop", "restart"], help="Action")
-    p_svc.add_argument("service_name", nargs="?", default=None, help="Service name (e.g. ollama, cloudflared, localtonet)")
-
-    # --- models (Admin) ---
-    p_mod = subparsers.add_parser("models", help="Admin: AI Model management", parents=[common_parser])
-    p_mod.add_argument("model_action", nargs="?", default="list", choices=["list", "ls", "pull", "delete", "rm", "active", "set-active"], help="Action")
-    p_mod.add_argument("model_name", nargs="?", default=None, help="Ollama model name (e.g. llama3.2:1b)")
+    p_svc.add_argument("service_name", nargs="?", default=None, help="Service name (e.g. cloudflared, localtonet)")
 
     # --- diagnostics (Admin) ---
     p_diag = subparsers.add_parser("diagnostics", help="Admin: Appliance technical diagnostics", parents=[common_parser])
     p_diag.add_argument("diag_action", nargs="?", default="system", choices=["system", "full", "full-report", "profile", "network"], help="Action")
-    p_diag.add_argument("--target", default="internet", choices=["internet", "tunnel", "ollama", "nexusnode"], help="Network test target")
+    p_diag.add_argument("--target", default="internet", choices=["internet", "tunnel", "nexusnode"], help="Network test target")
 
     # --- logs (Admin) ---
     p_logs = subparsers.add_parser("logs", help="Admin: System event logs", parents=[common_parser])
@@ -310,15 +292,6 @@ def main(argv=None) -> int:
             return cmd_media_mod.cmd_media(client, args, as_json)
         elif cmd == "tasks":
             return cmd_tasks_mod.cmd_tasks(client, args, as_json)
-        elif cmd == "ai":
-            if getattr(args, "model_or_prompt", None):
-                if args.ai_action == "select":
-                    args.model = args.model_or_prompt
-                elif args.ai_action == "chat":
-                    args.prompt = args.model_or_prompt
-            return cmd_ai_mod.cmd_ai(client, args, as_json)
-        elif cmd == "rag":
-            return cmd_rag_mod.cmd_rag(client, args, as_json)
         elif cmd == "shares":
             if getattr(args, "filename_or_id", None):
                 if args.shares_action in ["create", "add"]:
@@ -330,8 +303,6 @@ def main(argv=None) -> int:
             return cmd_account_mod.cmd_account(client, args, as_json)
         elif cmd == "services":
             return cmd_services_mod.cmd_services(client, args, as_json)
-        elif cmd == "models":
-            return cmd_models_mod.cmd_models(client, args, as_json)
         elif cmd == "diagnostics":
             return cmd_diag_mod.cmd_diagnostics(client, args, as_json)
         elif cmd == "logs":

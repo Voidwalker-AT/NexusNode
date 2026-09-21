@@ -1,0 +1,23 @@
+{
+  "phase": "4.3A_PRE_BASELINE",
+  "timestamp": "2026-09-20T20:36:03+05:30",
+  "local_tests": {
+    "files": 39,
+    "collected": 682,
+    "passed": 681,
+    "skipped": 1,
+    "failed": 0,
+    "errors": 0
+  },
+  "bg6_appliance": {
+    "health": {
+      "status": "healthy",
+      "uptime_seconds": 531,
+      "version": "2.3.8"
+    },
+    "localtonet_running": true,
+    "chromium_idle_count": 0,
+    "db_integrity": "ok",
+    "semantic_tools_count": 11
+  }
+}

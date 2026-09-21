@@ -1,0 +1,98 @@
+[
+  {
+    "ModuleCode": "CSEG3001",
+    "ModuleName": "Operating Systems",
+    "CreditPoint": 4.0,
+    "GradePoints": 8.0,
+    "GradeObtained": "A",
+    "Status": "Passed",
+    "CourseType": "Core",
+    "InternalMarks": 42.0,
+    "ExternalMarks": 38.0,
+    "TotalMarks": 80.0
+  },
+  {
+    "ModuleCode": "CSEG3002",
+    "ModuleName": "Computer Networks",
+    "CreditPoint": 4.0,
+    "GradePoints": 9.0,
+    "GradeObtained": "A+",
+    "Status": "Passed",
+    "CourseType": "Core",
+    "InternalMarks": 45.0,
+    "ExternalMarks": 42.0,
+    "TotalMarks": 87.0
+  },
+  {
+    "ModuleCode": "CSEG3003",
+    "ModuleName": "Design and Analysis of Algorithms",
+    "CreditPoint": 4.0,
+    "GradePoints": 8.0,
+    "GradeObtained": "A",
+    "Status": "Passed",
+    "CourseType": "Core",
+    "InternalMarks": 39.0,
+    "ExternalMarks": 40.0,
+    "TotalMarks": 79.0
+  },
+  {
+    "ModuleCode": "CSEG3004",
+    "ModuleName": "Theory of Computation",
+    "CreditPoint": 3.0,
+    "GradePoints": 7.0,
+    "GradeObtained": "B+",
+    "Status": "Passed",
+    "CourseType": "Core",
+    "InternalMarks": 36.0,
+    "ExternalMarks": 35.0,
+    "TotalMarks": 71.0
+  },
+  {
+    "ModuleCode": "CSEG3005",
+    "ModuleName": "Web Technologies",
+    "CreditPoint": 3.0,
+    "GradePoints": 10.0,
+    "GradeObtained": "O",
+    "Status": "Passed",
+    "CourseType": "Elective",
+    "InternalMarks": 48.0,
+    "ExternalMarks": 46.0,
+    "TotalMarks": 94.0
+  },
+  {
+    "ModuleCode": "PROJ3101",
+    "ModuleName": "Minor Project I",
+    "CreditPoint": 2.0,
+    "GradePoints": 9.0,
+    "GradeObtained": "A+",
+    "Status": "Passed",
+    "CourseType": "Project",
+    "InternalMarks": 46.0,
+    "ExternalMarks": 44.0,
+    "TotalMarks": 90.0
+  },
+  {
+    "ModuleCode": "CSEG3101",
+    "ModuleName": "Operating Systems Lab",
+    "CreditPoint": 2.0,
+    "GradePoints": 9.0,
+    "GradeObtained": "A+",
+    "Status": "Passed",
+    "CourseType": "Practical",
+    "InternalMarks": 47.0,
+    "ExternalMarks": 43.0,
+    "TotalMarks": 90.0
+  },
+  {
+    "ModuleCode": "CSEG3102",
+    "ModuleName": "Computer Networks Lab",
+    "CreditPoint": 2.0,
+    "GradePoints": 8.0,
+    "GradeObtained": "A",
+    "Status": "Passed",
+    "CourseType": "Practical",
+    "InternalMarks": 41.0,
+    "ExternalMarks": 40.0,
+    "TotalMarks": 81.0
+  }
+]

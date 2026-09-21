@@ -1,0 +1,3191 @@
+{
+  "summary": {
+    "SOURCE_PYTHON": 94,
+    "FRONTEND_WEB": 12,
+    "TEST_FILES": 41,
+    "DOCUMENTATION": 41,
+    "CONFIGURATION": 6,
+    "DEPLOYMENT_SERVICES": 12,
+    "GENERATED_RUNTIME": 124,
+    "LEGACY_CANDIDATES": 49,
+    "TOTAL_FILES": 397
+  },
+  "files": [
+    {
+      "path": ".dockerignore",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 1091,
+      "lines": 0,
+      "sha256": "b54f4797681002443f1296bd4e14fe2ab08f8e760c81b3f14dcdde6d464bccf9"
+    },
+    {
+      "path": ".env",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 215,
+      "lines": 0,
+      "sha256": "1bcd45da571ea0b6065d6e1c14371fa2b7a6a436b0324e99b81e858d56c93d94"
+    },
+    {
+      "path": ".env.example",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 1329,
+      "lines": 0,
+      "sha256": "22e3744e9dacab74b108d92cef7717cd5da166272e8c553f3e76afb64f96780a"
+    },
+    {
+      "path": ".gitignore",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 1183,
+      "lines": 0,
+      "sha256": "e9259f26195ac11969de0d3f99a26c83caf3a1b2f8f5ce1466b1daff9eaa9d3b"
+    },
+    {
+      "path": "API.md",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 7511,
+      "lines": 139,
+      "sha256": "786ddb2d5875e2ec816883411249a245a812de2a365d04eb2d7efcaf199a1e2d"
+    },
+    {
+      "path": "app.py",
+      "status": "ACTIVE",
+      "subsystem": "core_server",
+      "size_bytes": 357020,
+      "lines": 8395,
+      "sha256": "b37bb85a3096458bc3909463cbaca0e4f7674cec1d17872cc057b1f301a62da7"
+    },
+    {
+      "path": "ARCHITECTURE.md",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 11417,
+      "lines": 168,
+      "sha256": "66fb7a7a7cdaf2291461d075169bf09d65d5e58be282fafd58c46533229a7529"
+    },
+    {
+      "path": "attendance_sync.py",
+      "status": "ACTIVE",
+      "subsystem": "academic_sync",
+      "size_bytes": 48795,
+      "lines": 1080,
+      "sha256": "c1151e3330b3178c71c451d5b6a4e8ba7f53f4b0952b8566923370dde0d1d8f9"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 28407,
+      "lines": 360,
+      "sha256": "feed81f943d4d7e352a92bc603e27635176bb5114ea22084af8bebc8bd5bf117"
+    },
+    {
+      "path": "config.py",
+      "status": "ACTIVE",
+      "subsystem": "core_server",
+      "size_bytes": 20622,
+      "lines": 805,
+      "sha256": "dc9c3fc7da235e47ea43e6c8d466f6b9410266b1f4a2a21aa27acc54753d365d"
+    },
+    {
+      "path": "DEPLOYMENT.md",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 6046,
+      "lines": 186,
+      "sha256": "01a04a8b7d7a32332e7d638a2a86d639022842dd43b9ec4d746208193642cd25"
+    },
+    {
+      "path": "deployment_manifest.json",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 1675,
+      "lines": 20,
+      "sha256": "138a641f8f776289fcf7bca93cd43c389ad69eb3c7317d8ebdae23e193082683"
+    },
+    {
+      "path": "deploy_nexus_update.sh",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 1616,
+      "lines": 49,
+      "sha256": "72fd6039ce337bbcd84f9fddde4227e1c6b37ecdab4daa870ecc743e2cd7af6a"
+    },
+    {
+      "path": "deploy_phase42a.py",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 4739,
+      "lines": 138,
+      "sha256": "0cd0d975b49995cbbd1b85414130fefb5077e964e55112b5676574eedc1c6bb8"
+    },
+    {
+      "path": "deploy_to_bg6_ssh.py",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 7913,
+      "lines": 204,
+      "sha256": "faee4bb636ca83de239dfa1d6b8d1fd8a1bf54b3e98deb8076b26c78fa50aec4"
+    },
+    {
+      "path": "docker-compose.yml",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 1289,
+      "lines": 47,
+      "sha256": "6641261aa54cae17f5674403c47520632bef5c2b7f713243995d37b02845d3b1"
+    },
+    {
+      "path": "Dockerfile",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 1784,
+      "lines": 0,
+      "sha256": "b4a3698af675c7f1499f7d751db86b1a6d358522b8bc90b66727a2f41434caa9"
+    },
+    {
+      "path": "index.html",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 14956,
+      "lines": 300,
+      "sha256": "ea249cca1f2cec5a70623fd24b632df33b3c15bd6c64ce4ab83b15abfbe4a08b"
+    },
+    {
+      "path": "install.bat",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 399,
+      "lines": 15,
+      "sha256": "1006bee4e35a2f374dc766f89ac7f926be191cd2d42611163596b2be076188d8"
+    },
+    {
+      "path": "install.ps1",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 7873,
+      "lines": 223,
+      "sha256": "e6f5c23c8e6524c9e476156b9d67187c55b0754a1d817f22b89cec49e04b3b9a"
+    },
+    {
+      "path": "LICENSE",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 1079,
+      "lines": 0,
+      "sha256": "0dfaf2b13d576c5b5a9f3739701e9c0c3171242be003e0dac11f3c3ec30d4cca"
+    },
+    {
+      "path": "nexus.bat",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 59,
+      "lines": 4,
+      "sha256": "f17f74c2a318e48240a7fda5ee39355482a379015e97d3bebf352b0c3f56e6c7"
+    },
+    {
+      "path": "nexusnode.db",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "nexus_admin.py",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 25336,
+      "lines": 703,
+      "sha256": "19f6b580d03ebee12f2149071ddd1a7a99904bedde5a280cfcfd55abb5920e25"
+    },
+    {
+      "path": "nexus_cli",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 127,
+      "lines": 0,
+      "sha256": "078f6c4d210c22cbaf698235365332b0c53eca92799bbf69dd8ba9a2875235a2"
+    },
+    {
+      "path": "nexus_launcher",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 322,
+      "lines": 0,
+      "sha256": "036282c0687702fd5c3682d7160677e18a46dd03b8609a3c8ffafee94da75235"
+    },
+    {
+      "path": "nexus_launcher.sh",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 127,
+      "lines": 3,
+      "sha256": "078f6c4d210c22cbaf698235365332b0c53eca92799bbf69dd8ba9a2875235a2"
+    },
+    {
+      "path": "nexus_shell.py",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 46157,
+      "lines": 1058,
+      "sha256": "719a9555b8da78db675d3636a94dcdc5d61e814baf615073eea6a0ea6ca433f1"
+    },
+    {
+      "path": "nexus_unified.db",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "nexus_vault.db",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "PKG_README.md",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 3375,
+      "lines": 113,
+      "sha256": "846bf816fa5720497906b279c02c3972e5d2c5981b63a0a5462b5317d959be6b"
+    },
+    {
+      "path": "pyproject.toml",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 1679,
+      "lines": 54,
+      "sha256": "85d47f336a303395834d8e04a83e300e492c7b5c13063f2752a62edfd668136d"
+    },
+    {
+      "path": "README.md",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 10313,
+      "lines": 193,
+      "sha256": "702e01530108a6ef164da37f117b470509251c27d462d08fbab5450e0bc6ec58"
+    },
+    {
+      "path": "requirements.txt",
+      "status": "ACTIVE",
+      "subsystem": "other",
+      "size_bytes": 85,
+      "lines": 5,
+      "sha256": "af8459fe0dce019cc3b88e5fb1e23bddcfb005fac622213e16278ae797fec99d"
+    },
+    {
+      "path": "resource_governor.py",
+      "status": "ACTIVE",
+      "subsystem": "core_server",
+      "size_bytes": 30803,
+      "lines": 746,
+      "sha256": "3fc8d4d68a261ecff99468830fa24cc681848e2509fd88127a4bebf44881e5e6"
+    },
+    {
+      "path": "scratch_phase41b_results.json",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 4915,
+      "lines": 194,
+      "sha256": "a08cc29b647577591de1d7fc06e4faeb8ac3ba4b8207fe869cf4402c9356f947"
+    },
+    {
+      "path": "start_nexus.sh",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 9845,
+      "lines": 263,
+      "sha256": "dcba0fb87ed76ea7b781010784b73c7035c50cce3423d004b47e36f82697c7c2"
+    },
+    {
+      "path": "timetable_sync.py",
+      "status": "ACTIVE",
+      "subsystem": "academic_sync",
+      "size_bytes": 144023,
+      "lines": 3321,
+      "sha256": "f8f61849c4763b51773514d72b2abb02947269cf545a6514f8a1ed41f5973f92"
+    },
+    {
+      "path": "unified_nexus.db",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "verify_bg6_live.py",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 5639,
+      "lines": 143,
+      "sha256": "098846cf9b81470dd5535373aa5cdb52344b42926cba3535c206ef3b46133c1c"
+    },
+    {
+      "path": "agent/browser_service.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 50290,
+      "lines": 1265,
+      "sha256": "133e20f55b1c4f1dc3d1e094fa4ff149cc84dc39599f742a43e42b0c3e5ce80a"
+    },
+    {
+      "path": "agent/consequential.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 44010,
+      "lines": 1054,
+      "sha256": "fca03f05d935fcb38277331bf1aacfdc973a5d7821bd64505422d0ef44ac8b0f"
+    },
+    {
+      "path": "agent/errors.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 2670,
+      "lines": 116,
+      "sha256": "da1e51ede69a4be3dcaa0f38b24795b1ff51f79814895957ab90ef06afc9c96f"
+    },
+    {
+      "path": "agent/execution_router.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 7000,
+      "lines": 154,
+      "sha256": "8895f94031668f0cce42fc4e735a3e4e24a04d8d54f1c6521e361685744339a8"
+    },
+    {
+      "path": "agent/lms_service.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 39786,
+      "lines": 980,
+      "sha256": "739a7e2c7cd39817d63416ab0d14fc693fb84ac4bf65922723e22390534c10a0"
+    },
+    {
+      "path": "agent/mcp_auth.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 8746,
+      "lines": 267,
+      "sha256": "8599e8074a5bfe8840cefd057bdc230d6116aecccfae0013522401eaf6a7e7b1"
+    },
+    {
+      "path": "agent/mcp_client.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 8143,
+      "lines": 213,
+      "sha256": "18ca5edbfcc6c449ebbd42b280312699b58b02d9c5b8e39beea07a8bc2178716"
+    },
+    {
+      "path": "agent/mcp_server.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 57733,
+      "lines": 1404,
+      "sha256": "27917fd200f23fac0a7df74d8558162bfb1fa2bae7c6b288ddd683ef9fe6bae2"
+    },
+    {
+      "path": "agent/models.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 10441,
+      "lines": 302,
+      "sha256": "a545db5ffab41ed4b102756f7e2ca69980cc9bdc652518f739039ad296c7b480"
+    },
+    {
+      "path": "agent/oauth_provider.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 19173,
+      "lines": 508,
+      "sha256": "53df6a69a2016ea9c5578d9fc0010e9aa24133a6e74d997a875c45d157d1fc3e"
+    },
+    {
+      "path": "agent/policy.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 15479,
+      "lines": 396,
+      "sha256": "b6d6d1c473d6204102a1b9a1845d9f0ff1676fd017107bf025a44bc714edab86"
+    },
+    {
+      "path": "agent/rate_limiter.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 3049,
+      "lines": 77,
+      "sha256": "91beb566adb935bd418b95feb6fdbc48426229d0bcb720e74b5f71efa8849fa9"
+    },
+    {
+      "path": "agent/registry.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 5617,
+      "lines": 158,
+      "sha256": "f1db5397269fcec4a6fbcb2e68e0586c22986cbd96db6087084d575e0fa74de2"
+    },
+    {
+      "path": "agent/sanitizer.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 1739,
+      "lines": 46,
+      "sha256": "42a8d0b44c60a9d5a487160a1ce341b2d5039146cfd9b16340bf90d6f3a59ef3"
+    },
+    {
+      "path": "agent/semantic_facade.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 33747,
+      "lines": 830,
+      "sha256": "d7165a78ac6084fe261526e1127e17cf841d71f190cb76aaf0c29df5619af848"
+    },
+    {
+      "path": "agent/status_service.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 3914,
+      "lines": 119,
+      "sha256": "1eaea9fde6cc67feb9f7c4cec0b66a98875bacf378a4e937d51c441e167fad5d"
+    },
+    {
+      "path": "agent/vault_service.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 61780,
+      "lines": 1565,
+      "sha256": "a7bd18ad76bc1430cfdccae9de3fe8dba4b26621f75a6b8452db90bbc8649786"
+    },
+    {
+      "path": "agent/__init__.py",
+      "status": "ACTIVE",
+      "subsystem": "agent_mcp",
+      "size_bytes": 3536,
+      "lines": 138,
+      "sha256": "059870c11b754c6f6e4dd64515b8427ab079726ef04aab1adf851debc041710e"
+    },
+    {
+      "path": "bin/nexus",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 322,
+      "lines": 0,
+      "sha256": "036282c0687702fd5c3682d7160677e18a46dd03b8609a3c8ffafee94da75235"
+    },
+    {
+      "path": "browser/base.py",
+      "status": "ACTIVE",
+      "subsystem": "browser_runtime",
+      "size_bytes": 4724,
+      "lines": 141,
+      "sha256": "6a107f401f54f79ce09acc1a8a58a1a6166b1bbc8d60c9733bd6aa54b2949251"
+    },
+    {
+      "path": "browser/bg6_cdp.py",
+      "status": "ACTIVE",
+      "subsystem": "browser_runtime",
+      "size_bytes": 14368,
+      "lines": 377,
+      "sha256": "85704e89330c10d0acd38758de8770b1a5f5c69879ef9d382b808045141986c8"
+    },
+    {
+      "path": "browser/camofox.py",
+      "status": "ACTIVE",
+      "subsystem": "browser_runtime",
+      "size_bytes": 2767,
+      "lines": 65,
+      "sha256": "9032858e0b11e05ba56d5e288d62882532e2c8498b7d1b94f8c4ce5f406488f5"
+    },
+    {
+      "path": "browser/cdp_client.py",
+      "status": "ACTIVE",
+      "subsystem": "browser_runtime",
+      "size_bytes": 10878,
+      "lines": 304,
+      "sha256": "b81dfe87766b35ce95a6f8bbac317ae276d474db0700bbb2b4325427ef22bd22"
+    },
+    {
+      "path": "browser/chromium_runtime.py",
+      "status": "ACTIVE",
+      "subsystem": "browser_runtime",
+      "size_bytes": 14973,
+      "lines": 421,
+      "sha256": "48e84cb04b03e8863c206ca5fb3474d6b833afa88da05c53cc7eb94cf32aa04f"
+    },
+    {
+      "path": "browser/observation.py",
+      "status": "ACTIVE",
+      "subsystem": "browser_runtime",
+      "size_bytes": 10277,
+      "lines": 276,
+      "sha256": "523eb57f9b1404dd2ee5ec13717c733d05f47577ab1fee49de955d65d2b378f2"
+    },
+    {
+      "path": "browser/pinchtab.py",
+      "status": "LEGACY",
+      "subsystem": "browser_runtime",
+      "size_bytes": 16930,
+      "lines": 386,
+      "sha256": "c38a65fd4776c32a4f66b09561ed59e456dfb93ad3e6d9ec737d685617127671"
+    },
+    {
+      "path": "browser/profile_manager.py",
+      "status": "ACTIVE",
+      "subsystem": "browser_runtime",
+      "size_bytes": 5450,
+      "lines": 132,
+      "sha256": "d459ae544736e3266b66e83e9de3d7f6d14b9921276902788a416606022d569c"
+    },
+    {
+      "path": "browser/__init__.py",
+      "status": "ACTIVE",
+      "subsystem": "browser_runtime",
+      "size_bytes": 1054,
+      "lines": 40,
+      "sha256": "2b9a7fccb46ba8a8a67f80a8050fc0b217603ea404a315f0ed33b32d749286ad"
+    },
+    {
+      "path": "docs/ACADEMIC_AUTH_FINAL_ACCEPTANCE.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 10838,
+      "lines": 211,
+      "sha256": "252ee538e39657c55dee7286c8524c57a42a4c5f0d1815b56f925c75964851de"
+    },
+    {
+      "path": "docs/ACADEMIC_WORKFLOWS.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 3271,
+      "lines": 66,
+      "sha256": "c98aa70cd0fb76cb6fa494aae4dfa3f1bd9ab0f107f8ac0aecb43e73509dc75c"
+    },
+    {
+      "path": "docs/AGENT_BROWSER_ARCHITECTURE_FEASIBILITY.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 27287,
+      "lines": 525,
+      "sha256": "8b5c8395bb4d10b860c8d9be5cd739854803177e78262829615c3e7289c8bf1f"
+    },
+    {
+      "path": "docs/AGENT_EXECUTION_FOUNDATION.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 16611,
+      "lines": 346,
+      "sha256": "b8d43e8cf3eea24f806735626e8a461b7f05b2f1cab2299841d0043c17b5d36a"
+    },
+    {
+      "path": "docs/APPROVAL_PROTOCOL.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 1442,
+      "lines": 42,
+      "sha256": "6b7416730b7f4b689ac3b3469f1d21df4ce467feff6268c0d3e1085d12f9551f"
+    },
+    {
+      "path": "docs/ATTENDANCE_ACCEPTANCE_AND_AUTH_LIFECYCLE.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 15511,
+      "lines": 290,
+      "sha256": "de5b98d0f31a471965e05974d120ca03bfc745d5f61725f52f3734ecbadce348"
+    },
+    {
+      "path": "docs/ATTENDANCE_EVIDENCE_RECONCILIATION.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 11923,
+      "lines": 275,
+      "sha256": "ab8ddfd8a0f6d85e96876c6503bbd35e3c16c69498c779a7ecd46343119028d1"
+    },
+    {
+      "path": "docs/ATTENDANCE_IMPLEMENTATION_REPORT.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 7141,
+      "lines": 121,
+      "sha256": "705cea7cc6b67f019304af4a2a3c5672f4f95a5fd08d60cde8a435f8fd2da832"
+    },
+    {
+      "path": "docs/BG6_PHASE36A_DEPLOYMENT_REPORT.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 4332,
+      "lines": 90,
+      "sha256": "c8c126be4168cdb748c3fc497532c9eb586f5b261803a0f938dd5e40a1d6fe7d"
+    },
+    {
+      "path": "docs/CALENDAR_RECONCILIATION.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 3435,
+      "lines": 58,
+      "sha256": "49fe42983a1c17e831414f6b31f876083072894b185868a92d359a033ff8db87"
+    },
+    {
+      "path": "docs/CONSEQUENTIAL_ACTIONS.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 3080,
+      "lines": 48,
+      "sha256": "01fd90bf46c8bc15747a790179963c621d4fa4143637090da851c44229c30557"
+    },
+    {
+      "path": "docs/DOCKER.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 3462,
+      "lines": 87,
+      "sha256": "4f85b084a813600a7f7ad860376cdd5c86f85ed6bfd75a8a3686ffbf34e1581f"
+    },
+    {
+      "path": "docs/GEMINI_SPARK_MCP_COMPLIANCE.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 4675,
+      "lines": 37,
+      "sha256": "d843eb52cb85c9915068e87920d3f3078a1b0b840f0a7488c8b472e1e76f8e6c"
+    },
+    {
+      "path": "docs/LMS_AUTOMATION_DISCOVERY.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 6506,
+      "lines": 119,
+      "sha256": "b6055f8ef6e5e1cf5f08ba33987dbb39eee6b88ccd5b7704b4aafda9644d8011"
+    },
+    {
+      "path": "docs/LMS_SEMANTIC_TOOLS.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 6136,
+      "lines": 109,
+      "sha256": "62abe69938087657a3ca469428492bfaa69279326ca81d899bb27674742ee3a9"
+    },
+    {
+      "path": "docs/MULTI_USER_ACADEMIC_ONBOARDING.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 6277,
+      "lines": 98,
+      "sha256": "4ab4e50e5f77d46c8e9526f444661dbd1f70b271c9f78235511a03ceaaf904d0"
+    },
+    {
+      "path": "docs/MULTI_USER_SECURITY.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 15490,
+      "lines": 234,
+      "sha256": "c61315d517ce747775c0a6cea04efa41f3c367b10e2ce6c5c4818ea9f088de40"
+    },
+    {
+      "path": "docs/NEXUSNODE_ARCHITECTURE_AUDIT.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 41716,
+      "lines": 614,
+      "sha256": "e5e16797845bff377b0ef8bea7f8ae31a2e912b79d80936b02502a0249334f1d"
+    },
+    {
+      "path": "docs/PRODUCTION_ATTENDANCE_UI_FIX.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 6137,
+      "lines": 121,
+      "sha256": "4bec71fa04968951734ba34041defe5770c90919d43a034337b7a4624a9eada4"
+    },
+    {
+      "path": "docs/SPARK_MCP_GATEWAY.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 11555,
+      "lines": 217,
+      "sha256": "cd47f14e72537c7f6a017728b74ce76ac56f9610728d8691b60299bf92db0890"
+    },
+    {
+      "path": "docs/TECNO_FIRST_ATTENDANCE_SYNC.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 7839,
+      "lines": 128,
+      "sha256": "407b4161eaeeec007cb0132200b3a8ade21c599b67acb40d57c6719ae24ff3a6"
+    },
+    {
+      "path": "docs/TECNO_PHASE2_DEPLOYMENT_REPORT.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 8936,
+      "lines": 213,
+      "sha256": "471f0621a4a4ead4bc3a219c4f1a59bd090dc6b780c1e70dcd0c375184a2f1fa"
+    },
+    {
+      "path": "docs/TIMETABLE_CALENDAR_SETUP_GUIDE.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 3742,
+      "lines": 70,
+      "sha256": "770bcb7a8648705ad0b00631807847ff37fc567c11dafd32321f0976a398e24f"
+    },
+    {
+      "path": "docs/TIMETABLE_SYNC.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 7373,
+      "lines": 192,
+      "sha256": "643d30b4fc83ca8fb72e0edaa42a75c28de272b3e70bbe03e9889c2a847e0e7a"
+    },
+    {
+      "path": "docs/UPES_ATTENDANCE_DISCOVERY.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 18383,
+      "lines": 398,
+      "sha256": "afbd92ca041b3423564c7e4abcc7afe9c9d1c97ca722ba5471f0b358c6660ca7"
+    },
+    {
+      "path": "docs/UPES_AUTH_IMPLEMENTATION_REPORT.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 13484,
+      "lines": 236,
+      "sha256": "7f89ff82aca8d9f93300de4b8c74f77834a6372716c9985a7288eb9ef1954aa5"
+    },
+    {
+      "path": "docs/UPES_AUTH_MANAGER.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 12793,
+      "lines": 203,
+      "sha256": "043e06eff5915223a1afe200dc60724b7f4602dc8eaeb07df594a5f8350d9c7b"
+    },
+    {
+      "path": "docs/UPES_AUTOMATION_ARCHITECTURE_DISCOVERY.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 12266,
+      "lines": 208,
+      "sha256": "cc45e5441987f2130b25bbc2e34f2623eb4000b67d4841ecf4215327de2141a6"
+    },
+    {
+      "path": "docs/UPES_HEADLESS_AUTH_DISCOVERY.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 11705,
+      "lines": 230,
+      "sha256": "8627bbc4a8f39d33922f1e578d3b84cedb6c5c82f5adc67c0f886f2c25eb1301"
+    },
+    {
+      "path": "docs/UPES_ZERO_TOUCH_AUTH.md",
+      "status": "ACTIVE",
+      "subsystem": "documentation",
+      "size_bytes": 11660,
+      "lines": 226,
+      "sha256": "808bf5e02296070430c4e509ce9666929b89aef4628d70b24a0bdf26b090d692"
+    },
+    {
+      "path": "lms/base.py",
+      "status": "ACTIVE",
+      "subsystem": "lms_gateway",
+      "size_bytes": 3816,
+      "lines": 110,
+      "sha256": "9c18c3fb9ad9fb693c31ce677db4a6610e6ccfbca7745a6ec2c365482709950c"
+    },
+    {
+      "path": "lms/errors.py",
+      "status": "ACTIVE",
+      "subsystem": "lms_gateway",
+      "size_bytes": 3208,
+      "lines": 80,
+      "sha256": "ff147d4867000398c2e65317d45dde9a6acb39170815bde911f0c3f6a302ac5e"
+    },
+    {
+      "path": "lms/models.py",
+      "status": "ACTIVE",
+      "subsystem": "lms_gateway",
+      "size_bytes": 6042,
+      "lines": 166,
+      "sha256": "76c6ecf2c513d5fb447d698d53cbc10ec0348aa555f65fd4c4461cb67155af04"
+    },
+    {
+      "path": "lms/moodle.py",
+      "status": "ACTIVE",
+      "subsystem": "lms_gateway",
+      "size_bytes": 38226,
+      "lines": 812,
+      "sha256": "4ff16aca7ab7e2099b5defae9aabba1c78062f9b73239c51a313c183b2f5bde6"
+    },
+    {
+      "path": "lms/__init__.py",
+      "status": "ACTIVE",
+      "subsystem": "lms_gateway",
+      "size_bytes": 896,
+      "lines": 41,
+      "sha256": "feee25ba51d9a41b9af417c434f32f3f157a5ebd0a80f9ce8282ca794843a81d"
+    },
+    {
+      "path": "nexus/auth.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 12105,
+      "lines": 316,
+      "sha256": "61f0883cc3dd4e1674387f5855861cdddf3cbd4d5dc3bfb178d7a1b9e7cf204b"
+    },
+    {
+      "path": "nexus/client.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 13392,
+      "lines": 307,
+      "sha256": "62fb490041518bcfe3d39c192ff4fc1eb7ddea16b35aabea1581b73187c4a986"
+    },
+    {
+      "path": "nexus/config.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 5040,
+      "lines": 168,
+      "sha256": "4024a8d7bc3079d4183416b629d77700ffdd7908f9ae315520c62c03c0456b96"
+    },
+    {
+      "path": "nexus/normalize.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 7464,
+      "lines": 207,
+      "sha256": "bd6e5535c2dd6d6fc26cb6496bc2b3a2fc724ecca869ae3af6f418488ebcb4be"
+    },
+    {
+      "path": "nexus/output.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 11378,
+      "lines": 347,
+      "sha256": "a0a8841482b52db62815111e175d17a55e5d8d568d02919592f32c61fc2a5043"
+    },
+    {
+      "path": "nexus/shell.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 18003,
+      "lines": 462,
+      "sha256": "5c1bef203a276313c23b5ab09753462d0fdcd70710682ca047855277290272cf"
+    },
+    {
+      "path": "nexus/windows.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 6811,
+      "lines": 173,
+      "sha256": "7f7e056bfbaf0379a2bb710f2e1708da213635c905e892c1c283adc528a64c90"
+    },
+    {
+      "path": "nexus/__init__.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 173,
+      "lines": 7,
+      "sha256": "4f5496871b12649ba0fb10b1d55d38a36e27fac9cf2abb6313d090857262380b"
+    },
+    {
+      "path": "nexus/__main__.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 19713,
+      "lines": 377,
+      "sha256": "7e6acdc31c70607767099110a49a38824945ff9fbab5380f21b5b9c86fc055ca"
+    },
+    {
+      "path": "nexus/commands/account.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 3379,
+      "lines": 95,
+      "sha256": "dc288258d481c032c662d2f1c456ec1dd9454bf49752b4a84306fd50b5f0bec5"
+    },
+    {
+      "path": "nexus/commands/ai.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 8616,
+      "lines": 227,
+      "sha256": "c41ea0e99f9910af8be4eddb17cab52edaea93288303d3869a22bb4477d0a739"
+    },
+    {
+      "path": "nexus/commands/automation.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 4402,
+      "lines": 125,
+      "sha256": "10249a9bbc4dd292015f1a56103eaa74fb8d7cd05dbe62933e0770d3e84a4428"
+    },
+    {
+      "path": "nexus/commands/backups.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 5919,
+      "lines": 159,
+      "sha256": "d4edd87ef61c6ab7679d0c1c61e8d92f1fd3901e580d812fde737424d5bbc6b7"
+    },
+    {
+      "path": "nexus/commands/database.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 3451,
+      "lines": 92,
+      "sha256": "52ef422afd3094c13a976609481a3729801cc03a49d7f9a88392c539af21b87b"
+    },
+    {
+      "path": "nexus/commands/diagnostics.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 8569,
+      "lines": 210,
+      "sha256": "3f34b2ed5949764430076dc23e7c8f4ed64ea4f4ed05da1541074f81267c3679"
+    },
+    {
+      "path": "nexus/commands/logs.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 3666,
+      "lines": 107,
+      "sha256": "0dedb8c6a755a7e38a43f49ad71eef9c5a1460444733fe27fd1ee1bc76b5bd3f"
+    },
+    {
+      "path": "nexus/commands/media.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 8374,
+      "lines": 211,
+      "sha256": "d7e053738971b5d2b3415107046f2450fc572897636d496640c16dadc1323a20"
+    },
+    {
+      "path": "nexus/commands/models.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 5651,
+      "lines": 141,
+      "sha256": "22ecc480fcd94a9445b4e1de9b7165d5235faa907f238c6bf209964d83e4895f"
+    },
+    {
+      "path": "nexus/commands/rag.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 6878,
+      "lines": 190,
+      "sha256": "8b71f210f67f88232b2309142d4d65472695e3608f3b7ac77c98b96af3a12679"
+    },
+    {
+      "path": "nexus/commands/services.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 5244,
+      "lines": 139,
+      "sha256": "ae0bd9628f714ddd880469f21ed6adb0dbb2c636071159440cf92c59ffc3db9d"
+    },
+    {
+      "path": "nexus/commands/settings.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 3131,
+      "lines": 95,
+      "sha256": "a995a7dcf1a97c8907a756aaed312a200d461709530d82947273d0d0bd136a4e"
+    },
+    {
+      "path": "nexus/commands/shares.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 5145,
+      "lines": 141,
+      "sha256": "a9e16f272fa5feb3ee6eb4f8f045a14e6c55213e898f92f6923ac9cedb847e77"
+    },
+    {
+      "path": "nexus/commands/status.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 5762,
+      "lines": 132,
+      "sha256": "f36f4dfa97fd3f23fcd851cb4d7b1f1a8f72df248a75b6950d34dc474fde008c"
+    },
+    {
+      "path": "nexus/commands/tasks.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 7057,
+      "lines": 181,
+      "sha256": "5408f1b98775a5dd9b2e717bdd8382925d102db1f02836dfebbeecb931f59a2b"
+    },
+    {
+      "path": "nexus/commands/users.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 11440,
+      "lines": 320,
+      "sha256": "dd81f7e1203b32ed3b0da324d65019c626b08d470e696676448aa4f9e0191993"
+    },
+    {
+      "path": "nexus/commands/vault.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 7250,
+      "lines": 202,
+      "sha256": "42b5eafb7f0e8774392b87ae89f8250c598d2bd55b082e2a495ec3c413e637ba"
+    },
+    {
+      "path": "nexus/commands/__init__.py",
+      "status": "COMPATIBILITY",
+      "subsystem": "cli_client",
+      "size_bytes": 126,
+      "lines": 4,
+      "sha256": "5a011e6bae8fb21de87545b4c921439b8d8deb8fca85acdd3c41293006e19838"
+    },
+    {
+      "path": "scratch/execute_live_reconciliation.py",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 2622,
+      "lines": 55,
+      "sha256": "a7248f408bf4ec6e24de423a2c8524086668bbec85373343fd50a4f89914e444"
+    },
+    {
+      "path": "scratch/execute_second_reconciliation.py",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 2931,
+      "lines": 71,
+      "sha256": "cecb7ab5b0b35a5660fc6c1418c86752c6d2e98b4ff9f4545b326b7753f19804"
+    },
+    {
+      "path": "scratch/execute_spark_integration_tests.py",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 13676,
+      "lines": 306,
+      "sha256": "007d8d2fedaa5468da5d7f2c70780184778c3f400118f68703050e44e96e90da"
+    },
+    {
+      "path": "scratch/fill_inputs.js",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 749,
+      "lines": 17,
+      "sha256": "3932d9abc86d10888447df55d3dbbb8fc80034e6050295a20c86c60f54d20608"
+    },
+    {
+      "path": "scratch/fill_inputs_script.py",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 1319,
+      "lines": 39,
+      "sha256": "a0c57a622a714950ff6a199602624e134eb3faa32c408c67aa4ff5856eae8e11"
+    },
+    {
+      "path": "scratch/independent_mcp_interop.py",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 8489,
+      "lines": 186,
+      "sha256": "3031ebb931e31e067ae1123fa4831e7ee698939fe85f563fb5a1518f628ca60d"
+    },
+    {
+      "path": "scratch/provision_spark_token.py",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 3059,
+      "lines": 78,
+      "sha256": "20f4e90c8c643e202df05263e55a988c41b0f78690fc37bd0ba215f4439adf46"
+    },
+    {
+      "path": "scratch/test_live_mcp_socket.py",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 5236,
+      "lines": 115,
+      "sha256": "28345dd67883308d72ba53a7300cfd42ddb82788bba076ce960e8d3ccb6c6ae1"
+    },
+    {
+      "path": "scratch/verify_aug31_live.py",
+      "status": "UNKNOWN",
+      "subsystem": "other",
+      "size_bytes": 2191,
+      "lines": 46,
+      "sha256": "93819b61ceb5f9d0dbe3e3a801b11b12f075dc50980883e50c66860a245c1234"
+    },
+    {
+      "path": "scripts/audit_bg6_runtime.py",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 2743,
+      "lines": 65,
+      "sha256": "6729b1c97bf9fc8b5fd52ab61e38c07251d70694323ed0fd4708c3595adf5b9f"
+    },
+    {
+      "path": "scripts/audit_browser_runtime.py",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 861,
+      "lines": 32,
+      "sha256": "f795f4044b14fe87082223a1e51c47c48c7b659003185ff93fd22f7aab44e692"
+    },
+    {
+      "path": "scripts/audit_file_inventory.py",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 6566,
+      "lines": 173,
+      "sha256": "7003090db48f744303dd89933bbbfd8035769c84de806977306b97376e309840"
+    },
+    {
+      "path": "scripts/audit_fingerprint.py",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 2577,
+      "lines": 82,
+      "sha256": "c433219fd3584cd01aa59f28a034ab6d2c4dfee5c82ccc28a60d7d9ece00d52b"
+    },
+    {
+      "path": "scripts/install.bat",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 399,
+      "lines": 15,
+      "sha256": "1006bee4e35a2f374dc766f89ac7f926be191cd2d42611163596b2be076188d8"
+    },
+    {
+      "path": "scripts/install.ps1",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 7873,
+      "lines": 223,
+      "sha256": "e6f5c23c8e6524c9e476156b9d67187c55b0754a1d817f22b89cec49e04b3b9a"
+    },
+    {
+      "path": "scripts/install_services.sh",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 3515,
+      "lines": 94,
+      "sha256": "29050f11b4351968c98e12273b6b9126a96be9b4241d8ad1c486279bd140fb14"
+    },
+    {
+      "path": "scripts/nexus_ssh_auth.py",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 4274,
+      "lines": 119,
+      "sha256": "a7b679364e0ec94510475a00f83eecbccbc348b593ac564593f1c267bb67983b"
+    },
+    {
+      "path": "scripts/reset_admin_password.py",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 1051,
+      "lines": 31,
+      "sha256": "36b154c432a028f13c1b6134efee1a8c99c15ebf57e6a65fa867d3144aea5db4"
+    },
+    {
+      "path": "scripts/setup_ssh_nexusnode.sh",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 3605,
+      "lines": 95,
+      "sha256": "0ebc04345ed72353df393980034410f2d2553bc2c9b3516159c7f371300c0bad"
+    },
+    {
+      "path": "scripts/set_upes_session.py",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 3487,
+      "lines": 107,
+      "sha256": "0922782eb8f1e933626a121d7405d978376accb824f9e845bbc3d3d061fad5c4"
+    },
+    {
+      "path": "scripts/verify_package.py",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 7353,
+      "lines": 185,
+      "sha256": "0eeabb681890bcca884fa1f22af1c18ba469824f9158482565c33d78e84a531d"
+    },
+    {
+      "path": "scripts/boot/termux_boot.sh",
+      "status": "ACTIVE",
+      "subsystem": "maintenance_scripts",
+      "size_bytes": 2422,
+      "lines": 58,
+      "sha256": "421b890ec2f8f16a3b27f203d7a77e56b596410c4f5d29b59ed0ce1d1ccd25a2"
+    },
+    {
+      "path": "services/localtonet/run",
+      "status": "ACTIVE",
+      "subsystem": "runit_supervision",
+      "size_bytes": 977,
+      "lines": 0,
+      "sha256": "ff14fa91b85b7546b7b925460f9234557ea6d045bc8219d675bddb3f3de93159"
+    },
+    {
+      "path": "services/localtonet/log/run",
+      "status": "ACTIVE",
+      "subsystem": "runit_supervision",
+      "size_bytes": 153,
+      "lines": 0,
+      "sha256": "e20ce567920ce9396b340b90a5ab4deeea93d2c0edaa0d0305a95ce977b729e3"
+    },
+    {
+      "path": "services/nexusnode/run",
+      "status": "ACTIVE",
+      "subsystem": "runit_supervision",
+      "size_bytes": 615,
+      "lines": 0,
+      "sha256": "fdaf880a5bfb1958fb0040dec1d75a73581c35d1370ab2713655c1106e1c01bb"
+    },
+    {
+      "path": "services/nexusnode/log/run",
+      "status": "ACTIVE",
+      "subsystem": "runit_supervision",
+      "size_bytes": 183,
+      "lines": 0,
+      "sha256": "4a40d1774f2e79b8c77c0cb009bb844ba7bb7fb4c58f249e3347ebaa95303127"
+    },
+    {
+      "path": "services/ollama/run",
+      "status": "DEAD_CODE_CANDIDATE",
+      "subsystem": "runit_supervision",
+      "size_bytes": 661,
+      "lines": 0,
+      "sha256": "78f58490f4a3270befeab2de373ca271719c7be79fe011d8d9eed9d3f74cd6f1"
+    },
+    {
+      "path": "services/ollama/log/run",
+      "status": "DEAD_CODE_CANDIDATE",
+      "subsystem": "runit_supervision",
+      "size_bytes": 149,
+      "lines": 0,
+      "sha256": "ec79f7cf5c9747b45e617eb32754c5e90a7e6e0be7a2b3df570a030cc0cbc8b2"
+    },
+    {
+      "path": "services/sshd/run",
+      "status": "ACTIVE",
+      "subsystem": "runit_supervision",
+      "size_bytes": 353,
+      "lines": 0,
+      "sha256": "c6b5fcf6c001b0ab7da303770b498a27e5514e9c84ee7806690ee268e1ec84fe"
+    },
+    {
+      "path": "services/sshd/log/run",
+      "status": "ACTIVE",
+      "subsystem": "runit_supervision",
+      "size_bytes": 147,
+      "lines": 0,
+      "sha256": "d90a2f8779956ce9f7734b90bc0f84a6d94c428d2c1321a4ca77a3df86d9eb7a"
+    },
+    {
+      "path": "static/css/index.css",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 40201,
+      "lines": 1801,
+      "sha256": "7a7d4ca3f4bd00496caaaa1ef6bf4ad33da9286ce4ec3143ab6750491e249b56"
+    },
+    {
+      "path": "static/js/academics.js",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 27066,
+      "lines": 582,
+      "sha256": "91f8330b14be7941636d507e6eba1dece7e585575e1187646bea493a7e20ef4b"
+    },
+    {
+      "path": "static/js/accounts.js",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 13863,
+      "lines": 344,
+      "sha256": "f9a99ed8452545cb1812021b1b75fe0ea184d758b02a7cc719512f9ea6839eee"
+    },
+    {
+      "path": "static/js/api.js",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 4940,
+      "lines": 201,
+      "sha256": "3c33212b5620c059cdd2941cad2058c16fb77d7f9d407b816e7e9547ffb6c147"
+    },
+    {
+      "path": "static/js/app.js",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 6732,
+      "lines": 231,
+      "sha256": "13c11879528ef11467b5fd0682e9bc71b389eb452974e290a69e666f1ab23edd"
+    },
+    {
+      "path": "static/js/dashboard.js",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 14487,
+      "lines": 301,
+      "sha256": "c9b4a0f110dd4ae5cb6e1655d74bc94f02f41161ebe01cb185b213754f104f7a"
+    },
+    {
+      "path": "static/js/diagnostics.js",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 13673,
+      "lines": 301,
+      "sha256": "fe96c9e832546cd74d57d2318d9e7288c4a38c5a1d16cd64e4e0a905d52bb1f1"
+    },
+    {
+      "path": "static/js/mcp.js",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 10906,
+      "lines": 237,
+      "sha256": "79ad29a719f9cf69b2202615a3850a25aa2f5dd044b4c5cd594fe4512f7c681a"
+    },
+    {
+      "path": "static/js/settings.js",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 4945,
+      "lines": 123,
+      "sha256": "a737385ff2405b6f4a30f6edb086d2d2b9b5eb32a73c3bf00db95bb09693103c"
+    },
+    {
+      "path": "static/js/ui.js",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 4958,
+      "lines": 152,
+      "sha256": "d6f29b0d2d7b043a889a6d7179abae70ea19b2fe5321adf59e32d0d5142796d3"
+    },
+    {
+      "path": "static/js/vault.js",
+      "status": "ACTIVE",
+      "subsystem": "frontend_web",
+      "size_bytes": 11783,
+      "lines": 276,
+      "sha256": "c06a872614b5615eae65067e2c19dd94002703293ac0b09bb142a0e56819246e"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_control_console_1/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 24466,
+      "lines": 419,
+      "sha256": "810bcbf37e48071e0565ee024a4be09f1989a47e6dac3546321aef33eb0026ef"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_control_console_1/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 197329,
+      "lines": 0,
+      "sha256": "4d096e8a4682d276740313c47aac9cce861bf7149a0e662eda3db45855b56764"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_control_console_2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 22571,
+      "lines": 367,
+      "sha256": "6972b71703ea126691379e824e903d5cf75700989afb06d68d3ca1eaced57a4f"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_control_console_2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 28,
+      "lines": 0,
+      "sha256": "6c9a02e2605929162392587c714f045251761b8a72c4bced6d4cbc2e4303ef8b"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_control_console_canonical/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 25324,
+      "lines": 419,
+      "sha256": "18aaabde925b3067c84d8d77a09db4a8c85a26fc452b4143868b7fef7b667af8"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_control_console_canonical/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 188447,
+      "lines": 0,
+      "sha256": "59c6e6397186d49ad73fb28b47653fe48361fa69e64c1ea3d95ca26bfc0ed056"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_control_console_v2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 24433,
+      "lines": 418,
+      "sha256": "724e4a6adda628ac630f8caa98f011a069b1d3ca5bf7dbb725b9574a488a5942"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_control_console_v2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 199851,
+      "lines": 0,
+      "sha256": "4e35f4a48196a43c7b60cda122aadbe40f032641d1a4936116d97c4612646deb"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_control_console_v3/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 25086,
+      "lines": 425,
+      "sha256": "5c23bba5174698cb14fc4cdae40b3b87233f80e73fb0e3d6d378d6efe51c20fa"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_control_console_v3/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 242431,
+      "lines": 0,
+      "sha256": "0978d0c9590bf1b1d6a0a46bb75a81badaf0cbbb5d09ad844e47c0d6b880e6c4"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_mobile/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 18515,
+      "lines": 368,
+      "sha256": "0c47b326be31b66d8471e78c0d9632c0cebd6a289b97ce1bed37bdd517b6de42"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/ai_studio_mobile/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 162196,
+      "lines": 0,
+      "sha256": "81d77816c71aec326110d537f72679a6c20d6ac85cb5a4b7c83896d7db7cede4"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/diagnostics_mobile/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 14242,
+      "lines": 237,
+      "sha256": "cfa8dcb5960f947e2832038f9b002fe4d452f93cc11f540abb635cff7e3b8a0a"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/diagnostics_mobile/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 196194,
+      "lines": 0,
+      "sha256": "5e0ae61a0019bd4c3c969a16a81132bf928bd0874fcbdf1c1935a7c976524f9b"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/media_center_mobile/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 22057,
+      "lines": 389,
+      "sha256": "66f3c63b6f953ad6b3f81595f72d67428beb6f259160be20e2a7224231c5ca22"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/media_center_mobile/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 39620,
+      "lines": 0,
+      "sha256": "aecd508afcb5cde57cd5487ae4664f210c7804964717ba542c4832fda61e1f66"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/media_downloads/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 25657,
+      "lines": 358,
+      "sha256": "808386db26bc8ab7e8b684bc7be959c2c9ecc152c913932f4a8bef73189e374c"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/media_downloads/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 1152119,
+      "lines": 0,
+      "sha256": "cc5ead2f8d67952a0bb26516de4ff10aff43102bcb3aef8b752a444f19da068e"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/media_downloads_control_1/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 31614,
+      "lines": 508,
+      "sha256": "dfee1f07560101e5ca516c71b220627277c42747d1ce6cc7f93223e20755e08d"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/media_downloads_control_1/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 266550,
+      "lines": 0,
+      "sha256": "a370cb3870c7082ed5a60d03dbe15550d32e3ba722f9126c8f3d9ab5a1001e12"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/media_downloads_control_2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 19282,
+      "lines": 336,
+      "sha256": "a5ebd2f7e0a4238ef44f74a4c05652c486f7cf0ddec9374113a5c12377895fcd"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/media_downloads_control_2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 183822,
+      "lines": 0,
+      "sha256": "cb012e1b35c5fb116e9823cad0851d5078fa9923ac405c3976fcbf6297f6170f"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/media_downloads_desktop_canonical/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 31751,
+      "lines": 509,
+      "sha256": "f52cdaac3a1ce4729560f0afaa27b4a304f0c283d6727ce36421414a5d6f1285"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/media_downloads_desktop_canonical/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 238366,
+      "lines": 0,
+      "sha256": "b2376f30bc1eafa9dd24bd025451f5343a66bf893549a54aa67d653a96b680a2"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode/DESIGN.md",
+      "status": "ACTIVE",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 8163,
+      "lines": 183,
+      "sha256": "1549029ef9ea97651b291a907a3a9ecb614d12d67f3a8590c7886043acd3e501"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_core/DESIGN.md",
+      "status": "ACTIVE",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 7907,
+      "lines": 168,
+      "sha256": "34b787353302924d6a56dca7eccb866d6b5f0f349dc4908de9a2d38b785aa065"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_desktop_1/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 23065,
+      "lines": 407,
+      "sha256": "8b512201d65ffdcec2b569973ca1cf1782b52e1c3078a4d0c4fd7aa011c7cdf9"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_desktop_1/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 219333,
+      "lines": 0,
+      "sha256": "b29eca03f322b3f58abc928e1eeb00bb4dc4cb5265a16686674a3490b3f71b01"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_desktop_2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 18496,
+      "lines": 247,
+      "sha256": "15cea9b7d0694fcc4a630ab70cddc88183449751e6db06bb32fabc3f5aa7a0cd"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_desktop_2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 28,
+      "lines": 0,
+      "sha256": "6c9a02e2605929162392587c714f045251761b8a72c4bced6d4cbc2e4303ef8b"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_desktop_canonical/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 23079,
+      "lines": 407,
+      "sha256": "ab577b4b3c5c26d688f92c2238e93689b6d78ad0df8444faeccb1e585e373a09"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_desktop_canonical/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 188729,
+      "lines": 0,
+      "sha256": "b157ac83dbda82a40da551f217ebad3126afb210c0c6f89220a123a4ef834058"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_desktop_v2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 22974,
+      "lines": 412,
+      "sha256": "64ff5e8b4731208c925e3034c75d4d46128f2de80570fda724d016ec9c42e355"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_desktop_v2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 227912,
+      "lines": 0,
+      "sha256": "02267f169913c73c438c1382e7a45b46fdb1e293f6fa14975ca5b70613a83791"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_desktop_v3/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 23110,
+      "lines": 407,
+      "sha256": "c846911104c93da245516984a9ce1af8bebb29321a7cad9e19da90620344e4d6"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_desktop_v3/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 219754,
+      "lines": 0,
+      "sha256": "74c97a536abdfb72d0a94a4ba9c9e4dbc989390a0f7a59377b28f55b856991e2"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_mobile_1/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 15471,
+      "lines": 268,
+      "sha256": "dfea21f4b9e1338dc83612af433aa3795d556b8264c060369f14a3416da5201d"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_mobile_1/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 154973,
+      "lines": 0,
+      "sha256": "2f320232d1a9368eba279c83238244c3ffb57e6b8fd1122ff7bf4a59b49df4cd"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_mobile_2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 15106,
+      "lines": 228,
+      "sha256": "c93a9b8d350a8f39adcbc5d7b1cde31341312561eab2f9cec5a8cfcc85e5e105"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_mobile_2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 28,
+      "lines": 0,
+      "sha256": "6c9a02e2605929162392587c714f045251761b8a72c4bced6d4cbc2e4303ef8b"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_mobile_canonical/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 15248,
+      "lines": 265,
+      "sha256": "b33df7e31adb7353289b2bbd168b8f3fa2162ed71eb96d0a6740fb9eb4fcc70b"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_mobile_canonical/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 61767,
+      "lines": 0,
+      "sha256": "9c67830dfd1f452caf532e7764f0a57010ea9807523949610fbc5ed776b6808c"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_mobile_v2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 16453,
+      "lines": 279,
+      "sha256": "82abe8632c2519cba5413cfdaeadae5d510e384fa823461720821e89aef881b2"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_mobile_v2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 165110,
+      "lines": 0,
+      "sha256": "a060d39c89ad73e6bcea59f17922b46d5011cc6e71f4e925380f7afeb102c12d"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_mobile_v3/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 15993,
+      "lines": 273,
+      "sha256": "0a8cdfc05f06e01310a5552eae44b954fb38fa7728a825c61ef29c56583bc7b4"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/nexusnode_dashboard_mobile_v3/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 158265,
+      "lines": 0,
+      "sha256": "5b6f2d4857d567b549e01cb5c17d7aebd5f4e9cd9fd5aece27057a92b85231ad"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_admin_diagnostics_1/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 23984,
+      "lines": 508,
+      "sha256": "c58475680f9033ac2085d3facb12e9cc43124afb4d5ed3d3fbd20eced042d9bb"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_admin_diagnostics_1/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 167978,
+      "lines": 0,
+      "sha256": "dfed10f0f11ecfd7e09059a3445f5954ebd61587b5c8aebecbbabfb81e7d5945"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_admin_diagnostics_2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 21026,
+      "lines": 336,
+      "sha256": "85909df94be0db48af7d3e4593d96a25080881b05cc08b7d2c1d6f6941ee151c"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_admin_diagnostics_2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 28,
+      "lines": 0,
+      "sha256": "6c9a02e2605929162392587c714f045251761b8a72c4bced6d4cbc2e4303ef8b"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_admin_diagnostics_canonical/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 24227,
+      "lines": 507,
+      "sha256": "29a8f845e39307812a25ab6a2d65be45f3b607024cbeee7fa5ab3a01080997e0"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_admin_diagnostics_canonical/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 153967,
+      "lines": 0,
+      "sha256": "095f1b303c4e68c0f3b2d0cf5f15bada86b5185ca5a8d9f52815d57a9b88da5a"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_admin_diagnostics_v2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 28067,
+      "lines": 570,
+      "sha256": "9f57dd6c57b543bfa5e1700f4bd60d3fe32debd2f97e156f7a70f72fc4073fd4"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_admin_diagnostics_v2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 172174,
+      "lines": 0,
+      "sha256": "990d335ed21b878677b84435796daafd95f63eeec93213155dac00f1757987c1"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_admin_diagnostics_v3/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 24671,
+      "lines": 517,
+      "sha256": "68c42fc99ab787b0df80cc945d87983e35922b92d6a0a479625bb022f37d08da"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_admin_diagnostics_v3/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 181475,
+      "lines": 0,
+      "sha256": "abdec1df960031972873ae8a28be8fe7b0ab4427e34166c448bb00b633fca11f"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_login_1/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 11247,
+      "lines": 212,
+      "sha256": "9defad0e38961e7e031dcd2834bd82a5fe8f2690e3fb16b51164b8cc5e1df0fe"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_login_1/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 134633,
+      "lines": 0,
+      "sha256": "1901e5b9d4358f183e34103343ae552ec8a3a84f91f0d22b53795ce18859327b"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_login_2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 11042,
+      "lines": 213,
+      "sha256": "aefee0ea76f1c5c9fdf8ef16df250b1db6496f0f59b98fe8db5e0d00b299cc46"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_login_2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 27947,
+      "lines": 0,
+      "sha256": "6c7b960873cc790ac35273d55036a416ceac5ce174760f5034aca338c4c653ca"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_login_v2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 10815,
+      "lines": 205,
+      "sha256": "0a3e92f9c7a77d3c61a74a91e41b75c892f978b9b0c241abc8002a4af5ce2e03"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_login_v2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 130889,
+      "lines": 0,
+      "sha256": "61a9d4235e88ad39cb0679de9f9312b4f7ae49cd80e686007c6902230c364a63"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_settings_1/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 18906,
+      "lines": 288,
+      "sha256": "52bbfbe394a6e2380fccd384493c7c9387bc440f298c74dbb5dc0c3027eff62a"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_settings_1/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 175480,
+      "lines": 0,
+      "sha256": "dca1f09e542c9259cc82a23b433443e640047ac6c1ad78862cb31d051d3eaee3"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_settings_2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 22633,
+      "lines": 384,
+      "sha256": "ee1df504e38910e8a129e87c72eda29a64375f206eecc408ee878a55ebf16c48"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_settings_2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 189004,
+      "lines": 0,
+      "sha256": "dc9cdff1e4f008d370b342b59d155ac8d8619bbc4f6ad61fddac2f4939883854"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_settings_3/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 18906,
+      "lines": 288,
+      "sha256": "52bbfbe394a6e2380fccd384493c7c9387bc440f298c74dbb5dc0c3027eff62a"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_settings_v2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 18392,
+      "lines": 280,
+      "sha256": "1726842853e966053d98e5f79859d12e210066e088e1c76b1beda9778ef99c7a"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_settings_v2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 153657,
+      "lines": 0,
+      "sha256": "427e070f6033ff5ded14c4b5bd222b2320aa68124d3fab332a72eb35029e3fdb"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_settings_v3/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 18215,
+      "lines": 279,
+      "sha256": "1ca45438f03164bce2298dd51ad3f833047ff1870f6af8905dfb1d59c7fd277a"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_settings_v3/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 148400,
+      "lines": 0,
+      "sha256": "14849496f48ebfa62848e02c2c428eb4cd5c93c9ee484d3abc96a5e079cd6c5e"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_utilities_drawer_1/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 15733,
+      "lines": 170,
+      "sha256": "fe2b2be2da9a61153710e6802d1e3d8e16e6f3aacd1a98c2ae384387f6ce7a54"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_utilities_drawer_1/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 28,
+      "lines": 0,
+      "sha256": "6c9a02e2605929162392587c714f045251761b8a72c4bced6d4cbc2e4303ef8b"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_utilities_drawer_2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 15087,
+      "lines": 245,
+      "sha256": "e4ad6c2701dffb9dca967c21621fd374c9f35018635e2d4afe0c4561a68dce7a"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_utilities_drawer_2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 12170,
+      "lines": 0,
+      "sha256": "258b536f8dfa964ca6bdf6a9811edfea1c556d1f85cf8b407796d46f84eadc0b"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_utilities_drawer_v2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 16326,
+      "lines": 245,
+      "sha256": "22204b44cd139bdf23aaa1fb7a3d5d39539eabe43a06de17fc172aa85f887825"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/system_utilities_drawer_v2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 111448,
+      "lines": 0,
+      "sha256": "f8813e85225e68942aee30ef4292a399a0c17af840aeee50cce5bc15b00e4cc4"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/task_queue_mobile/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 16699,
+      "lines": 305,
+      "sha256": "76f86df49db2c801f3ebe76260dc7dc98326120bb69c8623aeb0c501493b5b38"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/task_queue_mobile/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 97100,
+      "lines": 0,
+      "sha256": "abf74073e1ef3e64136a149c212bb9c27c3a1ae0b6ca473d5513d8358d53115c"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/task_queue_supervision_1/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 20550,
+      "lines": 363,
+      "sha256": "9e6c238c5ceec43be32502d1c04d4fb30af95d254d381e34f9232ee43b5ca3a7"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/task_queue_supervision_1/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 130158,
+      "lines": 0,
+      "sha256": "315e6df46fc3fa499c0308b99cbebf81627f2b90fed1a0eec4a55c9026a182df"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/task_queue_supervision_2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 27645,
+      "lines": 416,
+      "sha256": "0f4781a0728c8588112aba9ae0c3957d075d34242050e617aae0ad794d7009e1"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/task_queue_supervision_2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 269451,
+      "lines": 0,
+      "sha256": "f1dd1d2083015b7b8f293ceea9a2690aefe6ad3efa43fb7b48a891ca91814ce0"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/task_queue_supervision_canonical/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 22159,
+      "lines": 389,
+      "sha256": "28241715a53ca64d209765c91ab5a63b04f031bb122d6f4e7daa29fc512ca551"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/task_queue_supervision_canonical/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 146814,
+      "lines": 0,
+      "sha256": "8a27b4e6b82d758135005518408aa34cde23fb025e5026b5cd5657e9ed445816"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/task_queue_supervision_v2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 21741,
+      "lines": 388,
+      "sha256": "8d4e90040f73d7c4375a16f192d2cd9516f1c76e60497139990fb133cd4a8267"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/task_queue_supervision_v2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 154233,
+      "lines": 0,
+      "sha256": "859283aea3b7f2e8d73d1654e9bffad62e818f4fcbb6414f72bce6e47b27cebc"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/vault_file_manager_1/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 17995,
+      "lines": 318,
+      "sha256": "588651f882b0cdc75c27035c4ff231589bbc6bd325fdd20cccb9e87b2798e58c"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/vault_file_manager_1/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 165416,
+      "lines": 0,
+      "sha256": "4afd89cd6d69eba1de0443fc11e5a1b7b021b41eff88f31ff977365b5cdbb6b6"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/vault_file_manager_2/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 26673,
+      "lines": 462,
+      "sha256": "f06fd51f5539635092501eb4f7660a85b01612e0ba9fe40c6fa7dd1f7aadde4e"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/vault_file_manager_2/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 109146,
+      "lines": 0,
+      "sha256": "bc74b583f115c7e1b986a157f6e9c618eab93412600b469fa1fc25e9eea8fe34"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/vault_file_manager_desktop_canonical/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 27184,
+      "lines": 456,
+      "sha256": "29ae81d76f22e7e31b2793d8ec753de92c3638ff982c0f6c2dedf9f489f27b48"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/vault_file_manager_desktop_canonical/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 103952,
+      "lines": 0,
+      "sha256": "07ce03a1d819a727aed789c055d2895aead0a74d88f2c6f215bfde49dd928f3e"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/vault_mobile/code.html",
+      "status": "LEGACY",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 19541,
+      "lines": 331,
+      "sha256": "bb283f42ca9aa0155b0cacec3779e2038edfdf5aab6b4e36a47e1ea842af7c18"
+    },
+    {
+      "path": "stitch_nexusnode_control_interface/vault_mobile/screen.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "legacy_ui_mockups",
+      "size_bytes": 71329,
+      "lines": 0,
+      "sha256": "99591e8977354daa51c5eb0f87adcf71beef770c45cb46d1455d5c38792b8b40"
+    },
+    {
+      "path": "storage_vault/.nexus_secret",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 64,
+      "lines": 0,
+      "sha256": "a0fe1681ac92c91f1b736e7b303ebb2a3bb6c1fdaeb50f456e48fbdcb039d092"
+    },
+    {
+      "path": "storage_vault/.spark_mcp_token",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 55,
+      "lines": 0,
+      "sha256": "bfc13cf4221b9d229925aff73c7c363e743774c5d72e7cd6fb696d79134726fe"
+    },
+    {
+      "path": "storage_vault/nexus_unified.db",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 5267456,
+      "lines": 0,
+      "sha256": "d53a8767fefcfbf3943bd514b42f9f16616c03e7b851663b96b015dff4832a2a"
+    },
+    {
+      "path": "storage_vault/nexus_unified_backup_phase35c_1788112286.db",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 4136960,
+      "lines": 0,
+      "sha256": "708b9206c736ad0351d12c20f100110b7dac85b7de1ed9b594f39d4eda60d800"
+    },
+    {
+      "path": "storage_vault/nexus_unified_backup_phase35f_1788114728.db",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 4218880,
+      "lines": 0,
+      "sha256": "4f9de7e7e086ed28bc70bcded993fdae9f0ddb067dcf66d2ffe85b90865bf188"
+    },
+    {
+      "path": "storage_vault/nexus_vault.db",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 1966080,
+      "lines": 0,
+      "sha256": "141728319f696645cd41b20dd58e1a86884873fe978594219538155e598d73e8"
+    },
+    {
+      "path": "storage_vault/rag_vault.db",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 40960,
+      "lines": 0,
+      "sha256": "de648f05cb983157030b24d5e22e9ca5c38cc3e61679b8bc2b7bf82a2408e147"
+    },
+    {
+      "path": "storage_vault/scratch_dashboard.html",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 146049,
+      "lines": 2118,
+      "sha256": "441d155b8faab1287ed086ce7635d780f698e50a4cd470401f7abc414b7bee32"
+    },
+    {
+      "path": "storage_vault/upes_timetable.json",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 104,
+      "lines": 1,
+      "sha256": "ed8ade2480a68814269f80c406423d38567fd2b4c952c4492e3d85985ce80d0d"
+    },
+    {
+      "path": "storage_vault/artifacts/benchmarks/phase41a_benchmark_results.json",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 8925,
+      "lines": 330,
+      "sha256": "6f1b0dbe8aaac75f3be8a10e4b39beae00e9a9fdbad91ab985c062616b9d867b"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/01_desktop_dashboard.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 146100,
+      "lines": 0,
+      "sha256": "a4f151273eba4ff3e7c9981bd3847bf8747d7ab3feb4b894182e9ebf1249555e"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/02_desktop_academics.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 104228,
+      "lines": 0,
+      "sha256": "453bbdf63560016cc8464414692a3dbbd61ec51ed9ea2a03037c0005c3ee395c"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/03_desktop_accounts.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 131275,
+      "lines": 0,
+      "sha256": "f32c3465e263261d07f7c13547e8b68763db251a19dcaf612a79f34f6ad57706"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/04_desktop_vault.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 88064,
+      "lines": 0,
+      "sha256": "df7e7cae7f9d9891a0caa165b4f67ee6bd85d109a5a615823801f9e292f63cb7"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/05_desktop_mcp.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 140867,
+      "lines": 0,
+      "sha256": "b4af9e8ef8396bf3b0bcb59d444b51db9d9072df6caed865c710e51f334f5659"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/06_desktop_diagnostics.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 94045,
+      "lines": 0,
+      "sha256": "4737c7d9b193010add9adaf150da61f210371c4acb612ce508aad08aab8ee0d4"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/07_desktop_settings.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 110845,
+      "lines": 0,
+      "sha256": "a6670f43b112bd3f79880c78fe569bed4b4660d1fcf2fdea74497a6296607b66"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/08_mobile_dashboard_412.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 94301,
+      "lines": 0,
+      "sha256": "56a846eda11ab8d7a950e1d663bc45fed9cc03194ee949ec0baf05909ee8b5e8"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/09_mobile_drawer.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 105734,
+      "lines": 0,
+      "sha256": "45373844d8ec521396807924339a86b124f48f8e90eb38500469e002dabfa718"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/10_student_drawer_hidden_admin.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 104294,
+      "lines": 0,
+      "sha256": "bb1bd5a578a9c7675adb40df9a52824c29afd33b274b72aec6435799b0a9dcd8"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_02f486850aef.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_13cede906af2.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_17862202c99e.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_2250463bb263.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_4e930b9d839b.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_51b35d20b451.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_7b2d62817caa.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_7c34daf0e2b2.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_7f75a31a9c5a.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_9941d7d68df4.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_9b01a4814365.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_a25b30d52641.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_a52a518d919b.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_bb719460c440.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_e24af4f1ecf3.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_e603abd21e35.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_eb5ade706438.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_f129a901750e.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/cap_f524d097a650.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/course_page_live.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 158356,
+      "lines": 0,
+      "sha256": "717c549ad5bbe26a30f9a4fdb94a6947624501dd522c3729242c5521b3ce0be1"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/deep_learning_live.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "storage_vault/artifacts/screenshots/lms_dashboard_live.png",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 158496,
+      "lines": 0,
+      "sha256": "3946c3f2db5bc7c740703c896e8f423a36592361cb25e6e8847575f59bc3bb70"
+    },
+    {
+      "path": "storage_vault/backups/.gitkeep",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 27,
+      "lines": 0,
+      "sha256": "59d75ad56f4092c13f7ff2ed1ec3a35148368042057971e78089716b2f663f9e"
+    },
+    {
+      "path": "storage_vault/backups/nexus_backup_backup_20260816_120239_b7fb.zip",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 66131,
+      "lines": 0,
+      "sha256": "8bf10335491325504fb003d2950193451eaf840914c443fb7c9297ba3beb9edf"
+    },
+    {
+      "path": "storage_vault/backups/nexus_backup_backup_20260816_120307_3216.zip",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 67194,
+      "lines": 0,
+      "sha256": "9a067b54c6c91be9302ee4dc34460dae33a38c0695e3069e434fc8dded0d2e73"
+    },
+    {
+      "path": "storage_vault/backups/nexus_backup_backup_20260818_204005_f402.zip",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 5632,
+      "lines": 0,
+      "sha256": "ebf674fe7109451ed6b30e3a6766187b1c7cd3b972045fc6103475f99dee67dc"
+    },
+    {
+      "path": "storage_vault/backups/nexus_backup_backup_20260818_204015_198c.zip",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 106379,
+      "lines": 0,
+      "sha256": "56a1a8659169f5737d2a661ff651a85e66a26405c2ce2a82bcb7b8107e3da173"
+    },
+    {
+      "path": "storage_vault/backups/nexus_backup_backup_20260823_230740_6827.zip",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 323926,
+      "lines": 0,
+      "sha256": "89292594a458797516599a7b1a5989d4b7ea95e88c0c7b7f2d6d940b0e671f29"
+    },
+    {
+      "path": "storage_vault/backups/nexus_backup_backup_20260828_153734_c532.zip",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 421382,
+      "lines": 0,
+      "sha256": "2849abafc8445d18bc567a05eda7d87bdaf0a67391ee614bd58df47ea0caf615"
+    },
+    {
+      "path": "storage_vault/backups/nexus_backup_backup_20260830_125931_d247.zip",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 575023,
+      "lines": 0,
+      "sha256": "67b0ea9debeffbffe4192355413639c6c1e575fb2c6944a1bc87773bc0287940"
+    },
+    {
+      "path": "storage_vault/backups/nexus_backup_backup_20260920_172300_490a.zip",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 1387105,
+      "lines": 0,
+      "sha256": "a4f75418141b095a3b5a9e50f45f3b819b918a50000cb76bfedc36dc9383bcb2"
+    },
+    {
+      "path": "storage_vault/backups/pre_phase33_backup_1788093460.db",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 3272704,
+      "lines": 0,
+      "sha256": "227c31046764d27904b94bb0ad6b6c1dec67d733fb29014a33d84442729d6fdc"
+    },
+    {
+      "path": "storage_vault/backups/pre_phase33_backup_1788093470.db",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 3272704,
+      "lines": 0,
+      "sha256": "227c31046764d27904b94bb0ad6b6c1dec67d733fb29014a33d84442729d6fdc"
+    },
+    {
+      "path": "storage_vault/Downloads/.gitkeep",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 27,
+      "lines": 0,
+      "sha256": "59d75ad56f4092c13f7ff2ed1ec3a35148368042057971e78089716b2f663f9e"
+    },
+    {
+      "path": "storage_vault/Downloads/live_sample.mp4",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 42,
+      "lines": 0,
+      "sha256": "e12e8efff09361bf9a95b8c4373ad8d563e18e8a1ef036919176feee622dc902"
+    },
+    {
+      "path": "storage_vault/Music/.gitkeep",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 27,
+      "lines": 0,
+      "sha256": "59d75ad56f4092c13f7ff2ed1ec3a35148368042057971e78089716b2f663f9e"
+    },
+    {
+      "path": "storage_vault/Music/test_track.mp3",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 11,
+      "lines": 0,
+      "sha256": "99deb2513781b966134d90407ff9a4a8ba2873512f43b643d97906f4c1438baa"
+    },
+    {
+      "path": "storage_vault/Podcasts/.gitkeep",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 27,
+      "lines": 0,
+      "sha256": "59d75ad56f4092c13f7ff2ed1ec3a35148368042057971e78089716b2f663f9e"
+    },
+    {
+      "path": "storage_vault/user_files/distributed_computing_syllabus.txt",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 486,
+      "lines": 11,
+      "sha256": "de5a247fb4cc048706edd9c19e20f5ff414b2ed48d1bc841c75a7d353e36713b"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/CNS/CNS_Summary_Note.md",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 286,
+      "lines": 7,
+      "sha256": "5d805a115acec69c541b057811d701ce7450035da1a12ad69a60c9edfa0cf341"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/CNS/CNS_Summary_Note.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 1891,
+      "lines": 0,
+      "sha256": "4e266b0d564ee855458f2377f77a8eaa37cee8c3b9786c4e99bb20dc4593eb38"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/CNS/Resources.html",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 145011,
+      "lines": 2123,
+      "sha256": "0d195e408bd14922159231060827f7f02b29745f714ce33880ec4646766b7dbb"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Crypto/Books.zip",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 47200483,
+      "lines": 0,
+      "sha256": "08fb176804191df0be84a9ddb24e613787167b4ce7ebf9f7007459966a249b66"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Crypto/CNS_Study_Guide.md",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 283,
+      "lines": 12,
+      "sha256": "82657e5e4f4a7985fad5710ef7c59fac745c0018d6f8616d5b7b51f67a890d1a"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Crypto/CNS_Study_Guide.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 1932,
+      "lines": 0,
+      "sha256": "2a4ecca90b075e6e1468d10476141af1768971eb2eb400fed03d1e5f87d52a0e"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Crypto/Extracted/Books/2.understanding-cryptography-by-christof-paar-.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 4933576,
+      "lines": 0,
+      "sha256": "e54d0e304f9c767de6343e4155d165b86b5f198c9e3d7576beafc524475e96b5"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Crypto/Extracted/Books/Cryptography and Network Security- Principles and Practice-7th edition.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 12125954,
+      "lines": 0,
+      "sha256": "973697dce85127027eb66c9bac0f30ca2f866d2db32e82861c16afcae1ac528e"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Crypto/Extracted/Books/Introduction to Cryptography with Coding Theory, 2nd edition. Wade Trappe, Lawrence C. Washington.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 21754524,
+      "lines": 0,
+      "sha256": "820e06669d317afcc37c1df7ef2fd93cac2f3f91b30bc2826171fe7cffef38d4"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Crypto/Extracted/Books/Network_Security_Essentials_Applications_and_Standards_6th_Edition.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 14085362,
+      "lines": 0,
+      "sha256": "82e6993b0a65465f5bfd87982e84d40fb6509369bbdfb4b299734a0bd4c88984"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Crypto/Extracted-Test/Books/2.understanding-cryptography-by-christof-paar-.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 4933576,
+      "lines": 0,
+      "sha256": "e54d0e304f9c767de6343e4155d165b86b5f198c9e3d7576beafc524475e96b5"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Crypto/Extracted-Test/Books/Cryptography and Network Security- Principles and Practice-7th edition.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 12125954,
+      "lines": 0,
+      "sha256": "973697dce85127027eb66c9bac0f30ca2f866d2db32e82861c16afcae1ac528e"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Crypto/Extracted-Test/Books/Introduction to Cryptography with Coding Theory, 2nd edition. Wade Trappe, Lawrence C. Washington.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 21754524,
+      "lines": 0,
+      "sha256": "820e06669d317afcc37c1df7ef2fd93cac2f3f91b30bc2826171fe7cffef38d4"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Crypto/Extracted-Test/Books/Network_Security_Essentials_Applications_and_Standards_6th_Edition.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 14085362,
+      "lines": 0,
+      "sha256": "82e6993b0a65465f5bfd87982e84d40fb6509369bbdfb4b299734a0bd4c88984"
+    },
+    {
+      "path": "storage_vault/user_files/LMS/Submission-Test/phase35-test.txt",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 99,
+      "lines": 2,
+      "sha256": "78a934be6bb4ae9dde2087827db20c1b37a6a812dac8561815716452eefe3e7e"
+    },
+    {
+      "path": "storage_vault/user_files/MCP Browser Test/Books_for_the_course.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 47200483,
+      "lines": 0,
+      "sha256": "08fb176804191df0be84a9ddb24e613787167b4ce7ebf9f7007459966a249b66"
+    },
+    {
+      "path": "storage_vault/user_files/MCP Browser Test/notes.md",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 35,
+      "lines": 1,
+      "sha256": "764770b9bc998feecd788c8fed5c081c2ff876ec3d86bbd09fc2ff8658c20bcf"
+    },
+    {
+      "path": "storage_vault/user_files/MCP Browser Test/Books/2.understanding-cryptography-by-christof-paar-.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 4933576,
+      "lines": 0,
+      "sha256": "e54d0e304f9c767de6343e4155d165b86b5f198c9e3d7576beafc524475e96b5"
+    },
+    {
+      "path": "storage_vault/user_files/Timetable/live_schedule.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 10608,
+      "lines": 0,
+      "sha256": "334ab482ea0de3c9bba54e365c423230e62d495d701460a47bf53ed12f7fb7f4"
+    },
+    {
+      "path": "storage_vault/user_files/Timetable/weekly_timetable.pdf",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 10609,
+      "lines": 0,
+      "sha256": "2c462706fec981d92d98d89efd1976c843157511d645b3c444b2c6cb5dab31b0"
+    },
+    {
+      "path": "storage_vault/Videos/.gitkeep",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 27,
+      "lines": 0,
+      "sha256": "59d75ad56f4092c13f7ff2ed1ec3a35148368042057971e78089716b2f663f9e"
+    },
+    {
+      "path": "storage_vault/Videos/test_clip.mp4",
+      "status": "GENERATED_RUNTIME",
+      "subsystem": "other",
+      "size_bytes": 11,
+      "lines": 0,
+      "sha256": "6e51071f8587683d110ee90ae5e82bf04a2938cc7551abbb4c78f8ebce3902ea"
+    },
+    {
+      "path": "tests/test_academic_onboarding_ui.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 29456,
+      "lines": 600,
+      "sha256": "89161b3bc15ac92ca1a9542d0ee65ec627833ed4b5c68533d90ee38c8bf4b3de"
+    },
+    {
+      "path": "tests/test_admin_users.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 18422,
+      "lines": 416,
+      "sha256": "e337d8e0c368b412aa4f903cf84ec0ff6a3a326da85fba5ed56011b716f60467"
+    },
+    {
+      "path": "tests/test_agent_api.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 6068,
+      "lines": 167,
+      "sha256": "4d935b80c5ca3157a5353981c44df6be9af55d64ba795dc13daf29a2879b4698"
+    },
+    {
+      "path": "tests/test_agent_execution_foundation.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 23661,
+      "lines": 532,
+      "sha256": "3f65bbacf802f286a313f490131779c8264d6d5e1ef884639451d6a5aa28572d"
+    },
+    {
+      "path": "tests/test_api_first_router.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 5991,
+      "lines": 130,
+      "sha256": "a052a94cabf2a9e06bc754a4b900371ab72993476beb4a360dfb29e262480e7c"
+    },
+    {
+      "path": "tests/test_attendance_api.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 6015,
+      "lines": 154,
+      "sha256": "f884332c1cd9781e3daf68a3a85ce8061d8feb82de6b7cf7de0ad21e388c7ab4"
+    },
+    {
+      "path": "tests/test_attendance_frontend_contract.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 7794,
+      "lines": 218,
+      "sha256": "4f68e26aa2f7dddee1f10549731535778897b48e588ef291d8c286ac78da7808"
+    },
+    {
+      "path": "tests/test_attendance_sync.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 20495,
+      "lines": 471,
+      "sha256": "b6c78fd83a4e89cfe33f13f0f9a5f49aed33a27bcc8eb4d15265902644527c93"
+    },
+    {
+      "path": "tests/test_bg6_browser_runtime.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 13615,
+      "lines": 344,
+      "sha256": "1df6830b090b77f023b9be905f0f58bc5e32f7fbe8f27c9260075131f5367d98"
+    },
+    {
+      "path": "tests/test_consequential_actions.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 27815,
+      "lines": 650,
+      "sha256": "42fa619d32f1bcafba8a823fcb7a16b8b903219411c9b17a600f1add85644efc"
+    },
+    {
+      "path": "tests/test_docker_setup.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 4070,
+      "lines": 89,
+      "sha256": "877adc80fc1e63c61f7451bc06ffbd83e8c58064af47b887844038c437b3d44d"
+    },
+    {
+      "path": "tests/test_functionality_pass.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 13640,
+      "lines": 306,
+      "sha256": "deb246389a98cdc21225db260dbf257f8dfbbc2ad587829da254af17d0e77aed"
+    },
+    {
+      "path": "tests/test_gemini_spark_compliance.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 8604,
+      "lines": 188,
+      "sha256": "e454d62592d65c5bc5557671b90271ee0c51f7dac3a0d280ecf25906b5819d4c"
+    },
+    {
+      "path": "tests/test_mcp_gateway.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 24930,
+      "lines": 568,
+      "sha256": "597a5f1385953866737d34888a957eaec32c814b47ba2842f947e85f11eba7e8"
+    },
+    {
+      "path": "tests/test_multi_user_isolation.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 24598,
+      "lines": 570,
+      "sha256": "ad114e84eec083f285dfa653c78d332b4df2205fb0bfc387bf8571b9bb0c7d74"
+    },
+    {
+      "path": "tests/test_multi_user_onboarding_e2e.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 19474,
+      "lines": 403,
+      "sha256": "19d524d1d38281e0b7023e3d6680a521c3e65e58d9decd40283af11faa6b1462"
+    },
+    {
+      "path": "tests/test_nexus_client.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 58801,
+      "lines": 1277,
+      "sha256": "2b9f2bffd96f905d734d11717647fd46ae96d0199bf9476a564cd7f193267d07"
+    },
+    {
+      "path": "tests/test_oauth_mcp_bridge.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 8142,
+      "lines": 195,
+      "sha256": "696a75cc1c4038252eccfe99e192bee0c621f788fa944348140fe7c1af08a514"
+    },
+    {
+      "path": "tests/test_oauth_provider.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 12862,
+      "lines": 346,
+      "sha256": "6a93d1ec0c257dcd4a9e1cabc213ca623d00cde53cae9afb80be704d2679314e"
+    },
+    {
+      "path": "tests/test_onboarding_status.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 13057,
+      "lines": 300,
+      "sha256": "596384930183d192e380fd99f14405b2032587c1ed5cb1b9838c45d0970063ea"
+    },
+    {
+      "path": "tests/test_package.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 10874,
+      "lines": 260,
+      "sha256": "833cdce5be1b10d3e8973d75ec36a95d8b945c893b0f99258221b2c366e351c0"
+    },
+    {
+      "path": "tests/test_phase34_execution.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 24547,
+      "lines": 521,
+      "sha256": "622631b99a0e9a92ba11f741ff433b760d530d2b080cbf40dcf01dd549c0a4ce"
+    },
+    {
+      "path": "tests/test_phase34_live_pinchtab.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 2866,
+      "lines": 73,
+      "sha256": "edeb471dd5f59a503bc564201e7f6ceabb571029e9c75b8ccb782a064365c5db"
+    },
+    {
+      "path": "tests/test_phase35_lms.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 7088,
+      "lines": 188,
+      "sha256": "e609d117749f8910b2bfae61e16485baa54b10f14d34e05b0e9ac984f59a7749"
+    },
+    {
+      "path": "tests/test_phase35_mcp_catalog.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 1766,
+      "lines": 48,
+      "sha256": "799196301a6a0082e33d2c2166f5bf468b16756a3edf33a56441f932ba36acba"
+    },
+    {
+      "path": "tests/test_phase35_upes_analytics.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 6191,
+      "lines": 147,
+      "sha256": "b28218cdb959c89b90f61cabae3758eb9056b6c304c2607ed148e68f291c93d3"
+    },
+    {
+      "path": "tests/test_phase35_vault_docs.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 3873,
+      "lines": 97,
+      "sha256": "f93789dfbb5dfa5ccc61abcd11a868d79dc2218c8160652ca2a248cbefb351d5"
+    },
+    {
+      "path": "tests/test_phase42a_endpoints.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 4342,
+      "lines": 146,
+      "sha256": "100b8cb0f01217d1824eeaf34892d5b6cd486d3f9724892ac1ccdf21bf0c90ab"
+    },
+    {
+      "path": "tests/test_production_hardening.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 12484,
+      "lines": 301,
+      "sha256": "bcba94978d20b7dddb06e6ca220d36826b5fd8dae410d45566fcc40b04afb186"
+    },
+    {
+      "path": "tests/test_secret_leak_regression.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 8039,
+      "lines": 198,
+      "sha256": "0ea10d68506541fc40fa165c96bfbea13993f961acb929d2aed6e6ab8037440f"
+    },
+    {
+      "path": "tests/test_semantic_facade.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 15870,
+      "lines": 331,
+      "sha256": "3f3fad6a1e13f3e12f107bcbc8804677a439fac0b9e0d1084bd60d22dc53c228"
+    },
+    {
+      "path": "tests/test_server.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 125281,
+      "lines": 2859,
+      "sha256": "0fd7bf5f378b227bfcd39d05fd6a8009f23c4039cefaf7e0f0605aec66ba5db8"
+    },
+    {
+      "path": "tests/test_startup_order.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 7720,
+      "lines": 204,
+      "sha256": "a5af088969650693cdbcf8592a926ed68633db3d0aaec654035ace4f1d9aeabf"
+    },
+    {
+      "path": "tests/test_tab_preloading_cache.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 7546,
+      "lines": 170,
+      "sha256": "749e12dffec48578dfc18dac196bf71802d515ecba45b46b39fe60f469026414"
+    },
+    {
+      "path": "tests/test_timetable_sync.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 117826,
+      "lines": 2615,
+      "sha256": "013621d0998b88396698b1fec246df2bd95a859ee24b63f073f56a82d3c74c00"
+    },
+    {
+      "path": "tests/test_ui_rebase_contract.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 5960,
+      "lines": 184,
+      "sha256": "5403f07d37ba4f6496f2c7047ef7adadb6db773d952fcf4a78b2a706a3f880b3"
+    },
+    {
+      "path": "tests/test_upes_auth_manager.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 35354,
+      "lines": 848,
+      "sha256": "f102d55392f9b1290641aeaae9a7d12169a6196e1ed3759b083627ad58adb16b"
+    },
+    {
+      "path": "tests/test_upes_zero_touch.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 28541,
+      "lines": 654,
+      "sha256": "d4aecd8acd74889f738f7ccb5d81b41572c2fcb88d064a85bcf91f10678fef1f"
+    },
+    {
+      "path": "tests/test_windows_install.py",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 10148,
+      "lines": 221,
+      "sha256": "7386c295c82c40f9270b596b75c99b5b5b88902ad8aa76ef41b22873cd56f154"
+    },
+    {
+      "path": "tests/scratch/test_mcp_mod_1788259252072/test_mcp.db",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 0,
+      "lines": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "tests/scratch/test_mcp_mod_1788259252072/test_mcp.db-journal",
+      "status": "ACTIVE",
+      "subsystem": "testing",
+      "size_bytes": 512,
+      "lines": 0,
+      "sha256": "7c344015057421f9e7744672342918f51dccefb7d97b638d6a69508c3c3557ff"
+    },
+    {
+      "path": "upes/auth.py",
+      "status": "ACTIVE",
+      "subsystem": "upes_auth_api",
+      "size_bytes": 58016,
+      "lines": 1160,
+      "sha256": "d637cfce52a9cf75e003ab7656e413119752846f178cefa2e29acea7360c4990"
+    },
+    {
+      "path": "upes/credentials.py",
+      "status": "ACTIVE",
+      "subsystem": "upes_auth_api",
+      "size_bytes": 10366,
+      "lines": 264,
+      "sha256": "56d9143cbd9c257a5a9b6a91ed134d45376cfdd132b034b7ea52e5f236276a6f"
+    },
+    {
+      "path": "upes/crypto.py",
+      "status": "ACTIVE",
+      "subsystem": "upes_auth_api",
+      "size_bytes": 3044,
+      "lines": 78,
+      "sha256": "2d886538bf0735121e0d4d2f16f36d7816369fee05b946dae80fb61f2951913f"
+    },
+    {
+      "path": "upes/models.py",
+      "status": "ACTIVE",
+      "subsystem": "upes_auth_api",
+      "size_bytes": 5450,
+      "lines": 153,
+      "sha256": "af1e516862121d30fcd7ffefb2acf6a10aaff8a9f434694f0e2de5ffd4f3ea99"
+    },
+    {
+      "path": "upes/router.py",
+      "status": "ACTIVE",
+      "subsystem": "upes_auth_api",
+      "size_bytes": 39664,
+      "lines": 889,
+      "sha256": "db0b6908b8a8308c1c853bdc98fcb29032db334b0ce0c6c4129b2b5b52d0c842"
+    },
+    {
+      "path": "upes/session.py",
+      "status": "ACTIVE",
+      "subsystem": "upes_auth_api",
+      "size_bytes": 5313,
+      "lines": 127,
+      "sha256": "b9682ca438eba3108612d008eec63840184631a60b6b862a64a93b1e77d70e00"
+    },
+    {
+      "path": "upes/tracker.py",
+      "status": "ACTIVE",
+      "subsystem": "upes_auth_api",
+      "size_bytes": 13002,
+      "lines": 308,
+      "sha256": "29b941603a77989720980356a46687238059bc062b983ac7a3004f376a0ae81f"
+    },
+    {
+      "path": "upes/validators.py",
+      "status": "ACTIVE",
+      "subsystem": "upes_auth_api",
+      "size_bytes": 1384,
+      "lines": 32,
+      "sha256": "c7e14612f6cba4f3fb47addf8a4527a828e39b1e1dcbf6832b4e6741ed18f435"
+    },
+    {
+      "path": "upes/__init__.py",
+      "status": "ACTIVE",
+      "subsystem": "upes_auth_api",
+      "size_bytes": 1256,
+      "lines": 45,
+      "sha256": "8b9a8c97ecd3ec75d66746edc8abd913b3ce07e77b6f446fcfd63ff989c5cd15"
+    }
+  ]
+}

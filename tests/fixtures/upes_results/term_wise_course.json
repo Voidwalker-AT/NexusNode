@@ -1,0 +1,77 @@
+{
+  "StudentUniqueId": "00000000-0000-0000-0000-000000000001",
+  "TermId": "1005",
+  "TermCode": "SEM5",
+  "TermName": "Semester V",
+  "AcademicYear": "2024-2025",
+  "SGPA": 8.40,
+  "CGPA": 8.42,
+  "EarnedCreditPoint": 24.0,
+  "TotalCreditPoint": 24.0,
+  "TermProgressList": [
+    {
+      "ModuleCode": "CSEG3001",
+      "ModuleName": "Operating Systems",
+      "CreditPoint": 4.0,
+      "GradePoints": 8.0,
+      "GradeObtained": "A",
+      "Status": "Passed"
+    },
+    {
+      "ModuleCode": "CSEG3002",
+      "ModuleName": "Computer Networks",
+      "CreditPoint": 4.0,
+      "GradePoints": 9.0,
+      "GradeObtained": "A+",
+      "Status": "Passed"
+    },
+    {
+      "ModuleCode": "CSEG3003",
+      "ModuleName": "Design and Analysis of Algorithms",
+      "CreditPoint": 4.0,
+      "GradePoints": 8.0,
+      "GradeObtained": "A",
+      "Status": "Passed"
+    },
+    {
+      "ModuleCode": "CSEG3004",
+      "ModuleName": "Theory of Computation",
+      "CreditPoint": 3.0,
+      "GradePoints": 7.0,
+      "GradeObtained": "B+",
+      "Status": "Passed"
+    },
+    {
+      "ModuleCode": "CSEG3005",
+      "ModuleName": "Web Technologies",
+      "CreditPoint": 3.0,
+      "GradePoints": 10.0,
+      "GradeObtained": "O",
+      "Status": "Passed"
+    },
+    {
+      "ModuleCode": "PROJ3101",
+      "ModuleName": "Minor Project I",
+      "CreditPoint": 2.0,
+      "GradePoints": 9.0,
+      "GradeObtained": "A+",
+      "Status": "Passed"
+    },
+    {
+      "ModuleCode": "CSEG3101",
+      "ModuleName": "Operating Systems Lab",
+      "CreditPoint": 2.0,
+      "GradePoints": 9.0,
+      "GradeObtained": "A+",
+      "Status": "Passed"
+    },
+    {
+      "ModuleCode": "CSEG3102",
+      "ModuleName": "Computer Networks Lab",
+      "CreditPoint": 2.0,
+      "GradePoints": 8.0,
+      "GradeObtained": "A",
+      "Status": "Passed"
+    }
+  ]
+}

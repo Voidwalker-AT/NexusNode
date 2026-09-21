@@ -1,0 +1,74 @@
+{
+  "StudentUniqueId": "00000000-0000-0000-0000-000000000001",
+  "StudentName": "REDACTED STUDENT",
+  "SAPId": "500000001",
+  "ProgramName": "B.Tech Computer Science and Engineering",
+  "CurriculumBatch": "2022-2026",
+  "CGPA": 8.42,
+  "RequiredCredit": 160.0,
+  "EarnedCredit": 118.0,
+  "InProgressCredit": 22.0,
+  "TotalCreditsRegistered": 140.0,
+  "TaggedSemesters": [
+    {
+      "TermId": "1001",
+      "TermCode": "SEM1",
+      "TermName": "Semester I",
+      "AcademicYear": "2022-2023",
+      "SemesterNumber": 1,
+      "SGPA": 8.25,
+      "CGPA": 8.25,
+      "EarnedCredits": 20.0,
+      "RegisteredCredits": 20.0,
+      "Status": "Passed"
+    },
+    {
+      "TermId": "1002",
+      "TermCode": "SEM2",
+      "TermName": "Semester II",
+      "AcademicYear": "2022-2023",
+      "SemesterNumber": 2,
+      "SGPA": 8.60,
+      "CGPA": 8.425,
+      "EarnedCredits": 20.0,
+      "RegisteredCredits": 20.0,
+      "Status": "Passed"
+    },
+    {
+      "TermId": "1003",
+      "TermCode": "SEM3",
+      "TermName": "Semester III",
+      "AcademicYear": "2023-2024",
+      "SemesterNumber": 3,
+      "SGPA": 8.35,
+      "CGPA": 8.40,
+      "EarnedCredits": 22.0,
+      "RegisteredCredits": 22.0,
+      "Status": "Passed"
+    },
+    {
+      "TermId": "1004",
+      "TermCode": "SEM4",
+      "TermName": "Semester IV",
+      "AcademicYear": "2023-2024",
+      "SemesterNumber": 4,
+      "SGPA": 8.50,
+      "CGPA": 8.425,
+      "EarnedCredits": 22.0,
+      "RegisteredCredits": 22.0,
+      "Status": "Passed"
+    },
+    {
+      "TermId": "1005",
+      "TermCode": "SEM5",
+      "TermName": "Semester V",
+      "AcademicYear": "2024-2025",
+      "SemesterNumber": 5,
+      "SGPA": 8.40,
+      "CGPA": 8.42,
+      "EarnedCredits": 24.0,
+      "RegisteredCredits": 24.0,
+      "Status": "Passed"
+    }
+  ]
+}

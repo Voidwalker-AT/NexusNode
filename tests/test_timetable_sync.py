@@ -53,6 +53,14 @@ class MockGoogleCalendarClient:
         self.calls["list"] += 1
         return [{"id": "primary", "summary": "Primary Calendar", "primary": True}]
 
+    def list_managed_events(self, calendar_id: str = "primary", time_min=None, time_max=None):
+        self.calls["list"] += 1
+        return list(self.events.values())
+
+    def list_events(self, calendar_id: str = "primary"):
+        self.calls["list"] += 1
+        return list(self.events.values())
+
     def create_event(self, calendar_id: str, session: TimetableSession, user_id: str):
         self.calls["create"] += 1
         event_id = f"g_evt_{session.session_id}_{session.date.replace('-', '')}"
@@ -60,15 +68,20 @@ class MockGoogleCalendarClient:
             "id": event_id,
             "summary": f"[{session.course_code}] {session.course_name}" if session.course_code else session.course_name,
             "location": session.room,
-            "description": f"Faculty: {session.faculty}",
+            "description": f"Faculty: {session.faculty}\nManaged by: NexusNode\nSlotKey: {session.canonical_slot_key}",
             "start": {"dateTime": session.get_start_iso()},
             "end": {"dateTime": session.get_end_iso()},
+            "created": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "extendedProperties": {
                 "private": {
                     "nexusnode_managed": "true",
+                    "nexusnode_schema": "timetable-v1",
+                    "nexusnode_slot_key": session.canonical_slot_key,
                     "nexusnode_user_id": user_id,
                     "nexusnode_session_id": session.session_id,
-                    "nexusnode_date": session.date
+                    "nexusnode_course_code": session.course_code or "",
+                    "nexusnode_date": session.date,
+                    "nexusnode_hash": session.deterministic_hash
                 }
             }
         }
@@ -83,6 +96,10 @@ class MockGoogleCalendarClient:
         body["location"] = session.room
         body["start"] = {"dateTime": session.get_start_iso()}
         body["end"] = {"dateTime": session.get_end_iso()}
+        if "extendedProperties" not in body:
+            body["extendedProperties"] = {"private": {}}
+        body["extendedProperties"]["private"]["nexusnode_hash"] = session.deterministic_hash
+        body["extendedProperties"]["private"]["nexusnode_slot_key"] = session.canonical_slot_key
         return body
 
     def delete_event(self, calendar_id: str, event_id: str):
@@ -2019,7 +2036,580 @@ class TestUpesAuthLifecycleAndHeadlessRefresh(unittest.TestCase):
             self.assertIn("auth_required", err)
 
 
+class TestPhase35CCalendarReconciliation(unittest.TestCase):
+    """
+    Phase 3.5C dedicated test suite verifying:
+    1. Canonical slot key derivation & immutability.
+    2. Desired-state deduplication of upstream split/batch entries.
+    3. Repeated sync idempotency across multiple runs.
+    4. Single-flight concurrency lease locking.
+    5. Upstream duplicate row collapsing.
+    6. Mutable room and display-name updates without duplicates.
+    7. Legitimate same-time distinct sessions preservation.
+    8. Timezone normalization around midnight & date boundaries.
+    9. Google pagination traversal.
+    10. Legacy event adoption vs ambiguous event preservation.
+    11. Duplicate group survivor selection & cleanup.
+    12. Dry-run zero-mutation safety.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.temp_dir, "test_phase35c.db")
+        conn = sqlite3.connect(self.db_path)
+        timetable_sync.init_timetable_tables(conn)
+        conn.close()
+
+        def conn_factory():
+            c = sqlite3.connect(self.db_path)
+            c.row_factory = sqlite3.Row
+            return c
+
+        self.conn_factory = conn_factory
+        self.mock_client = MockGoogleCalendarClient("test_user_35c")
+        self.synchronizer = TimetableSynchronizer(self.conn_factory, "test_user_35c", self.mock_client, "primary")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_canonical_slot_key_derivation(self):
+        """Verifies deterministic slot key and that mutable room/faculty changes do not alter identity."""
+        k1 = timetable_sync.compute_canonical_slot_key("CS301", "Distributed Systems", "2026-08-25", "09:00:00", "10:00:00")
+        k2 = timetable_sync.compute_canonical_slot_key("CS301", "Distributed Systems", "2026-08-25", "09:00:00", "10:00:00")
+        self.assertEqual(k1, k2)
+        self.assertTrue(k1.startswith("cslot_"))
+
+        # Changing room or faculty does not alter key
+        s1 = TimetableSession("Distributed Systems", "CS301", "2026-08-25", "09:00:00", "10:00:00", "Room 101", "Prof. X", "s1")
+        s2 = TimetableSession("Distributed Systems", "CS301", "2026-08-25", "09:00:00", "10:00:00", "Room 999", "Prof. Y", "s2")
+        self.assertEqual(s1.canonical_slot_key, s2.canonical_slot_key)
+
+    def test_desired_state_deduplication(self):
+        """Verifies raw duplicate entries (e.g. split lab batches) collapse into 1 desired session."""
+        raw_sessions = [
+            TimetableSession("AI Lab", "CS302P", "2026-08-25", "14:00:00", "16:00:00", "Lab 1", "Prof. A", "raw_1"),
+            TimetableSession("AI Lab", "CS302P", "2026-08-25", "14:00:00", "16:00:00", "Lab 1", "Prof. A", "raw_2")
+        ]
+        unique, dups = self.synchronizer.deduplicate_desired_sessions(raw_sessions)
+        self.assertEqual(len(unique), 1)
+        self.assertEqual(len(dups), 1)
+
+    def test_repeated_sync_idempotency(self):
+        """Verifies sync #1 creates events, sync #2 has 0 creates/updates/deletes, sync #3 has 0 changes."""
+        sessions = [
+            TimetableSession("Cryptography", "CS304", "2026-08-26", "10:00:00", "11:00:00", "11013", "Dr. A", "cns_1"),
+            TimetableSession("Deep Learning", "CS305", "2026-08-26", "11:00:00", "12:00:00", "11213", "Dr. B", "dl_1")
+        ]
+
+        # Sync #1
+        r1 = self.synchronizer.synchronize(sessions)
+        self.assertEqual(r1["creates"], 2)
+        self.assertEqual(len(self.mock_client.events), 2)
+
+        # Sync #2
+        r2 = self.synchronizer.synchronize(sessions)
+        self.assertEqual(r2["creates"], 0)
+        self.assertEqual(r2["updates"], 0)
+        self.assertEqual(r2["deleted"], 0)
+        self.assertEqual(r2["noops"], 2)
+        self.assertEqual(len(self.mock_client.events), 2)
+
+        # Sync #3
+        r3 = self.synchronizer.synchronize(sessions)
+        self.assertEqual(r3["creates"], 0)
+        self.assertEqual(r3["updates"], 0)
+        self.assertEqual(r3["deleted"], 0)
+        self.assertEqual(r3["noops"], 2)
+        self.assertEqual(len(self.mock_client.events), 2)
+
+    def test_concurrent_sync_single_flight_guard(self):
+        """Verifies database lease lock prevents overlapping sync runs."""
+        lease1 = timetable_sync.DatabaseSyncLease(self.conn_factory, "test_user_35c")
+        self.assertTrue(lease1.acquire())
+
+        # Second concurrent attempt must fail
+        lease2 = timetable_sync.DatabaseSyncLease(self.conn_factory, "test_user_35c")
+        self.assertFalse(lease2.acquire())
+
+        lease1.release()
+        self.assertTrue(lease2.acquire())
+        lease2.release()
+
+    def test_upstream_duplicate_rows_handling(self):
+        """Feeds identical normalized session twice; verifies single event created."""
+        s = TimetableSession("Compiler Design", "CS306", "2026-08-27", "09:00:00", "10:00:00", "11011", "Dr. C", "cd_1")
+        res = self.synchronizer.synchronize([s, s])
+        self.assertEqual(res["creates"], 1)
+        self.assertEqual(len(self.mock_client.events), 1)
+
+    def test_mutable_room_update(self):
+        """Verifies room change results in UPDATE on existing event, not a duplicate CREATE."""
+        s1 = TimetableSession("CNS", "CS304", "2026-08-31", "16:00:00", "17:00:00", "Room 11013", "Dr. A", "cns_aug31")
+        self.synchronizer.synchronize([s1])
+        self.assertEqual(len(self.mock_client.events), 1)
+        event_id = list(self.mock_client.events.keys())[0]
+
+        # Desired room changes to 11213
+        s2 = TimetableSession("CNS", "CS304", "2026-08-31", "16:00:00", "17:00:00", "Room 11213", "Dr. A", "cns_aug31")
+        res2 = self.synchronizer.synchronize([s2])
+        self.assertEqual(res2["creates"], 0)
+        self.assertEqual(res2["updates"], 1)
+        self.assertEqual(len(self.mock_client.events), 1)
+        self.assertEqual(self.mock_client.events[event_id]["location"], "Room 11213")
+
+    def test_mutable_display_name_update(self):
+        """Verifies title change for same course code updates existing event without creating duplicates."""
+        s1 = TimetableSession("Data Networks", "CS206", "2026-09-01", "10:00:00", "11:00:00", "11012", "Prof. N", "dcn_1")
+        self.synchronizer.synchronize([s1])
+        self.assertEqual(len(self.mock_client.events), 1)
+
+        # Title refined
+        s2 = TimetableSession("Data Communication and Networks", "CS206", "2026-09-01", "10:00:00", "11:00:00", "11012", "Prof. N", "dcn_1")
+        res2 = self.synchronizer.synchronize([s2])
+        self.assertEqual(res2["creates"], 0)
+        self.assertEqual(res2["updates"], 1)
+        self.assertEqual(len(self.mock_client.events), 1)
+
+    def test_legitimate_same_time_distinct_classes(self):
+        """Verifies two different modules scheduled at same time remain 2 distinct events."""
+        s1 = TimetableSession("Elective A - Robotics", "CS411", "2026-09-02", "14:00:00", "15:00:00", "11011", "Dr. R", "elec_a")
+        s2 = TimetableSession("Elective B - Game Dev", "CS412", "2026-09-02", "14:00:00", "15:00:00", "11012", "Dr. G", "elec_b")
+        res = self.synchronizer.synchronize([s1, s2])
+        self.assertEqual(res["creates"], 2)
+        self.assertEqual(len(self.mock_client.events), 2)
+
+    def test_timezone_normalization_asia_kolkata(self):
+        """Verifies ISO start/end generation in Asia/Kolkata timezone."""
+        s = TimetableSession("Morning Class", "CS101", "2026-09-03", "08:00:00", "09:00:00", "11011", "Prof. T", "tz_1")
+        start_iso = s.get_start_iso()
+        self.assertTrue(start_iso.startswith("2026-09-03T08:00:00"))
+        self.assertIn("+05:30", start_iso)
+
+    def test_google_pagination_all_pages(self):
+        """Verifies GoogleCalendarClient.list_managed_events traverses pagination tokens."""
+        client = GoogleCalendarClient({"access_token": "dummy"}, "admin")
+        page1 = {"items": [{"id": f"evt_{i}", "summary": f"Class {i}"} for i in range(250)], "nextPageToken": "tok_page2"}
+        page2 = {"items": [{"id": f"evt_{i}", "summary": f"Class {i}"} for i in range(250, 300)]}
+
+        with patch.object(client, "_request") as mock_req:
+            mock_req.side_effect = [
+                MagicMock(json=lambda: page1),
+                MagicMock(json=lambda: page2)
+            ]
+            events = client.list_managed_events("primary")
+            self.assertEqual(len(events), 300)
+            self.assertEqual(mock_req.call_count, 2)
+
+    def test_duplicate_group_survivor_selection_and_cleanup(self):
+        """Simulates 3 duplicate remote events for 1 class; verifies 1 survivor preserved and 2 removed."""
+        s = TimetableSession("Probability and Statistics", "CS3056", "2026-09-04", "13:00:00", "14:00:00", "11013", "Dr. P", "prob_1")
+        slot_key = s.canonical_slot_key
+
+        # Pre-seed 3 duplicate events on mock remote calendar
+        for i in (1, 2, 3):
+            evt_id = f"g_dup_evt_{i}"
+            self.mock_client.events[evt_id] = {
+                "id": evt_id,
+                "summary": "[CS3056] Probability and Statistics",
+                "location": "11013",
+                "description": f"Faculty: Dr. P\nManaged by: NexusNode\nSlotKey: {slot_key}",
+                "start": {"dateTime": s.get_start_iso()},
+                "end": {"dateTime": s.get_end_iso()},
+                "created": f"2026-08-20T10:0{i}:00Z",
+                "extendedProperties": {
+                    "private": {
+                        "nexusnode_managed": "true",
+                        "nexusnode_schema": "timetable-v1",
+                        "nexusnode_slot_key": slot_key,
+                        "nexusnode_hash": s.deterministic_hash
+                    }
+                }
+            }
+
+        self.assertEqual(len(self.mock_client.events), 3)
+
+        # Execute reconciliation
+        res = self.synchronizer.synchronize([s], dry_run=False)
+        self.assertEqual(res["duplicate_groups"], 1)
+        self.assertEqual(res["survivors"], 1)
+        self.assertEqual(res["proposed_duplicate_removals"], 2)
+        # Verify remote calendar now has exactly 1 survivor
+        self.assertEqual(len(self.mock_client.events), 1)
+
+    def test_dry_run_zero_writes(self):
+        """Verifies dry_run=True performs zero creates, updates, or deletes while returning complete plan."""
+        s = TimetableSession("Operating Systems", "CS308", "2026-09-05", "11:00:00", "12:00:00", "11011", "Dr. O", "os_1")
+        res = self.synchronizer.synchronize([s], dry_run=True)
+        self.assertTrue(res["dry_run"])
+        self.assertEqual(res["creates"], 1)
+        # Assert ZERO events created on calendar during dry run
+        self.assertEqual(len(self.mock_client.events), 0)
+        self.assertEqual(self.mock_client.calls["create"], 0)
+
+
+class TestPhase35DLegacyAdoption(unittest.TestCase):
+    """
+    Phase 3.5D dedicated test suite verifying:
+    1. Legacy events without extendedProperties are adopted via date/time + course matching.
+    2. Legacy events mapped in DB are adopted with HIGH_CONFIDENCE.
+    3. Legacy duplicate groups: 1 survivor adopted, excess deleted.
+    4. Unmanaged personal user events are never touched or deleted.
+    5. Ambiguous events are left untouched.
+    6. Migration idempotency: Run #1 adopts/patches, Run #2 produces 100% no-ops.
+    7. Rolling-window vs full-semester boundary safety.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.temp_dir, "test_phase35d.db")
+        conn = sqlite3.connect(self.db_path)
+        timetable_sync.init_timetable_tables(conn)
+        conn.close()
+
+        def conn_factory():
+            c = sqlite3.connect(self.db_path)
+            c.row_factory = sqlite3.Row
+            return c
+
+        self.conn_factory = conn_factory
+        self.mock_client = MockGoogleCalendarClient("test_user_35d")
+        self.synchronizer = TimetableSynchronizer(self.conn_factory, "test_user_35d", self.mock_client, "primary")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_legacy_event_adoption_without_extended_properties(self):
+        """Legacy event created before cslot schema is adopted in-place instead of deleted."""
+        s = TimetableSession("Network Security", "CS401", "2026-09-01", "10:00:00", "11:00:00", "11013", "Dr. A", "ns_1")
+
+        # Pre-seed legacy event on Google Calendar without private extendedProperties
+        self.mock_client.events["g_legacy_101"] = {
+            "id": "g_legacy_101",
+            "summary": "[CS401] Network Security",
+            "location": "Old Room",
+            "description": "Faculty: Dr. A\nManaged by: NexusNode",
+            "start": {"dateTime": "2026-09-01T10:00:00+05:30"},
+            "end": {"dateTime": "2026-09-01T11:00:00+05:30"},
+            "created": "2026-08-15T08:00:00Z"
+        }
+
+        res = self.synchronizer.synchronize([s], dry_run=False)
+        self.assertEqual(res["adopted"], 1)
+        self.assertEqual(res["creates"], 0)
+        self.assertEqual(res["patches"], 1)
+        self.assertEqual(res["stale_removals"], 0)
+        # Verify event ID was preserved
+        self.assertIn("g_legacy_101", self.mock_client.events)
+
+    def test_legacy_event_mapped_in_db_adopted(self):
+        """Legacy event referenced in SQLite mapping table is adopted with high confidence."""
+        s = TimetableSession("Discrete Mathematics", "MATH201", "2026-09-02", "11:00:00", "12:00:00", "11012", "Dr. M", "math_1")
+
+        # Pre-seed DB mapping
+        conn = self.conn_factory()
+        conn.execute("""
+            INSERT INTO timetable_events_map
+            (id, user_id, source_session_id, source_date, google_calendar_id, google_event_id, source_hash, summary, start_time, end_time, last_synced_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced')
+        """, ("map_legacy_math", "test_user_35d", "legacy_hash_math", "2026-09-02", "primary", "g_math_evt", "old_hash", "Discrete Mathematics", "11:00:00", "12:00:00", time.time()))
+        conn.commit()
+        conn.close()
+
+        self.mock_client.events["g_math_evt"] = {
+            "id": "g_math_evt",
+            "summary": "Discrete Mathematics",
+            "location": "11012",
+            "description": "Source: UPES Timetable",
+            "start": {"dateTime": "2026-09-02T11:00:00+05:30"},
+            "end": {"dateTime": "2026-09-02T12:00:00+05:30"},
+            "created": "2026-08-10T08:00:00Z"
+        }
+
+        res = self.synchronizer.synchronize([s], dry_run=False)
+        self.assertEqual(res["adopted"], 1)
+        self.assertEqual(res["creates"], 0)
+        self.assertIn("g_math_evt", self.mock_client.events)
+
+    def test_legacy_duplicate_events_survivor_selection(self):
+        """When multiple legacy events match 1 class, survivor is patched and duplicate is deleted."""
+        s = TimetableSession("Software Engineering", "CS303", "2026-09-03", "14:00:00", "15:00:00", "11011", "Dr. S", "se_1")
+
+        self.mock_client.events["g_dup_older"] = {
+            "id": "g_dup_older",
+            "summary": "[CS303] Software Engineering",
+            "description": "Managed by: NexusNode",
+            "start": {"dateTime": "2026-09-03T14:00:00+05:30"},
+            "end": {"dateTime": "2026-09-03T15:00:00+05:30"},
+            "created": "2026-08-01T10:00:00Z"
+        }
+        self.mock_client.events["g_dup_newer"] = {
+            "id": "g_dup_newer",
+            "summary": "[CS303] Software Engineering",
+            "description": "Managed by: NexusNode",
+            "start": {"dateTime": "2026-09-03T14:00:00+05:30"},
+            "end": {"dateTime": "2026-09-03T15:00:00+05:30"},
+            "created": "2026-08-15T10:00:00Z"
+        }
+
+        res = self.synchronizer.synchronize([s], dry_run=False)
+        self.assertEqual(res["duplicate_groups"], 1)
+        self.assertEqual(res["survivors"], 1)
+        self.assertEqual(res["proposed_duplicate_removals"], 1)
+        self.assertEqual(len(self.mock_client.events), 1)
+        # Older event is survivor
+        self.assertIn("g_dup_older", self.mock_client.events)
+        self.assertNotIn("g_dup_newer", self.mock_client.events)
+
+    def test_unmanaged_personal_event_preserved(self):
+        """Unrelated user personal event on calendar is NEVER touched or deleted."""
+        s = TimetableSession("Cloud Computing", "CS405", "2026-09-04", "09:00:00", "10:00:00", "11013", "Dr. C", "cc_1")
+
+        self.mock_client.events["user_dentist_appt"] = {
+            "id": "user_dentist_appt",
+            "summary": "Dentist Appointment",
+            "start": {"dateTime": "2026-09-04T09:00:00+05:30"},
+            "end": {"dateTime": "2026-09-04T10:00:00+05:30"}
+        }
+
+        res = self.synchronizer.synchronize([s], dry_run=False)
+        self.assertEqual(res["creates"], 1)
+        self.assertEqual(res["stale_removals"], 0)
+        self.assertEqual(res["unmanaged_events"], 1)
+        self.assertIn("user_dentist_appt", self.mock_client.events)
+
+    def test_migration_idempotency_run_one_and_run_two(self):
+        """Run #1 migrates/adopts legacy events; Run #2 produces 100% no-ops."""
+        s = TimetableSession("Big Data", "CS406", "2026-09-05", "15:00:00", "16:00:00", "11012", "Dr. B", "bd_1")
+
+        self.mock_client.events["g_bd_evt"] = {
+            "id": "g_bd_evt",
+            "summary": "[CS406] Big Data",
+            "description": "Managed by: NexusNode",
+            "start": {"dateTime": "2026-09-05T15:00:00+05:30"},
+            "end": {"dateTime": "2026-09-05T16:00:00+05:30"},
+            "created": "2026-08-10T10:00:00Z"
+        }
+
+        # Run #1: Adopts and patches
+        r1 = self.synchronizer.synchronize([s], dry_run=False)
+        self.assertEqual(r1["adopted"], 1)
+        self.assertEqual(r1["patches"], 1)
+        self.assertEqual(r1["creates"], 0)
+
+        # Run #2: 100% NO-OP
+        r2 = self.synchronizer.synchronize([s], dry_run=False)
+        self.assertEqual(r2["adopted"], 1)
+        self.assertEqual(r2["noops"], 1)
+        self.assertEqual(r2["patches"], 0)
+        self.assertEqual(r2["creates"], 0)
+        self.assertEqual(r2["deleted"], 0)
+
+
+class TestPhase35EContinuousReconciliation(unittest.TestCase):
+    """
+    Phase 3.5E dedicated test suite verifying:
+    1. FULL_SEMESTER policy and dynamic boundary derivation.
+    2. Preservation of valid historical past classes.
+    3. Future class cancellation upon authoritative live sync.
+    4. Mandatory LKG Safety Guard: Offline/stale sync produces ZERO cancellations.
+    5. Mandatory Auth Failure Safety Guard: Expired auth produces ZERO cancellations.
+    6. Mutable room, faculty, meeting-link patch updates without new event creation.
+    7. Newly added class creates exactly one event.
+    8. Rescheduled class performs in-place move/PATCH.
+    9. 3-hour unchanged schedule produces 100% NOOP idempotency.
+    10. Full-semester pagination and status telemetry.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.temp_dir, "test_phase35e.db")
+        conn = sqlite3.connect(self.db_path)
+        timetable_sync.init_timetable_tables(conn)
+        conn.close()
+
+        def conn_factory():
+            c = sqlite3.connect(self.db_path)
+            c.row_factory = sqlite3.Row
+            return c
+
+        self.conn_factory = conn_factory
+        self.mock_client = MockGoogleCalendarClient("test_user_35e")
+        self.service = TimetableService(self.conn_factory)
+        self.synchronizer = TimetableSynchronizer(self.conn_factory, "test_user_35e", self.mock_client, "primary")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_full_semester_policy_and_bounds_derivation(self):
+        """Verifies full semester timetable is loaded by default without rolling-window truncation."""
+        raw_json = json.dumps([
+            {"date": "2026-08-17", "start_time": "09:00:00", "end_time": "10:00:00", "course_name": "Course A", "course_code": "CS101", "room": "101", "faculty": "Dr. A"},
+            {"date": "2026-11-20", "start_time": "14:00:00", "end_time": "15:00:00", "course_name": "Course B", "course_code": "CS102", "room": "102", "faculty": "Dr. B"}
+        ])
+        self.service.upload_timetable("test_user_35e", raw_json)
+
+        sessions, errors = self.service.load_timetable_sessions("test_user_35e")
+        self.assertEqual(len(sessions), 2)
+        dates = [s.date for s in sessions]
+        self.assertEqual(min(dates), "2026-08-17")
+        self.assertEqual(max(dates), "2026-11-20")
+
+    def test_past_valid_event_preservation(self):
+        """Past historical classes that occurred are preserved on Google Calendar."""
+        s_past = TimetableSession("History of CS", "CS100", "2026-08-17", "09:00:00", "10:00:00", "11011", "Dr. H", "past_1")
+        s_future = TimetableSession("Future Systems", "CS400", "2026-10-15", "10:00:00", "11:00:00", "11012", "Dr. F", "fut_1")
+
+        # Sync both
+        self.synchronizer.synchronize([s_past, s_future], dry_run=False)
+        self.assertEqual(len(self.mock_client.events), 2)
+
+        # Later sync still preserves past event
+        res = self.synchronizer.synchronize([s_past, s_future], dry_run=False)
+        self.assertEqual(res["noops"], 2)
+        self.assertEqual(res["stale_removals"], 0)
+        self.assertEqual(len(self.mock_client.events), 2)
+
+    def test_future_class_cancellation_on_live_sync(self):
+        """Authoritative live sync with allow_deletions=True removes cancelled future class."""
+        s1 = TimetableSession("Class 1", "CS101", "2026-10-01", "09:00:00", "10:00:00", "101", "Dr. A", "c1")
+        s2 = TimetableSession("Class 2", "CS102", "2026-10-01", "11:00:00", "12:00:00", "102", "Dr. B", "c2")
+
+        # Initial sync creates both
+        self.synchronizer.synchronize([s1, s2], dry_run=False, allow_deletions=True)
+        self.assertEqual(len(self.mock_client.events), 2)
+
+        # Live UPES update cancels Class 2
+        res = self.synchronizer.synchronize([s1], dry_run=False, allow_deletions=True)
+        self.assertEqual(res["stale_removals"], 1)
+        self.assertEqual(len(self.mock_client.events), 1)
+
+    def test_lkg_fallback_zero_deletions_safety(self):
+        """Mandatory: If live fetch fails and reconciler uses LKG (allow_deletions=False), ZERO deletions are executed."""
+        s1 = TimetableSession("Class 1", "CS101", "2026-10-01", "09:00:00", "10:00:00", "101", "Dr. A", "c1")
+        s2 = TimetableSession("Class 2", "CS102", "2026-10-01", "11:00:00", "12:00:00", "102", "Dr. B", "c2")
+
+        # Pre-seed calendar with both classes
+        self.synchronizer.synchronize([s1, s2], dry_run=False, allow_deletions=True)
+        self.assertEqual(len(self.mock_client.events), 2)
+
+        # Incomplete/partial LKG payload passed with allow_deletions=False
+        res = self.synchronizer.synchronize([s1], dry_run=False, allow_deletions=False)
+        self.assertEqual(res["stale_removals"], 0)
+        self.assertEqual(res["deleted"], 0)
+        # Class 2 MUST NOT be deleted during LKG fallback
+        self.assertEqual(len(self.mock_client.events), 2)
+
+    def test_auth_failure_zero_deletions_safety(self):
+        """Mandatory: If UPES authentication is exhausted, Calendar sync operates safely without deleting classes."""
+        s = TimetableSession("Secure Class", "CS500", "2026-11-01", "14:00:00", "15:00:00", "101", "Dr. X", "sec_1")
+        self.synchronizer.synchronize([s], dry_run=False, allow_deletions=True)
+
+        # Auth failed sync with allow_deletions=False
+        res = self.synchronizer.synchronize([], dry_run=False, allow_deletions=False)
+        self.assertEqual(res["stale_removals"], 0)
+        self.assertEqual(len(self.mock_client.events), 1)
+
+    def test_room_and_faculty_patch_updates(self):
+        """Room and faculty changes trigger in-place PATCH on existing event without new event creation."""
+        s_orig = TimetableSession("Database Systems", "CS302", "2026-09-10", "10:00:00", "11:00:00", "Room 11013", "Dr. Old", "db_1")
+        self.synchronizer.synchronize([s_orig], dry_run=False)
+        evt_id = list(self.mock_client.events.keys())[0]
+
+        # Room updated to 11215, faculty updated to Dr. New
+        s_updated = TimetableSession("Database Systems", "CS302", "2026-09-10", "10:00:00", "11:00:00", "Room 11215", "Dr. New", "db_1")
+        res = self.synchronizer.synchronize([s_updated], dry_run=False)
+        self.assertEqual(res["patches"], 1)
+        self.assertEqual(res["creates"], 0)
+        self.assertEqual(len(self.mock_client.events), 1)
+        self.assertEqual(self.mock_client.events[evt_id]["location"], "Room 11215")
+
+    def test_new_class_addition(self):
+        """Newly added class creates exactly one event on Google Calendar."""
+        s1 = TimetableSession("Class A", "CS101", "2026-09-15", "09:00:00", "10:00:00", "101", "Dr. A", "ca")
+        self.synchronizer.synchronize([s1], dry_run=False)
+
+        s2 = TimetableSession("Class B", "CS102", "2026-09-15", "11:00:00", "12:00:00", "102", "Dr. B", "cb")
+        res = self.synchronizer.synchronize([s1, s2], dry_run=False)
+        self.assertEqual(res["creates"], 1)
+        self.assertEqual(res["noops"], 1)
+        self.assertEqual(len(self.mock_client.events), 2)
+
+    def test_rescheduled_class_in_place_move(self):
+        """Rescheduled class with same module moves existing event rather than orphan delete + create."""
+        s_orig = TimetableSession("Machine Learning", "CS403", "2026-09-20", "09:00:00", "10:00:00", "101", "Dr. M", "ml_1")
+        self.synchronizer.synchronize([s_orig], dry_run=False)
+        evt_id = list(self.mock_client.events.keys())[0]
+
+        # Rescheduled to afternoon 14:00
+        s_resched = TimetableSession("Machine Learning", "CS403", "2026-09-20", "14:00:00", "15:00:00", "101", "Dr. M", "ml_1")
+        res = self.synchronizer.synchronize([s_resched], dry_run=False, allow_deletions=True)
+        self.assertEqual(res["rescheduled"], 1)
+        self.assertEqual(res["creates"], 0)
+        self.assertEqual(len(self.mock_client.events), 1)
+        self.assertIn(evt_id, self.mock_client.events)
+
+    def test_three_hour_unchanged_idempotency(self):
+        """Simulating periodic 3-hour sync on unchanged timetable produces 100% NOOPs."""
+        sessions = [
+            TimetableSession(f"Course {i}", f"CS{i}", "2026-10-05", f"0{i}:00:00", f"1{i}:00:00", "101", "Dr. X", f"c_{i}")
+            for i in range(1, 5)
+        ]
+        # Initial sync
+        self.synchronizer.synchronize(sessions, dry_run=False)
+
+        # Subsequent periodic syncs
+        for _ in range(3):
+            res = self.synchronizer.synchronize(sessions, dry_run=False)
+            self.assertEqual(res["noops"], 4)
+            self.assertEqual(res["creates"], 0)
+            self.assertEqual(res["patches"], 0)
+            self.assertEqual(res["deleted"], 0)
+
+    def test_cancelled_class_with_duplicates_deletes_both_copies_when_live(self):
+        """When an authoritatively cancelled class has multiple duplicates, live sync removes ALL copies (0 survivors)."""
+        s_active = TimetableSession("Active Class", "CS101", "2026-10-10", "09:00:00", "10:00:00", "101", "Dr. A", "act_1")
+
+        # Pre-seed 2 duplicate events for a cancelled class (Probability)
+        self.mock_client.events["g_prob_dup1"] = {
+            "id": "g_prob_dup1",
+            "summary": "Probability, Entropy, and MC Simulation",
+            "start": {"dateTime": "2026-10-10T13:00:00+05:30"},
+            "end": {"dateTime": "2026-10-10T13:55:00+05:30"},
+            "created": "2026-08-10T08:00:00Z",
+            "description": "Faculty: Gourav Arora\nManaged by: NexusNode"
+        }
+        self.mock_client.events["g_prob_dup2"] = {
+            "id": "g_prob_dup2",
+            "summary": "Probability, Entropy, and MC Simulation",
+            "start": {"dateTime": "2026-10-10T13:00:00+05:30"},
+            "end": {"dateTime": "2026-10-10T13:55:00+05:30"},
+            "created": "2026-08-10T08:05:00Z",
+            "description": "Faculty: Gourav Arora\nManaged by: NexusNode"
+        }
+
+        # Sync authoritative timetable containing ONLY s_active (Probability is cancelled)
+        res = self.synchronizer.synchronize([s_active], dry_run=False, allow_deletions=True)
+        self.assertEqual(res["creates"], 1)
+        self.assertEqual(res["deleted"], 2)
+        # BOTH duplicate copies of the cancelled class MUST be removed
+        self.assertNotIn("g_prob_dup1", self.mock_client.events)
+        self.assertNotIn("g_prob_dup2", self.mock_client.events)
+        self.assertEqual(len(self.mock_client.events), 1)
+
+    def test_calendar_sync_status_telemetry(self):
+        """Verifies get_calendar_sync_status reports FULL_SEMESTER policy and 3-hour cadence."""
+        st = self.service.get_calendar_sync_status("test_user_35e")
+        self.assertEqual(st["policy"], "FULL_SEMESTER")
+        self.assertEqual(st["cadence_hours"], 3)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+
 
 

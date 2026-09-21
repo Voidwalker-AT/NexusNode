@@ -23,18 +23,62 @@ import time
 import urllib.parse
 import zoneinfo
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import requests
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import config
+from upes.crypto import UpesSessionCrypto
 
+import re
 logger = logging.getLogger(__name__)
 
 # ==============================================================================
 # 1. NORMALIZED TIMETABLE DATA MODEL & TOLERANT PARSER
 # ==============================================================================
+
+def compute_canonical_slot_key(
+    course_code: str,
+    course_name: str,
+    date_str: str,
+    start_time_str: str,
+    end_time_str: str,
+    session_type: str = "REGULAR",
+    term: str = "2026_ODD",
+    user_id: str = ""
+) -> str:
+    """
+    Computes a deterministic, versioned canonical slot key (v1) for an academic session.
+    Identity fields:
+      - term
+      - course_code (fallback to normalized course_name if code empty)
+      - date (YYYY-MM-DD)
+      - start_time (HH:MM:SS)
+      - end_time (HH:MM:SS)
+      - session_type (REGULAR, LAB, TUTORIAL)
+    Mutable fields (Room, Faculty, Meeting Link, Display Title) DO NOT alter this key.
+    """
+    norm_c_code = (course_code or "").strip().upper()
+    norm_c_name = re.sub(r'\s+', ' ', (course_name or "").strip().lower())
+    course_ident = norm_c_code if norm_c_code else norm_c_name
+
+    def _clean_t(t: str) -> str:
+        parts = t.strip().split(":")
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        s = int(parts[2]) if len(parts) > 2 else 0
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
+    st_norm = _clean_t(start_time_str)
+    et_norm = _clean_t(end_time_str)
+    d_norm = date_str.strip()
+    stype_norm = (session_type or "REGULAR").strip().upper()
+
+    material = f"v1|{term}|{course_ident}|{d_norm}|{st_norm}|{et_norm}|{stype_norm}"
+    h = hashlib.sha256(material.encode("utf-8")).hexdigest()[:20]
+    return f"cslot_{h}"
+
 
 @dataclass
 class TimetableSession:
@@ -50,6 +94,18 @@ class TimetableSession:
     meeting_link: str = ""
     source: str = "upes"
     raw: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def canonical_slot_key(self) -> str:
+        """Derives the deterministic canonical slot key for this session."""
+        return compute_canonical_slot_key(
+            course_code=self.course_code,
+            course_name=self.course_name,
+            date_str=self.date,
+            start_time_str=self.start_time,
+            end_time_str=self.end_time,
+            session_type="REGULAR"
+        )
 
     @property
     def is_online(self) -> bool:
@@ -72,6 +128,23 @@ class TimetableSession:
     def get_end_iso(self, tz_name: str = config.TIMETABLE_TIMEZONE) -> str:
         """Returns ISO 8601 string for event end with timezone offset."""
         return _format_iso_datetime(self.date, self.end_time, tz_name)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Returns a serializable dictionary representation of the session."""
+        return {
+            "course_name": self.course_name,
+            "course_code": self.course_code,
+            "date": self.date,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "room": self.room,
+            "faculty": self.faculty,
+            "session_id": self.session_id,
+            "meeting_link": self.meeting_link,
+            "source": self.source,
+            "is_online": self.is_online,
+            "canonical_slot_key": self.canonical_slot_key
+        }
 
 
 def _format_iso_datetime(date_str: str, time_str: str, tz_name: str) -> str:
@@ -605,6 +678,68 @@ class OAuthTokenCrypto:
             return None
 
 
+def get_shared_google_oauth_config(conn_factory=None) -> Dict[str, Any]:
+    """
+    Retrieves the shared Google OAuth Web Application configuration.
+    Precedence:
+    1. Database `google_oauth_app_config` table (AES-GCM encrypted secret)
+    2. Fallback to environment variables `config.GOOGLE_CLIENT_ID`, `config.GOOGLE_CLIENT_SECRET`, `config.GOOGLE_REDIRECT_URI`
+    """
+    if conn_factory:
+        try:
+            conn = conn_factory()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT client_id, encrypted_client_secret, redirect_uri, updated_at FROM google_oauth_app_config WHERE id = 1")
+                row = cur.fetchone()
+                if row:
+                    client_id = row[0]
+                    enc_secret = row[1]
+                    redirect_uri = row[2]
+                    secret_dict = OAuthTokenCrypto.decrypt(enc_secret) if enc_secret else None
+                    client_secret = secret_dict.get("client_secret") if secret_dict else ""
+                    if client_id and client_secret:
+                        return {
+                            "client_id": client_id,
+                            "client_secret": client_secret,
+                            "redirect_uri": redirect_uri or config.GOOGLE_REDIRECT_URI,
+                            "source": "database",
+                            "updated_at": row[3]
+                        }
+            finally:
+                conn.close()
+        except Exception:
+            pass
+
+    return {
+        "client_id": config.GOOGLE_CLIENT_ID,
+        "client_secret": config.GOOGLE_CLIENT_SECRET,
+        "redirect_uri": config.GOOGLE_REDIRECT_URI,
+        "source": "environment",
+        "updated_at": None
+    }
+
+
+def save_shared_google_oauth_config(client_id: str, client_secret: str, redirect_uri: str, conn_factory) -> None:
+    """Saves shared Google OAuth app credentials in SQLite with AES-256-GCM encrypted secret."""
+    enc_secret = OAuthTokenCrypto.encrypt({"client_secret": client_secret.strip()})
+    now = time.time()
+    conn = conn_factory()
+    try:
+        conn.execute("""
+            INSERT INTO google_oauth_app_config (id, client_id, encrypted_client_secret, redirect_uri, updated_at)
+            VALUES (1, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                client_id = excluded.client_id,
+                encrypted_client_secret = excluded.encrypted_client_secret,
+                redirect_uri = excluded.redirect_uri,
+                updated_at = excluded.updated_at
+        """, (client_id.strip(), enc_secret, redirect_uri.strip(), now))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ==============================================================================
 # 3. GOOGLE CALENDAR API CLIENT & OAUTH 2.0
 # ==============================================================================
@@ -620,17 +755,22 @@ class GoogleCalendarError(Exception):
 class GoogleCalendarClient:
     """Official REST API client for Google Calendar with OAuth 2.0 auto-refresh and exponential backoff."""
 
-    def __init__(self, token_data: Dict[str, Any], user_id: str, on_token_refresh=None):
+    def __init__(self, token_data: Dict[str, Any], user_id: str, on_token_refresh=None, conn_factory=None):
         self.token_data = dict(token_data)
         self.user_id = user_id
         self.on_token_refresh = on_token_refresh
+        self.conn_factory = conn_factory
 
     @classmethod
-    def get_authorization_url(cls, state: str) -> str:
+    def get_authorization_url(cls, state: str, conn_factory=None, redirect_uri: Optional[str] = None) -> str:
         """Generates Google OAuth 2.0 consent URL with CSRF state token."""
+        cfg = get_shared_google_oauth_config(conn_factory)
+        client_id = cfg.get("client_id")
+        target_redirect_uri = redirect_uri or cfg.get("redirect_uri") or config.GOOGLE_REDIRECT_URI
+
         params = {
-            "client_id": config.GOOGLE_CLIENT_ID,
-            "redirect_uri": config.GOOGLE_REDIRECT_URI,
+            "client_id": client_id,
+            "redirect_uri": target_redirect_uri,
             "response_type": "code",
             "scope": config.GOOGLE_CALENDAR_SCOPE,
             "access_type": "offline",
@@ -641,16 +781,21 @@ class GoogleCalendarClient:
         return f"{config.GOOGLE_AUTH_URI}?{query}"
 
     @classmethod
-    def exchange_code_for_tokens(cls, code: str) -> Dict[str, Any]:
+    def exchange_code_for_tokens(cls, code: str, conn_factory=None, redirect_uri: Optional[str] = None) -> Dict[str, Any]:
         """Exchanges authorization code for access and refresh tokens."""
-        if not config.GOOGLE_CLIENT_ID or not config.GOOGLE_CLIENT_SECRET:
+        cfg = get_shared_google_oauth_config(conn_factory)
+        client_id = cfg.get("client_id")
+        client_secret = cfg.get("client_secret")
+        target_redirect_uri = redirect_uri or cfg.get("redirect_uri") or config.GOOGLE_REDIRECT_URI
+
+        if not client_id or not client_secret:
             raise GoogleCalendarError("Google OAuth credentials are not configured on server.", status_code=500)
 
         payload = {
             "code": code,
-            "client_id": config.GOOGLE_CLIENT_ID,
-            "client_secret": config.GOOGLE_CLIENT_SECRET,
-            "redirect_uri": config.GOOGLE_REDIRECT_URI,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": target_redirect_uri,
             "grant_type": "authorization_code"
         }
 
@@ -681,16 +826,31 @@ class GoogleCalendarClient:
         if not refresh_token:
             raise GoogleCalendarError("No refresh token available. User must re-authenticate.", status_code=401)
 
+        cfg = get_shared_google_oauth_config(self.conn_factory)
+        client_id = cfg.get("client_id")
+        client_secret = cfg.get("client_secret")
+
         payload = {
-            "client_id": config.GOOGLE_CLIENT_ID,
-            "client_secret": config.GOOGLE_CLIENT_SECRET,
+            "client_id": client_id,
+            "client_secret": client_secret,
             "refresh_token": refresh_token,
             "grant_type": "refresh_token"
         }
 
         resp = requests.post(config.GOOGLE_TOKEN_URI, data=payload, timeout=15)
         if resp.status_code != 200:
-            raise GoogleCalendarError("Failed to refresh Google OAuth access token. Refresh token may be revoked.", status_code=401)
+            err_msg = "Failed to refresh Google OAuth access token. Refresh token may be revoked."
+            try:
+                err_json = resp.json()
+                if err_json.get("error") in ("invalid_grant", "unauthorized_client") or resp.status_code in (400, 401):
+                    self.token_data["reauth_required"] = True
+                    self.token_data["invalid_grant"] = True
+                    if self.on_token_refresh:
+                        self.on_token_refresh(self.user_id, self.token_data)
+                err_msg = f"Failed to refresh Google OAuth access token: {err_json.get('error_description', err_json.get('error', 'revoked'))}"
+            except Exception:
+                pass
+            raise GoogleCalendarError(err_msg, status_code=401)
 
         data = resp.json()
         self.token_data["access_token"] = data.get("access_token")
@@ -760,6 +920,40 @@ class GoogleCalendarClient:
         items = resp.json().get("items", [])
         return [{"id": c.get("id"), "summary": c.get("summary"), "primary": c.get("primary", False)} for c in items]
 
+    def list_managed_events(self, calendar_id: str = "primary", time_min: Optional[str] = None, time_max: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Lists all events within a date range from Google Calendar using full pagination.
+        Filters and classifies NexusNode-managed events vs unmanaged events.
+        """
+        params: Dict[str, Any] = {
+            "singleEvents": "true",
+            "orderBy": "startTime",
+            "maxResults": 250
+        }
+        if time_min:
+            params["timeMin"] = time_min
+        if time_max:
+            params["timeMax"] = time_max
+
+        all_events: List[Dict[str, Any]] = []
+        page_token = None
+
+        while True:
+            if page_token:
+                params["pageToken"] = page_token
+            else:
+                params.pop("pageToken", None)
+
+            resp = self._request("GET", f"/calendars/{requests.utils.quote(calendar_id)}/events", params=params)
+            data = resp.json()
+            items = data.get("items", [])
+            all_events.extend(items)
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+
+        return all_events
+
     def create_event(self, calendar_id: str, session: TimetableSession, user_id: str) -> Dict[str, Any]:
         """Creates a Google Calendar event marked as NexusNode-managed."""
         body = self._build_event_body(session, user_id)
@@ -767,10 +961,14 @@ class GoogleCalendarClient:
         return resp.json()
 
     def update_event(self, calendar_id: str, event_id: str, session: TimetableSession, user_id: str) -> Dict[str, Any]:
-        """Updates an existing Google Calendar event."""
+        """Updates an existing Google Calendar event using PATCH semantics to preserve user properties."""
         body = self._build_event_body(session, user_id)
-        resp = self._request("PUT", f"/calendars/{requests.utils.quote(calendar_id)}/events/{requests.utils.quote(event_id)}", json_body=body)
+        resp = self._request("PATCH", f"/calendars/{requests.utils.quote(calendar_id)}/events/{requests.utils.quote(event_id)}", json_body=body)
         return resp.json()
+
+    def patch_event(self, calendar_id: str, event_id: str, session: TimetableSession, user_id: str) -> Dict[str, Any]:
+        """In-place PATCH on an existing Google Calendar event."""
+        return self.update_event(calendar_id, event_id, session, user_id)
 
     def delete_event(self, calendar_id: str, event_id: str) -> bool:
         """Deletes a managed Google Calendar event."""
@@ -798,6 +996,7 @@ class GoogleCalendarClient:
             else:
                 location = f"{session.room} ({meeting_link})"
 
+        slot_key = getattr(session, "canonical_slot_key", session.session_id)
         desc_lines = [
             f"Course: {session.course_name}",
             f"Code: {session.course_code or 'N/A'}",
@@ -808,7 +1007,8 @@ class GoogleCalendarClient:
             desc_lines.append(f"MS Teams Link: {meeting_link}")
         desc_lines.extend([
             "Source: UPES Timetable",
-            "Managed by: NexusNode"
+            "Managed by: NexusNode",
+            f"SlotKey: {slot_key}"
         ])
         description = "\n".join(desc_lines)
 
@@ -827,9 +1027,13 @@ class GoogleCalendarClient:
             "extendedProperties": {
                 "private": {
                     "nexusnode_managed": "true",
+                    "nexusnode_schema": "timetable-v1",
+                    "nexusnode_slot_key": slot_key,
                     "nexusnode_user_id": user_id,
                     "nexusnode_session_id": session.session_id,
-                    "nexusnode_date": session.date
+                    "nexusnode_course_code": session.course_code or "",
+                    "nexusnode_date": session.date,
+                    "nexusnode_hash": session.deterministic_hash
                 }
             }
         }
@@ -1039,147 +1243,501 @@ class TimetableSynchronizer:
         self.calendar_client = calendar_client
         self.calendar_id = calendar_id
 
-    def synchronize(self, sessions: List[TimetableSession]) -> Dict[str, Any]:
+    def deduplicate_desired_sessions(self, sessions: List[TimetableSession]) -> Tuple[List[TimetableSession], List[Dict[str, Any]]]:
         """
-        Executes idempotent reconciliation:
-        1. Compares sessions against timetable_events_map.
-        2. Dispatches CREATE, UPDATE, or NO-OP.
-        3. Identifies vanished sessions in active date window and dispatches DELETE.
+        Collapses duplicate raw upstream slots sharing the same canonical_slot_key.
+        Ensures exactly 1 desired event per canonical slot key.
         """
-        created = 0
-        updated = 0
-        unchanged = 0
-        deleted = 0
+        seen: Dict[str, TimetableSession] = {}
+        collapsed_dups: List[Dict[str, Any]] = []
+
+        for s in sessions:
+            k = s.canonical_slot_key
+            if k not in seen:
+                seen[k] = s
+            else:
+                collapsed_dups.append({
+                    "slot_key": k,
+                    "course": s.course_name,
+                    "date": s.date,
+                    "time": f"{s.start_time}-{s.end_time}",
+                    "room": s.room,
+                    "collapsed_into_room": seen[k].room
+                })
+
+        return list(seen.values()), collapsed_dups
+
+    def classify_event_ownership(self, ev: Dict[str, Any], db_event_ids: Set[str]) -> str:
+        """
+        Classifies event into:
+        - VERIFIED_NEXUSNODE: Explicit private extendedProperties, DB map reference, or description marker
+        - PROBABLE_NEXUSNODE: 'Source: UPES Timetable' or 'Faculty: ' in description
+        - AMBIGUOUS: Class-like title/time but missing NexusNode markers
+        - UNMANAGED: External or user personal event
+        """
+        ext = ev.get("extendedProperties", {}).get("private", {})
+        desc = ev.get("description") or ""
+        ev_id = ev.get("id") or ""
+
+        if ext.get("nexusnode_managed") == "true" or ext.get("nexusnode_slot_key"):
+            return "VERIFIED_NEXUSNODE"
+        if ev_id in db_event_ids:
+            return "VERIFIED_NEXUSNODE"
+        if "Managed by: NexusNode" in desc or "SlotKey: " in desc:
+            return "VERIFIED_NEXUSNODE"
+        if "Source: UPES Timetable" in desc or "Faculty: " in desc:
+            return "PROBABLE_NEXUSNODE"
+        return "UNMANAGED"
+
+    def match_legacy_event(self, ev: Dict[str, Any], desired_sessions: List[TimetableSession], db_by_event_id: Dict[str, Dict[str, Any]]) -> Tuple[Optional[str], str]:
+        """
+        Correlates a legacy Google Calendar event to a desired canonical slot key.
+        Returns (canonical_slot_key, match_confidence: EXACT | HIGH_CONFIDENCE | AMBIGUOUS | NO_MATCH).
+        """
+        ext = ev.get("extendedProperties", {}).get("private", {})
+        slot_key = ext.get("nexusnode_slot_key")
+        if slot_key and slot_key.startswith("cslot_"):
+            return slot_key, "EXACT"
+
+        desc = ev.get("description") or ""
+        if "SlotKey: " in desc:
+            for line in desc.splitlines():
+                if line.strip().startswith("SlotKey: "):
+                    cand = line.split("SlotKey: ")[1].strip()
+                    if cand.startswith("cslot_"):
+                        return cand, "EXACT"
+
+        ev_start_raw = ev.get("start", {}).get("dateTime", "") or ev.get("start", {}).get("date", "")
+        ev_date = ev_start_raw[:10]
+        ev_start_time = ev_start_raw[11:16] if len(ev_start_raw) >= 16 else ""
+        ev_summary = ev.get("summary", "")
+        ev_sum_norm = re.sub(r'[\[\]\(\)\-\:]', ' ', ev_summary).strip().lower()
+
+        ev_id = ev.get("id") or ""
+        mapped_item = db_by_event_id.get(ev_id)
+        if mapped_item:
+            map_date = mapped_item.get("date") or ev_date
+            map_st = (mapped_item.get("start_time") or "00:00")[:5]
+            map_sum = mapped_item.get("summary") or ev_summary
+            for s in desired_sessions:
+                if s.date == map_date and s.start_time[:5] == map_st:
+                    c_code = (s.course_code or "").strip().lower()
+                    c_name = re.sub(r'[\[\]\(\)\-\:]', ' ', (s.course_name or "")).strip().lower()
+                    if (c_code and c_code in map_sum.lower()) or (c_name in map_sum.lower() or map_sum.lower() in c_name):
+                        return s.canonical_slot_key, "HIGH_CONFIDENCE"
+
+        candidates = []
+        for s in desired_sessions:
+            if s.date == ev_date and s.start_time[:5] == ev_start_time:
+                c_code = (s.course_code or "").strip().lower()
+                c_name = re.sub(r'[\[\]\(\)\-\:]', ' ', (s.course_name or "")).strip().lower()
+                if (c_code and c_code in ev_sum_norm) or (c_name in ev_sum_norm or ev_sum_norm in c_name):
+                    candidates.append(s)
+
+        if len(candidates) == 1:
+            return candidates[0].canonical_slot_key, "HIGH_CONFIDENCE"
+        elif len(candidates) > 1:
+            return None, "AMBIGUOUS"
+
+        if mapped_item:
+            derived_key = compute_canonical_slot_key(
+                course_code="",
+                course_name=mapped_item.get("summary", ev_summary),
+                date_str=mapped_item.get("date", ev_date),
+                start_time_str=mapped_item.get("start_time", "00:00:00"),
+                end_time_str=mapped_item.get("end_time", "00:00:00")
+            )
+            return derived_key, "HIGH_CONFIDENCE"
+
+        if ev_date and ev_start_time and ev_summary:
+            ev_end_raw = ev.get("end", {}).get("dateTime", "") or ev.get("end", {}).get("date", "")
+            ev_end_time = ev_end_raw[11:16] if len(ev_end_raw) >= 16 else "00:00"
+            derived_key = compute_canonical_slot_key(
+                course_code="",
+                course_name=ev_summary,
+                date_str=ev_date,
+                start_time_str=ev_start_time + ":00" if len(ev_start_time) == 5 else "00:00:00",
+                end_time_str=ev_end_time + ":00" if len(ev_end_time) == 5 else "00:00:00"
+            )
+            return derived_key, "HIGH_CONFIDENCE"
+
+        return None, "NO_MATCH"
+
+    def synchronize(self, sessions: List[TimetableSession], dry_run: bool = False, allow_deletions: bool = True) -> Dict[str, Any]:
+        """
+        Executes true desired-state idempotent reconciliation with legacy adoption, duplicate repair, and LKG deletion safety:
+        1. Deduplicates desired sessions to unique canonical_slot_key map.
+        2. Fetches remote Google Calendar events with full pagination.
+        3. Classifies event ownership and correlates legacy events to canonical slot keys.
+        4. Identifies ADOPT/PATCH, NOOP, CREATE, RESCHEDULE, DUPLICATE REPAIR, and STALE REMOVAL.
+        5. Selects deterministic survivor for duplicate groups.
+        6. Enforces LKG Safety Guard: If allow_deletions=False (e.g. LKG/offline cache), ZERO stale deletions are executed.
+        7. If dry_run=True: performs NO remote mutations, returns detailed plan.
+        8. If dry_run=False: executes planned actions and updates SQLite atomically.
+        """
+        from collections import defaultdict
+        now = time.time()
+        adopted_count = 0
+        patches_count = 0
+        creates_count = 0
+        noops_count = 0
+        stale_removals_count = 0
+        rescheduled_count = 0
+        duplicate_groups_count = 0
+        proposed_duplicate_removals = 0
         errors: List[str] = []
 
-        now = time.time()
-        current_map: Dict[str, Dict[str, Any]] = {}
+        # 1. Deduplicate Desired Sessions
+        unique_sessions, desired_dups = self.deduplicate_desired_sessions(sessions)
+        desired_map: Dict[str, TimetableSession] = {s.canonical_slot_key: s for s in unique_sessions}
 
-        # 1. Fetch existing mapping
+        # 2. Fetch existing DB map
+        db_map: Dict[str, Dict[str, Any]] = {}
+        db_by_event_id: Dict[str, Dict[str, Any]] = {}
         conn = self.conn_factory()
         try:
             cur = conn.cursor()
             cur.execute(
-                "SELECT id, source_session_id, source_date, google_calendar_id, google_event_id, source_hash, status FROM timetable_events_map WHERE user_id = ? AND status = 'synced'",
+                "SELECT id, source_session_id, source_date, google_calendar_id, google_event_id, source_hash, summary, start_time, end_time, status FROM timetable_events_map WHERE user_id = ? AND status = 'synced'",
                 (self.user_id,)
             )
             for row in cur.fetchall():
-                key = f"{row[1]}:{row[2]}"  # session_id:date
-                current_map[key] = {
+                entry = {
                     "id": row[0],
                     "session_id": row[1],
                     "date": row[2],
                     "calendar_id": row[3],
                     "event_id": row[4],
-                    "hash": row[5]
+                    "hash": row[5],
+                    "summary": row[6],
+                    "start_time": row[7],
+                    "end_time": row[8]
                 }
+                db_map[row[1]] = entry
+                db_map[f"{row[1]}:{row[2]}"] = entry
+                if row[4]:
+                    db_by_event_id[row[4]] = entry
         finally:
             conn.close()
 
-        seen_keys = set()
+        db_event_ids = set(db_by_event_id.keys())
 
-        # 2. Process incoming sessions
-        for session in sessions:
-            key = f"{session.session_id}:{session.date}"
-            seen_keys.add(key)
+        # 3. Fetch Remote Google Calendar Events with pagination
+        remote_events_by_cslot: Dict[str, List[Tuple[Dict[str, Any], str]]] = defaultdict(list)
+        ambiguous_events: List[Dict[str, Any]] = []
+        unmanaged_events: List[Dict[str, Any]] = []
+        has_remote_list = hasattr(self.calendar_client, "list_managed_events") or hasattr(self.calendar_client, "list_events")
+
+        time_min = None
+        time_max = None
+        if unique_sessions:
+            dates = sorted([s.date for s in unique_sessions])
+            min_d = dates[0]
+            max_d = dates[-1]
+            time_min = f"{min_d}T00:00:00+05:30"
+            time_max = f"{max_d}T23:59:59+05:30"
+
+        if has_remote_list:
+            try:
+                if hasattr(self.calendar_client, "list_managed_events"):
+                    raw_remote = self.calendar_client.list_managed_events(self.calendar_id, time_min=time_min, time_max=time_max)
+                else:
+                    raw_remote = getattr(self.calendar_client, "list_events", lambda *a, **kw: [])(self.calendar_id)
+
+                for ev in raw_remote:
+                    ownership = self.classify_event_ownership(ev, db_event_ids)
+                    if ownership not in ("VERIFIED_NEXUSNODE", "PROBABLE_NEXUSNODE"):
+                        unmanaged_events.append(ev)
+                        continue
+
+                    cslot, conf = self.match_legacy_event(ev, unique_sessions, db_by_event_id)
+                    if conf in ("EXACT", "HIGH_CONFIDENCE") and cslot:
+                        remote_events_by_cslot[cslot].append((ev, conf))
+                    elif conf == "AMBIGUOUS":
+                        ambiguous_events.append(ev)
+                    else:
+                        ambiguous_events.append(ev)
+
+            except Exception as e:
+                logger.warning("Remote event listing not available or failed: %s", e)
+                pass
+
+        # 4. Reconciliation Planning
+        plan_creates: List[TimetableSession] = []
+        plan_updates: List[Tuple[Dict[str, Any], TimetableSession]] = []
+        plan_noops: List[Tuple[Dict[str, Any], TimetableSession]] = []
+        plan_duplicate_removals: List[Dict[str, Any]] = []
+        survivors_count = 0
+
+        # Unmatched remote events candidate pool for potential reschedule correlation
+        unmatched_remote_slots = [
+            (slot_k, ev_list)
+            for slot_k, ev_list in remote_events_by_cslot.items()
+            if slot_k not in desired_map
+        ]
+
+        for slot_key, session in desired_map.items():
             session_hash = session.deterministic_hash
+            existing_remote_matches = remote_events_by_cslot.get(slot_key, [])
 
-            if key not in current_map:
-                # CREATE
+            if existing_remote_matches:
+                adopted_count += 1
+                if len(existing_remote_matches) == 1:
+                    ev, conf = existing_remote_matches[0]
+                    ext_hash = ev.get("extendedProperties", {}).get("private", {}).get("nexusnode_hash")
+                    ext_slot = ev.get("extendedProperties", {}).get("private", {}).get("nexusnode_slot_key")
+                    db_entry = db_map.get(slot_key) or db_by_event_id.get(ev.get("id"))
+                    db_hash = db_entry.get("hash") if db_entry else None
+
+                    if ext_slot == slot_key and (ext_hash == session_hash or db_hash == session_hash):
+                        plan_noops.append((ev, session))
+                        noops_count += 1
+                    else:
+                        plan_updates.append((ev, session))
+                        patches_count += 1
+                else:
+                    duplicate_groups_count += 1
+                    survivors_count += 1
+
+                    mapped_event_id = None
+                    db_entry = db_map.get(slot_key) or db_map.get(session.session_id) or db_map.get(f"{session.session_id}:{session.date}")
+                    if db_entry:
+                        mapped_event_id = db_entry.get("event_id")
+
+                    survivor = None
+                    if mapped_event_id:
+                        for ev, _ in existing_remote_matches:
+                            if ev.get("id") == mapped_event_id:
+                                survivor = ev
+                                break
+
+                    if not survivor:
+                        survivor = sorted(
+                            [ev for ev, _ in existing_remote_matches],
+                            key=lambda x: (x.get("created") or "9999", x.get("id") or "")
+                        )[0]
+
+                    ext_hash = survivor.get("extendedProperties", {}).get("private", {}).get("nexusnode_hash")
+                    ext_slot = survivor.get("extendedProperties", {}).get("private", {}).get("nexusnode_slot_key")
+                    if ext_slot == slot_key and ext_hash == session_hash:
+                        plan_noops.append((survivor, session))
+                        noops_count += 1
+                    else:
+                        plan_updates.append((survivor, session))
+                        patches_count += 1
+
+                    if allow_deletions:
+                        for ev, _ in existing_remote_matches:
+                            if ev.get("id") != survivor.get("id"):
+                                plan_duplicate_removals.append(ev)
+                                proposed_duplicate_removals += 1
+
+            elif not has_remote_list and (slot_key in db_map or session.session_id in db_map or f"{session.session_id}:{session.date}" in db_map):
+                existing = db_map.get(slot_key) or db_map.get(session.session_id) or db_map.get(f"{session.session_id}:{session.date}")
+                adopted_count += 1
+                if existing["hash"] == session_hash:
+                    noops_count += 1
+                else:
+                    plan_updates.append(({"id": existing["event_id"], "calendar_id": existing["calendar_id"]}, session))
+                    patches_count += 1
+            else:
+                # Check if this missing session is a reschedule of an unmatched remote event
+                rescheduled_ev = None
+                c_code = (session.course_code or "").strip().lower()
+                c_name = re.sub(r'[\[\]\(\)\-\:]', ' ', (session.course_name or "")).strip().lower()
+                for old_slot_k, old_ev_list in list(unmatched_remote_slots):
+                    if len(old_ev_list) == 1:
+                        cand_ev, _ = old_ev_list[0]
+                        cand_sum = re.sub(r'[\[\]\(\)\-\:]', ' ', cand_ev.get("summary", "")).strip().lower()
+                        if (c_code and c_code in cand_sum) or (c_name in cand_sum or cand_sum in c_name):
+                            rescheduled_ev = cand_ev
+                            unmatched_remote_slots.remove((old_slot_k, old_ev_list))
+                            break
+
+                if rescheduled_ev:
+                    # In-place move/PATCH reschedule
+                    plan_updates.append((rescheduled_ev, session))
+                    patches_count += 1
+                    rescheduled_count += 1
+                    adopted_count += 1
+                else:
+                    plan_creates.append(session)
+                    creates_count += 1
+
+        # Clean verified duplicate groups for historical/unmatched slots (only if allow_deletions=True)
+        if allow_deletions:
+            for slot_key, ev_list in remote_events_by_cslot.items():
+                if slot_key not in desired_map and len(ev_list) > 1:
+                    duplicate_groups_count += 1
+                    survivors_count += 1
+                    survivor = None
+                    for ev, _ in ev_list:
+                        if ev.get("id") in db_event_ids:
+                            survivor = ev
+                            break
+                    if not survivor:
+                        survivor = sorted([ev for ev, _ in ev_list], key=lambda x: (x.get("created") or "9999", x.get("id") or ""))[0]
+
+                    for ev, _ in ev_list:
+                        if ev.get("id") != survivor.get("id"):
+                            plan_duplicate_removals.append(ev)
+                            proposed_duplicate_removals += 1
+
+        adopted_event_ids = {
+            (ev.get("id") or ev.get("event_id"))
+            for ev, _ in plan_noops + plan_updates
+            if (ev.get("id") or ev.get("event_id"))
+        }
+
+        # 5. Handle Stale Deletions (only if allow_deletions=True, e.g. authoritative live sync)
+        plan_stale_deletions: List[Dict[str, Any]] = []
+        if allow_deletions and unique_sessions:
+            dates = [s.date for s in unique_sessions]
+            min_date = min(dates)
+            max_date = max(dates)
+
+            for slot_key, ev_list in remote_events_by_cslot.items():
+                if slot_key not in desired_map:
+                    for ev, _ in ev_list:
+                        ev_id = ev.get("id") or ev.get("event_id")
+                        if ev_id in adopted_event_ids:
+                            continue
+                        if any((d.get("id") == ev_id or d.get("event_id") == ev_id) for d in plan_duplicate_removals):
+                            continue
+                        ev_date = (ev.get("start", {}).get("dateTime", "") or ev.get("start", {}).get("date", ""))[:10]
+                        if min_date <= ev_date <= max_date:
+                            plan_stale_deletions.append(ev)
+
+            for k, existing in db_map.items():
+                if ":" in k and existing["date"] >= min_date and existing["date"] <= max_date:
+                    g_id = existing.get("event_id")
+                    if g_id in adopted_event_ids:
+                        continue
+                    if existing["session_id"] not in [s.session_id for s in unique_sessions] and existing["session_id"] not in desired_map:
+                        if not any((d.get("id") == g_id or d.get("event_id") == g_id) for d in plan_stale_deletions) and not any(d.get("id") == g_id for d in plan_duplicate_removals):
+                            plan_stale_deletions.append(existing)
+
+        stale_removals_count = len(plan_stale_deletions)
+
+        # Enforce absolute deletion guard: If allow_deletions is False, zero all deletion plans
+        if not allow_deletions:
+            plan_stale_deletions = []
+            stale_removals_count = 0
+            plan_duplicate_removals = []
+            proposed_duplicate_removals = 0
+
+        # 6. Execute Plan (if not dry_run)
+        if not dry_run:
+            for session in plan_creates:
                 try:
                     g_event = self.calendar_client.create_event(self.calendar_id, session, self.user_id)
                     g_event_id = g_event.get("id")
-
-                    map_id = f"{self.user_id}:{session.session_id}:{session.date}"
-                    summary = session.course_name
+                    map_id = f"{self.user_id}:{session.canonical_slot_key}:{session.date}"
                     c = self.conn_factory()
                     try:
                         c.execute("""
                             INSERT OR REPLACE INTO timetable_events_map
                             (id, user_id, source_session_id, source_date, google_calendar_id, google_event_id, source_hash, summary, start_time, end_time, last_synced_at, status)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced')
-                        """, (map_id, self.user_id, session.session_id, session.date, self.calendar_id, g_event_id, session_hash, summary, session.start_time, session.end_time, now))
+                        """, (map_id, self.user_id, session.canonical_slot_key, session.date, self.calendar_id, g_event_id, session.deterministic_hash, session.course_name, session.start_time, session.end_time, now))
                         c.commit()
                     finally:
                         c.close()
-
-                    created += 1
                 except Exception as e:
                     errors.append(f"Failed to create event for session '{session.course_name}' on {session.date}: {str(e)}")
 
-            else:
-                existing = current_map[key]
-                if existing["hash"] == session_hash:
-                    # NO-OP: Unchanged
-                    unchanged += 1
-                else:
-                    # UPDATE: Course, room, or time modified
+            for ev, session in plan_updates:
+                ev_id = ev.get("id") or ev.get("event_id")
+                cal_id = ev.get("calendar_id", self.calendar_id)
+                try:
+                    self.calendar_client.update_event(cal_id, ev_id, session, self.user_id)
+                    map_id = f"{self.user_id}:{session.canonical_slot_key}:{session.date}"
+                    c = self.conn_factory()
                     try:
-                        self.calendar_client.update_event(existing["calendar_id"], existing["event_id"], session, self.user_id)
-                        summary = session.course_name
-                        c = self.conn_factory()
-                        try:
-                            c.execute("""
-                                UPDATE timetable_events_map
-                                SET source_hash = ?, summary = ?, start_time = ?, end_time = ?, last_synced_at = ?
-                                WHERE id = ?
-                            """, (session_hash, summary, session.start_time, session.end_time, now, existing["id"]))
-                            c.commit()
-                        finally:
-                            c.close()
+                        c.execute("""
+                            INSERT OR REPLACE INTO timetable_events_map
+                            (id, user_id, source_session_id, source_date, google_calendar_id, google_event_id, source_hash, summary, start_time, end_time, last_synced_at, status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced')
+                        """, (map_id, self.user_id, session.canonical_slot_key, session.date, cal_id, ev_id, session.deterministic_hash, session.course_name, session.start_time, session.end_time, now))
+                        c.commit()
+                    finally:
+                        c.close()
+                except Exception as e:
+                    errors.append(f"Failed to update event for session '{session.course_name}' on {session.date}: {str(e)}")
 
-                        updated += 1
-                    except Exception as e:
-                        errors.append(f"Failed to update event for session '{session.course_name}' on {session.date}: {str(e)}")
-
-        # 3. Handle Deletions for disappeared sessions within the timetable dates range
-        if sessions:
-            dates = [s.date for s in sessions]
-            min_date = min(dates)
-            max_date = max(dates)
-
-            for key, existing in current_map.items():
-                if existing["date"] >= min_date and existing["date"] <= max_date and key not in seen_keys:
+            for ev in plan_duplicate_removals:
+                ev_id = ev.get("id")
+                try:
+                    self.calendar_client.delete_event(self.calendar_id, ev_id)
+                    c = self.conn_factory()
                     try:
-                        self.calendar_client.delete_event(existing["calendar_id"], existing["event_id"])
-                        c = self.conn_factory()
-                        try:
-                            c.execute("UPDATE timetable_events_map SET status = 'cancelled', last_synced_at = ? WHERE id = ?", (now, existing["id"]))
-                            c.commit()
-                        finally:
-                            c.close()
+                        c.execute("DELETE FROM timetable_events_map WHERE google_event_id = ?", (ev_id,))
+                        c.commit()
+                    finally:
+                        c.close()
+                except Exception as e:
+                    errors.append(f"Failed to delete duplicate event '{ev_id}': {str(e)}")
 
-                        deleted += 1
-                    except Exception as e:
-                        errors.append(f"Failed to delete event '{existing['event_id']}' for vanished session on {existing['date']}: {str(e)}")
+            for ev in plan_stale_deletions:
+                g_event_id = ev.get("event_id") or ev.get("id")
+                cal_id = ev.get("calendar_id", self.calendar_id)
+                try:
+                    self.calendar_client.delete_event(cal_id, g_event_id)
+                    c = self.conn_factory()
+                    try:
+                        c.execute("UPDATE timetable_events_map SET status = 'cancelled', last_synced_at = ? WHERE google_event_id = ? OR id = ?", (now, g_event_id, ev.get("id")))
+                        c.commit()
+                    finally:
+                        c.close()
+                except Exception as e:
+                    errors.append(f"Failed to delete stale event '{g_event_id}': {str(e)}")
 
-        status_label = "success" if not errors else ("partial" if (created or updated or unchanged or deleted) else "failed")
-
-        # 4. Record history entry
-        history_id = f"sync_{int(now * 1000)}_{secrets.token_hex(4)}"
-        c = self.conn_factory()
-        try:
-            c.execute("""
-                INSERT INTO timetable_sync_history
-                (id, user_id, timestamp, sessions_seen, created_count, updated_count, deleted_count, unchanged_count, error_count, status, details)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                history_id, self.user_id, now, len(sessions),
-                created, updated, deleted, unchanged, len(errors),
-                status_label, json.dumps({"errors": errors[:10]})
-            ))
-            c.commit()
-        finally:
-            c.close()
+            status_label = "success" if not errors else ("partial" if (creates_count or patches_count or noops_count or stale_removals_count or proposed_duplicate_removals) else "failed")
+            history_id = f"sync_{int(now * 1000)}_{secrets.token_hex(4)}"
+            c = self.conn_factory()
+            try:
+                c.execute("""
+                    INSERT INTO timetable_sync_history
+                    (id, user_id, timestamp, sessions_seen, created_count, updated_count, deleted_count, unchanged_count, error_count, status, details)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    history_id, self.user_id, now, len(unique_sessions),
+                    creates_count, patches_count, stale_removals_count + len(plan_duplicate_removals), noops_count, len(errors),
+                    status_label, json.dumps({
+                        "errors": errors[:10],
+                        "duplicate_removals": len(plan_duplicate_removals),
+                        "stale_removals": stale_removals_count,
+                        "rescheduled": rescheduled_count,
+                        "allow_deletions": allow_deletions
+                    })
+                ))
+                c.commit()
+            finally:
+                c.close()
 
         return {
+            "dry_run": dry_run,
+            "desired_unique": len(unique_sessions),
             "sessions_seen": len(sessions),
-            "created": created,
-            "updated": updated,
-            "deleted": deleted,
-            "unchanged": unchanged,
+            "existing_managed": sum(len(v) for v in remote_events_by_cslot.values()),
+            "adopted": adopted_count,
+            "patches": patches_count,
+            "updates": patches_count,
+            "creates": creates_count,
+            "created": creates_count,
+            "noops": noops_count,
+            "unchanged": noops_count,
+            "rescheduled": rescheduled_count,
+            "duplicate_groups": duplicate_groups_count,
+            "survivors": survivors_count,
+            "proposed_duplicate_removals": proposed_duplicate_removals,
+            "stale_removals": stale_removals_count,
+            "deleted": stale_removals_count + proposed_duplicate_removals,
+            "ambiguous_events": len(ambiguous_events),
+            "unmanaged_events": len(unmanaged_events),
             "errors": errors,
-            "status": status_label,
+            "status": "success" if not errors else "partial",
+            "updated": patches_count,
             "timestamp": now
         }
 
@@ -1457,13 +2015,22 @@ class UpesBrowserSessionBridge:
     def cdp_url(self) -> str:
         return f"http://{self.host}:{self.port}/json"
 
-    def is_cdp_available(self) -> bool:
-        """Checks if Chrome remote debugging port is reachable."""
+    def is_cdp_available(self, use_cache: bool = False) -> bool:
+        """Checks if Chrome remote debugging port is reachable with optional TTL caching."""
+        now = time.time()
+        if use_cache and hasattr(self, "_cdp_cached_result") and hasattr(self, "_cdp_cached_at"):
+            if now - self._cdp_cached_at < 10.0:
+                return self._cdp_cached_result
         try:
-            r = requests.get(self.cdp_url, timeout=self.timeout)
-            return r.status_code == 200
+            probe_timeout = 0.25 if (use_cache and not getattr(self, "_cdp_cached_result", False)) else self.timeout
+            r = requests.get(self.cdp_url, timeout=probe_timeout)
+            res = (r.status_code == 200)
         except Exception:
-            return False
+            res = False
+        if use_cache:
+            self._cdp_cached_result = res
+            self._cdp_cached_at = now
+        return res
 
     def list_browser_targets(self) -> List[Dict[str, Any]]:
         """Retrieves list of active page targets from CDP."""
@@ -1684,7 +2251,10 @@ class UpesSessionBroker:
         UpesSessionJournal.recover_and_replay_journal(self.service, user_id)
 
         full = self.service.get_full_upes_session(user_id)
-        browser_avail = self.browser_bridge.is_cdp_available()
+        try:
+            browser_avail = self.browser_bridge.is_cdp_available(use_cache=True)
+        except TypeError:
+            browser_avail = self.browser_bridge.is_cdp_available()
         browser_tab = self.browser_bridge.find_upes_target() is not None if browser_avail else False
 
         if not full or not full.get("access_token"):
@@ -1895,6 +2465,13 @@ class UpesSessionBroker:
         now = time.time()
         UpesSessionJournal.recover_and_replay_journal(self.service, user_id)
 
+        if hasattr(self.service, "auth_manager") and self.service.auth_manager:
+            try:
+                tok, code, api_url, exp = self.service.auth_manager.ensure_authenticated(user_id)
+                return (tok, code, api_url, exp), None
+            except Exception as e:
+                logger.debug(f"[AUTH_BROKER] auth_manager.ensure_authenticated failed: {e}")
+
         full = self.service.get_full_upes_session(user_id)
         if full and full.get("access_token"):
             expires_at = full.get("expires_at")
@@ -1972,6 +2549,19 @@ class TimetableService:
     def __init__(self, conn_factory):
         self.conn_factory = conn_factory
         self.session_broker = UpesSessionBroker(self)
+        self._sessions_cache: Dict[str, Tuple[List[Any], List[str], float, str]] = {}
+
+    def invalidate_sessions_cache(self, user_id: Optional[str] = None):
+        """Invalidates in-memory parsed sessions cache."""
+        if not hasattr(self, "_sessions_cache"):
+            self._sessions_cache = {}
+            return
+        if user_id:
+            keys_to_del = [k for k in self._sessions_cache if k.startswith(f"{user_id}:")]
+            for k in keys_to_del:
+                self._sessions_cache.pop(k, None)
+        else:
+            self._sessions_cache.clear()
 
     def save_oauth_tokens(self, user_id: str, token_data: Dict[str, Any], calendar_id: str = "primary", email: Optional[str] = None):
         """Encrypts and persists Google OAuth tokens."""
@@ -2070,6 +2660,7 @@ class TimetableService:
         except Exception:
             pass
 
+        self.invalidate_sessions_cache(user_id)
         return True, "Timetable stored successfully.", len(sessions)
 
     def save_upes_session(
@@ -2088,9 +2679,22 @@ class TimetableService:
     ):
         """Encrypts and persists complete UPES portal session bundle."""
         token_clean = access_token.strip() if access_token else ""
-        enc_access = OAuthTokenCrypto.encrypt({"access_token": token_clean})
-        enc_refresh = OAuthTokenCrypto.encrypt({"refresh_token": refresh_token.strip()}) if refresh_token else None
-        enc_cookies = OAuthTokenCrypto.encrypt(cookies) if cookies else None
+        enc_access = UpesSessionCrypto.encrypt({"access_token": token_clean}) if token_clean else None
+        enc_refresh = UpesSessionCrypto.encrypt({"refresh_token": refresh_token.strip()}) if refresh_token else None
+        
+        cookie_payload = None
+        if cookies:
+            if isinstance(cookies, dict):
+                cookie_payload = cookies
+            elif isinstance(cookies, str):
+                cookie_payload = {}
+                for part in cookies.split(";"):
+                    if "=" in part:
+                        ck, cv = part.strip().split("=", 1)
+                        cookie_payload[ck] = cv
+            else:
+                cookie_payload = {"raw": str(cookies)}
+        enc_cookies = UpesSessionCrypto.encrypt(cookie_payload) if cookie_payload else None
         now = time.time()
 
         if expires_at is None and token_clean:
@@ -2099,13 +2703,25 @@ class TimetableService:
         conn = self.conn_factory()
         try:
             conn.execute("""
-                INSERT OR REPLACE INTO upes_auth_sessions
+                INSERT INTO upes_auth_sessions
                 (user_id, encrypted_access_token, student_code, api_url, expires_at,
                  encrypted_refresh_token, encrypted_cookies, cookie_expires_at,
                  credential_generation, last_refresh_at, last_refresh_status,
                  created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         COALESCE((SELECT created_at FROM upes_auth_sessions WHERE user_id = ?), ?), ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    encrypted_access_token = COALESCE(excluded.encrypted_access_token, upes_auth_sessions.encrypted_access_token),
+                    student_code = CASE WHEN excluded.student_code != '' THEN excluded.student_code ELSE upes_auth_sessions.student_code END,
+                    api_url = COALESCE(excluded.api_url, upes_auth_sessions.api_url),
+                    expires_at = COALESCE(excluded.expires_at, upes_auth_sessions.expires_at),
+                    encrypted_refresh_token = COALESCE(excluded.encrypted_refresh_token, upes_auth_sessions.encrypted_refresh_token),
+                    encrypted_cookies = COALESCE(excluded.encrypted_cookies, upes_auth_sessions.encrypted_cookies),
+                    cookie_expires_at = COALESCE(excluded.cookie_expires_at, upes_auth_sessions.cookie_expires_at),
+                    credential_generation = COALESCE(excluded.credential_generation, upes_auth_sessions.credential_generation),
+                    last_refresh_at = COALESCE(excluded.last_refresh_at, upes_auth_sessions.last_refresh_at),
+                    last_refresh_status = COALESCE(excluded.last_refresh_status, upes_auth_sessions.last_refresh_status),
+                    updated_at = excluded.updated_at
             """, (
                 user_id, enc_access, student_code.strip() if student_code else "", api_url, expires_at,
                 enc_refresh, enc_cookies, cookie_expires_at,
@@ -2132,13 +2748,19 @@ class TimetableService:
             if not row:
                 return None
 
-            access_data = OAuthTokenCrypto.decrypt(row[0]) if row[0] else None
+            access_data = UpesSessionCrypto.decrypt(row[0]) if row[0] else None
+            if not access_data and row[0]:
+                access_data = OAuthTokenCrypto.decrypt(row[0])
             access_token = access_data.get("access_token") if access_data else None
 
-            refresh_data = OAuthTokenCrypto.decrypt(row[4]) if row[4] else None
+            refresh_data = UpesSessionCrypto.decrypt(row[4]) if row[4] else None
+            if not refresh_data and row[4]:
+                refresh_data = OAuthTokenCrypto.decrypt(row[4])
             refresh_token = refresh_data.get("refresh_token") if refresh_data else None
 
-            cookies_data = OAuthTokenCrypto.decrypt(row[5]) if row[5] else None
+            cookies_data = UpesSessionCrypto.decrypt(row[5]) if row[5] else None
+            if not cookies_data and row[5]:
+                cookies_data = OAuthTokenCrypto.decrypt(row[5])
             cookies = cookies_data if isinstance(cookies_data, dict) else None
 
             return {
@@ -2183,6 +2805,83 @@ class TimetableService:
         finally:
             conn.close()
 
+    def validate_live_timetable_payload(self, raw_items: Any, user_id: str) -> Tuple[bool, str, List[TimetableSession]]:
+        """
+        Validates a fresh live UPES timetable payload before persisting to user_timetables.
+        Enforces:
+          - Non-empty, properly structured payload
+          - Session records parse with required fields (course_name, date, start_time, end_time, canonical_slot_key)
+          - Date sanity (YYYY-MM-DD, plausible year range 2020-2035)
+          - Canonical slot key uniqueness
+          - Anomaly & Suspicious Drop Protection:
+            If previous authoritative timetable had >= 10 sessions and live payload returns 0 (or drops suspiciously from >=50 to <5),
+            reject payload, preserve LKG, and report SUSPICIOUS_EMPTY_RESPONSE.
+        Returns (is_valid: bool, reason: str, sessions: List[TimetableSession]).
+        """
+        if raw_items is None:
+            return False, "UPES API returned null/None timetable payload", []
+
+        sessions, parse_errs = parse_timetable_json(raw_items)
+
+        # Check existing stored session count for anomaly detection
+        old_count = 0
+        conn = self.conn_factory()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT raw_json FROM user_timetables WHERE user_id = ?", (user_id,))
+            row = cur.fetchone()
+            if row and row[0]:
+                try:
+                    old_sess, _ = parse_timetable_json(row[0])
+                    old_count = len(old_sess)
+                except Exception:
+                    pass
+        finally:
+            conn.close()
+
+        # Suspicious empty or catastrophic drop protection
+        if old_count >= 10 and len(sessions) == 0:
+            logger.warning(f"[LIVE_VALIDATION] Suspicious empty payload for user '{user_id}' (expected ~{old_count} sessions); preserving LKG.")
+            return False, f"Suspicious empty timetable payload (expected ~{old_count} sessions); preserved existing schedule.", []
+
+        if old_count >= 50 and len(sessions) < 5:
+            logger.warning(f"[LIVE_VALIDATION] Suspicious timetable drop for user '{user_id}' ({len(sessions)} vs previous {old_count}); preserving LKG.")
+            return False, f"Suspicious timetable payload drop ({len(sessions)} vs previous {old_count}); preserved existing schedule.", []
+
+        if not sessions and parse_errs:
+            return False, f"Malformed UPES Timetable Data: {'; '.join(parse_errs[:5])}", []
+
+        if not sessions:
+            return False, "UPES API returned empty timetable payload; preserved existing schedule.", []
+
+        # Validate structure and required fields for each session
+        valid_sessions: List[TimetableSession] = []
+        seen_slot_keys = set()
+        for idx, s in enumerate(sessions):
+            if not s.course_name or not s.start_time or not s.end_time or not s.date:
+                continue
+            # Date format sanity
+            if len(s.date) != 10 or s.date[4] != '-' or s.date[7] != '-':
+                continue
+            try:
+                yr = int(s.date[:4])
+                if yr < 2020 or yr > 2035:
+                    continue
+            except ValueError:
+                continue
+
+            # Deduplicate by canonical slot key
+            k = s.canonical_slot_key
+            if k in seen_slot_keys:
+                continue
+            seen_slot_keys.add(k)
+            valid_sessions.append(s)
+
+        if not valid_sessions:
+            return False, "No valid timetable sessions survived sanity validation.", []
+
+        return True, "OK", valid_sessions
+
     def fetch_and_store_upes_timetable(self, user_id: str) -> Tuple[bool, str, int]:
         """
         Fetches live timetable from UPES API using stored session, validates, and updates local database.
@@ -2193,7 +2892,7 @@ class TimetableService:
 
         if err or raw_items is None:
             conn = self.conn_factory()
-            status_label = "auth_required" if "auth_required" in (err or "") else "fetch_failed"
+            status_label = "auth_required" if "auth_required" in (err or "").lower() else "fetch_failed"
             try:
                 conn.execute("""
                     INSERT INTO timetable_sync_history
@@ -2209,24 +2908,69 @@ class TimetableService:
                 conn.close()
             return False, f"UPES Fetch Failed: {err}", 0
 
-        # Validate that sessions parse correctly
-        sessions, parse_errs = parse_timetable_json(raw_items)
-        if not sessions and parse_errs:
-            return False, f"Malformed UPES Timetable Data: {'; '.join(parse_errs)}", 0
-
-        if not sessions:
-            return False, "UPES API returned empty timetable payload; preserved existing schedule.", 0
+        # Run rigorous live source validation
+        is_valid, val_reason, sessions = self.validate_live_timetable_payload(raw_items, user_id)
+        if not is_valid:
+            conn = self.conn_factory()
+            status_label = "suspicious_empty" if "suspicious" in val_reason.lower() else "validation_failed"
+            try:
+                conn.execute("""
+                    INSERT INTO timetable_sync_history
+                    (id, user_id, timestamp, sessions_seen, created_count, updated_count, deleted_count, unchanged_count, error_count, status, details)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    f"upes_fetch_{int(now)}_{secrets.token_hex(4)}",
+                    user_id, now, 0, 0, 0, 0, 0, 1, status_label,
+                    json.dumps({"validation_error": val_reason})
+                ))
+                conn.commit()
+            finally:
+                conn.close()
+            return False, val_reason, 0
 
         # Persist the newly fetched raw JSON
         raw_json_str = json.dumps(raw_items)
         return self.upload_timetable(user_id, raw_json_str)
 
-    def load_timetable_sessions(self, user_id: str, rolling_two_weeks: bool = True) -> Tuple[List[TimetableSession], List[str]]:
+    def sync_timetable(self, user_id: str) -> Dict[str, Any]:
+        """
+        Executes live UPES timetable refresh ONLY (no calendar mutations).
+        Returns provenance and validation telemetry.
+        """
+        success, msg, count = self.fetch_and_store_upes_timetable(user_id)
+        now = time.time()
+        is_auth_req = "auth_required" in (msg or "").lower()
+        upes_refresh_status = "SUCCESS" if success else ("AUTH_REQUIRED" if is_auth_req else "FAILED")
+        timetable_status = "UPDATED" if success else "PRESERVED_LKG"
+        return {
+            "status": "success" if success else "failed",
+            "source": "live" if success else "lkg",
+            "upes_refresh_status": upes_refresh_status,
+            "timetable_status": timetable_status,
+            "sessions_count": count,
+            "message": msg,
+            "stale": not success,
+            "timestamp": now
+        }
+
+    def load_timetable_sessions(self, user_id: str, rolling_two_weeks: bool = False, policy: str = "FULL_SEMESTER") -> Tuple[List[TimetableSession], List[str]]:
         """
         Loads timetable sessions from user's DB record or vault file fallback.
-        When rolling_two_weeks=True (default), filters sessions to the dynamic two-week window
-        [current week Monday, next week Sunday] in Asia/Kolkata timezone.
+        When policy == 'ROLLING_WINDOW' or rolling_two_weeks is explicitly True, filters sessions to the 2-week rolling window.
+        By default (policy == 'FULL_SEMESTER'), returns the complete normalized semester schedule.
+        Caches parsed session models in memory for 300s to avoid expensive JSON deserialization.
         """
+        cache_key = f"{user_id}:{policy}:{rolling_two_weeks}"
+        now = time.time()
+        if not hasattr(self, "_sessions_cache"):
+            self._sessions_cache = {}
+
+        cached = self._sessions_cache.get(cache_key)
+        if cached:
+            c_sessions, c_errors, c_ts = cached
+            if (now - c_ts) < 300.0:
+                return c_sessions, c_errors
+
         raw_json = None
         conn = self.conn_factory()
         try:
@@ -2238,7 +2982,7 @@ class TimetableService:
         finally:
             conn.close()
 
-        if not raw_json and os.path.exists(config.UPES_TIMETABLE_JSON_PATH):
+        if not raw_json and user_id == "admin" and os.path.exists(config.UPES_TIMETABLE_JSON_PATH):
             try:
                 with open(config.UPES_TIMETABLE_JSON_PATH, "r", encoding="utf-8") as f:
                     raw_json = f.read()
@@ -2249,55 +2993,137 @@ class TimetableService:
             return [], ["No timetable data found. Upload or authenticate UPES timetable first."]
 
         sessions, errors = parse_timetable_json(raw_json)
-        if rolling_two_weeks and sessions:
+        if (rolling_two_weeks or policy == "ROLLING_WINDOW") and sessions:
             w1_start, _, _, w2_end = get_rolling_two_week_window()
             two_week_sessions = filter_sessions_by_window(sessions, w1_start, w2_end)
+            self._sessions_cache[cache_key] = (two_week_sessions, errors, now)
             return two_week_sessions, errors
 
+        self._sessions_cache[cache_key] = (sessions, errors, now)
         return sessions, errors
 
-    def sync_user_timetable(self, user_id: str, force_calendar_id: Optional[str] = None) -> Dict[str, Any]:
-        """Executes full synchronization pipeline for a given user under a lease lock."""
+    def sync_user_timetable(
+        self,
+        user_id: str,
+        force_calendar_id: Optional[str] = None,
+        policy: str = "FULL_SEMESTER",
+        dry_run: bool = False,
+        live_fetch: bool = True
+    ) -> Dict[str, Any]:
+        """
+        One authoritative production synchronization pipeline for a given user under a lease lock.
+        Primary Path (live_fetch=True):
+            1. Resolve/renew UPES authentication
+            2. Live timetable fetch from UPES API
+            3. Validate fresh response
+            4. Persist authoritative timetable to SQLite
+            5. Reconcile Google Calendar with authoritative timetable (allow_deletions=True)
+        Fallback / Guard Path:
+            If UPES live fetch/auth/validation fails:
+              - retain previous LKG timetable (do not overwrite SQLite)
+              - source='lkg', stale=True, upes_refresh_status='FAILED'|'AUTH_REQUIRED'
+              - reconcile Google Calendar safely with allow_deletions=False (Calendar DELETE=0)
+              - report overall status truthfully (never report sync success on fallback)
+        Cache-Only Path (live_fetch=False, for internal/admin calendar.reconcile_cached):
+            - source='cached', stale=False, upes_refresh_status='SKIPPED', allow_deletions=False
+        """
         # 1. Acquire Distributed Lease Lock
         lease = DatabaseSyncLease(self.conn_factory, user_id)
         if not lease.acquire():
             return {
                 "status": "locked",
                 "message": f"Synchronization already running for user '{user_id}'.",
+                "source": "locked",
+                "upes_refresh_status": "SKIPPED",
+                "timetable_status": "UNCHANGED",
+                "calendar_status": "PRESERVED",
                 "sessions_seen": 0, "created": 0, "updated": 0, "deleted": 0, "unchanged": 0,
-                "errors": ["Sync lock active"]
+                "errors": ["Sync lock active"],
+                "stale": False
             }
 
         try:
-            # 2. If UPES portal session is configured, attempt live fetch & store
+            # 2. UPES Timetable Fetch & Validation Stage
             fetch_msg = ""
-            upes_session = self.get_upes_session(user_id)
-            if upes_session:
+            fetch_success = False
+            if live_fetch:
                 fetch_success, fetch_msg, _ = self.fetch_and_store_upes_timetable(user_id)
+                if fetch_success:
+                    source = "live"
+                    upes_refresh_status = "SUCCESS"
+                    timetable_status = "UPDATED"
+                    allow_deletions = True
+                    stale = False
+                else:
+                    is_auth = "auth_required" in (fetch_msg or "").lower()
+                    upes_refresh_status = "AUTH_REQUIRED" if is_auth else "FAILED"
+                    timetable_status = "PRESERVED_LKG"
+                    source = "lkg"
+                    allow_deletions = False
+                    stale = True
+            else:
+                fetch_msg = "Live UPES fetch skipped (cache-only mode)"
+                source = "cached"
+                upes_refresh_status = "SKIPPED"
+                timetable_status = "PRESERVED_LKG"
+                allow_deletions = False
+                stale = False
 
             # 3. Check OAuth connection
             oauth_info = self.get_oauth_tokens(user_id)
             if not oauth_info:
                 return {
-                    "status": "error",
+                    "status": "failed" if live_fetch else "error",
                     "message": "Google Calendar is not connected. Authorize Google account first.",
+                    "source": source,
+                    "upes_refresh_status": upes_refresh_status,
+                    "upes_fetch_status": fetch_msg or "Google account not connected",
+                    "timetable_status": timetable_status,
+                    "calendar_status": "AUTH_REQUIRED",
+                    "stale": stale,
                     "sessions_seen": 0, "created": 0, "updated": 0, "deleted": 0, "unchanged": 0,
                     "errors": ["Google account not connected"],
-                    "upes_fetch_status": fetch_msg or "UPES session not configured"
+                    "stages": {
+                        "upes_refresh": {"status": upes_refresh_status, "source": source, "message": fetch_msg},
+                        "timetable": {"status": timetable_status, "sessions": 0},
+                        "calendar": {"status": "AUTH_REQUIRED", "created": 0, "updated": 0, "deleted": 0, "unchanged": 0}
+                    }
                 }
 
             token_data, default_cal_id, email = oauth_info
             calendar_id = force_calendar_id or default_cal_id or "primary"
 
-            # 4. Load Sessions (authoritative local database)
-            sessions, load_errs = self.load_timetable_sessions(user_id)
+            # 4. Load Sessions (authoritative full semester local database)
+            sessions, load_errs = self.load_timetable_sessions(user_id, rolling_two_weeks=(policy == "ROLLING_WINDOW"), policy=policy)
+            tt_timestamp = None
+            c = self.conn_factory()
+            try:
+                cur = c.cursor()
+                cur.execute("SELECT updated_at FROM user_timetables WHERE user_id = ?", (user_id,))
+                t_row = cur.fetchone()
+                if t_row:
+                    tt_timestamp = t_row[0]
+            finally:
+                c.close()
+
             if not sessions:
                 return {
                     "status": "empty",
                     "message": "No valid timetable sessions to synchronize.",
+                    "source": source,
+                    "upes_refresh_status": upes_refresh_status,
+                    "timetable_status": timetable_status,
+                    "calendar_status": "PRESERVED",
                     "sessions_seen": 0, "created": 0, "updated": 0, "deleted": 0, "unchanged": 0,
                     "errors": load_errs,
-                    "upes_fetch_status": fetch_msg
+                    "upes_fetch_status": fetch_msg,
+                    "timetable_timestamp": tt_timestamp,
+                    "stale": stale,
+                    "stages": {
+                        "upes_refresh": {"status": upes_refresh_status, "source": source, "message": fetch_msg},
+                        "timetable": {"status": timetable_status, "sessions": 0},
+                        "calendar": {"status": "PRESERVED", "created": 0, "updated": 0, "deleted": 0, "unchanged": 0}
+                    }
                 }
 
             # 5. Instantiate API Client with callback to update refreshed token
@@ -2308,14 +3134,101 @@ class TimetableService:
 
             # 6. Synchronize with Google Calendar
             synchronizer = TimetableSynchronizer(self.conn_factory, user_id, client, calendar_id)
-            result = synchronizer.synchronize(sessions)
-            result["connected_email"] = email
-            result["calendar_id"] = calendar_id
-            result["upes_fetch_status"] = fetch_msg or "OK"
+
+            cal_errors: List[str] = []
+            try:
+                recon_res = synchronizer.synchronize(sessions, dry_run=dry_run, allow_deletions=allow_deletions)
+                cal_status = "RECONCILED" if recon_res.get("status") == "success" else "ERROR"
+                cal_errors = recon_res.get("errors", [])
+                created = recon_res.get("created", 0)
+                updated = recon_res.get("updated", 0)
+                deleted = recon_res.get("deleted", 0)
+                unchanged = recon_res.get("unchanged", 0)
+            except GoogleCalendarError as gce:
+                is_oauth_invalid = ("invalid_grant" in str(gce).lower() or "auth" in str(gce).lower() or gce.status_code == 401)
+                cal_status = "AUTH_REQUIRED" if is_oauth_invalid else "ERROR"
+                cal_errors = [str(gce)]
+                created, updated, deleted, unchanged = 0, 0, 0, 0
+                recon_res = {}
+            except Exception as e:
+                cal_status = "ERROR"
+                cal_errors = [str(e)]
+                created, updated, deleted, unchanged = 0, 0, 0, 0
+                recon_res = {}
+
+            # If live UPES fetch failed or allow_deletions was False, deletions are guaranteed 0
+            if not allow_deletions:
+                deleted = 0
+                if cal_status == "RECONCILED" and not fetch_success:
+                    cal_status = "PRESERVED"
+
+            # Determine overall outcome status
+            if upes_refresh_status in ("FAILED", "AUTH_REQUIRED"):
+                overall_status = "failed"
+            elif (upes_refresh_status in ("SUCCESS", "SKIPPED") and cal_status in ("RECONCILED", "PRESERVED") and not cal_errors):
+                overall_status = "success"
+            elif (created or updated or unchanged) and not cal_errors:
+                overall_status = "partial"
+            else:
+                overall_status = "failed"
+
+            result = {
+                "status": overall_status,
+                "source": source,
+                "upes_refresh_status": upes_refresh_status,
+                "upes_fetch_status": fetch_msg or ("OK" if fetch_success else "LKG_FALLBACK"),
+                "timetable_status": timetable_status,
+                "calendar_status": cal_status,
+                "connected_email": email,
+                "calendar_id": calendar_id,
+                "policy": policy,
+                "sessions_seen": len(sessions),
+                "created": created,
+                "updated": updated,
+                "deleted": deleted,
+                "unchanged": unchanged,
+                "dry_run": dry_run,
+                "timetable_timestamp": tt_timestamp,
+                "stale": stale,
+                "errors": cal_errors,
+                "stages": {
+                    "upes_refresh": {
+                        "status": upes_refresh_status,
+                        "source": source,
+                        "message": fetch_msg or "OK",
+                        "stale": stale
+                    },
+                    "timetable": {
+                        "status": timetable_status,
+                        "sessions": len(sessions),
+                        "timestamp": tt_timestamp
+                    },
+                    "calendar": {
+                        "status": cal_status,
+                        "created": created,
+                        "updated": updated,
+                        "deleted": deleted,
+                        "unchanged": unchanged,
+                        "calendar_id": calendar_id
+                    }
+                }
+            }
+            if recon_res:
+                for k in ["desired_unique", "existing_managed", "adopted", "rescheduled"]:
+                    if k in recon_res:
+                        result[k] = recon_res[k]
+
             return result
 
         finally:
             lease.release()
+
+    def get_calendar_sync_status(self, user_id: str) -> Dict[str, Any]:
+        """Returns consolidated calendar sync telemetry and configuration."""
+        status = self.get_user_status(user_id)
+        status["policy"] = "FULL_SEMESTER"
+        status["cadence_hours"] = 3
+        return status
 
     def sync_all_active_users(self) -> Dict[str, Any]:
         """Called every 3 hours by SchedulerDaemon to synchronize all users with connected Google accounts or UPES sessions."""
@@ -2337,7 +3250,7 @@ class TimetableService:
         summaries = {}
         for uid in sorted(users_to_sync):
             try:
-                summaries[uid] = self.sync_user_timetable(uid)
+                summaries[uid] = self.sync_user_timetable(uid, live_fetch=True)
             except Exception as e:
                 summaries[uid] = {"status": "failed", "errors": [str(e)]}
 

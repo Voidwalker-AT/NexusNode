@@ -1,0 +1,94 @@
+{
+  "Status": "success",
+  "StudentUniqueId": "00000000-0000-0000-0000-000000000001",
+  "TranscriptData": [
+    {
+      "TermCode": "SEM1",
+      "TermName": "Semester I",
+      "AcademicYear": "2022-2023",
+      "SGPA": 8.25,
+      "CGPA": 8.25,
+      "TotalCredits": 20.0,
+      "EarnedCredits": 20.0,
+      "Courses": [
+        {
+          "CourseCode": "MATH1001",
+          "CourseName": "Engineering Mathematics I",
+          "Credits": 4.0,
+          "Grade": "A",
+          "GradePoint": 8.0,
+          "Attempt": 1,
+          "NonRegularExamStatus": "Regular",
+          "IsBacklog": false,
+          "ResultStatus": "PASS"
+        },
+        {
+          "CourseCode": "PHYS1001",
+          "CourseName": "Engineering Physics",
+          "Credits": 4.0,
+          "Grade": "A+",
+          "GradePoint": 9.0,
+          "Attempt": 1,
+          "NonRegularExamStatus": "Regular",
+          "IsBacklog": false,
+          "ResultStatus": "PASS"
+        },
+        {
+          "CourseCode": "CSEG1001",
+          "CourseName": "Programming for Problem Solving",
+          "Credits": 4.0,
+          "Grade": "A",
+          "GradePoint": 8.0,
+          "Attempt": 1,
+          "NonRegularExamStatus": "Regular",
+          "IsBacklog": false,
+          "ResultStatus": "PASS"
+        },
+        {
+          "CourseCode": "EEEN1001",
+          "CourseName": "Basic Electrical Engineering",
+          "Credits": 4.0,
+          "Grade": "B+",
+          "GradePoint": 7.0,
+          "Attempt": 1,
+          "NonRegularExamStatus": "Regular",
+          "IsBacklog": false,
+          "ResultStatus": "PASS"
+        },
+        {
+          "CourseCode": "COMM1001",
+          "CourseName": "English Communication",
+          "Credits": 2.0,
+          "Grade": "O",
+          "GradePoint": 10.0,
+          "Attempt": 1,
+          "NonRegularExamStatus": "Regular",
+          "IsBacklog": false,
+          "ResultStatus": "PASS"
+        },
+        {
+          "CourseCode": "PHYS1101",
+          "CourseName": "Physics Lab",
+          "Credits": 1.0,
+          "Grade": "O",
+          "GradePoint": 10.0,
+          "Attempt": 1,
+          "NonRegularExamStatus": "Regular",
+          "IsBacklog": false,
+          "ResultStatus": "PASS"
+        },
+        {
+          "CourseCode": "CSEG1101",
+          "CourseName": "Programming Lab",
+          "Credits": 1.0,
+          "Grade": "A+",
+          "GradePoint": 9.0,
+          "Attempt": 1,
+          "NonRegularExamStatus": "Regular",
+          "IsBacklog": false,
+          "ResultStatus": "PASS"
+        }
+      ]
+    }
+  ]
+}

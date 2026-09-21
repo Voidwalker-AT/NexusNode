@@ -58,6 +58,14 @@ class TestFunctionalityRepairPass(unittest.TestCase):
         res_usr = cls.client.post('/api/auth/login', json={"user_id": "func_user", "password": "UserPass123!"})
         cls.user_token = res_usr.get_json()["token"]
 
+    @classmethod
+    def tearDownClass(cls):
+        with app.DB_LOCK:
+            conn = app.get_db_connection()
+            conn.execute("DELETE FROM users WHERE user_id IN ('func_admin', 'func_user')")
+            conn.commit()
+            conn.close()
+
     def setUp(self):
         self.admin_headers = {"Authorization": f"Bearer {self.admin_token}"}
         self.user_headers = {"Authorization": f"Bearer {self.user_token}"}
