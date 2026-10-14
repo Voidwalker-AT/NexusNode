@@ -3046,8 +3046,9 @@ class TimetableService:
             # 2. UPES Timetable Fetch & Validation Stage
             fetch_msg = ""
             fetch_success = False
+            fetch_count = 0
             if live_fetch:
-                fetch_success, fetch_msg, _ = self.fetch_and_store_upes_timetable(user_id)
+                fetch_success, fetch_msg, fetch_count = self.fetch_and_store_upes_timetable(user_id)
                 if fetch_success:
                     source = "live"
                     upes_refresh_status = "SUCCESS"
@@ -3072,20 +3073,23 @@ class TimetableService:
             # 3. Check OAuth connection
             oauth_info = self.get_oauth_tokens(user_id)
             if not oauth_info:
+                # UPES timetable refresh succeeds independently of Google Calendar connection
+                overall_status = "partial" if fetch_success else ("failed" if live_fetch else "error")
+                cal_msg = "Timetable successfully updated from UPES, but Google Calendar is not connected." if fetch_success else "Google Calendar is not connected. Authorize Google account first."
                 return {
-                    "status": "failed" if live_fetch else "error",
-                    "message": "Google Calendar is not connected. Authorize Google account first.",
+                    "status": overall_status,
+                    "message": cal_msg,
                     "source": source,
                     "upes_refresh_status": upes_refresh_status,
                     "upes_fetch_status": fetch_msg or "Google account not connected",
                     "timetable_status": timetable_status,
                     "calendar_status": "AUTH_REQUIRED",
                     "stale": stale,
-                    "sessions_seen": 0, "created": 0, "updated": 0, "deleted": 0, "unchanged": 0,
-                    "errors": ["Google account not connected"],
+                    "sessions_seen": fetch_count if fetch_success else 0, "created": 0, "updated": 0, "deleted": 0, "unchanged": 0,
+                    "errors": [] if fetch_success else ["Google account not connected"],
                     "stages": {
                         "upes_refresh": {"status": upes_refresh_status, "source": source, "message": fetch_msg},
-                        "timetable": {"status": timetable_status, "sessions": 0},
+                        "timetable": {"status": timetable_status, "sessions": fetch_count if fetch_success else 0},
                         "calendar": {"status": "AUTH_REQUIRED", "created": 0, "updated": 0, "deleted": 0, "unchanged": 0}
                     }
                 }
