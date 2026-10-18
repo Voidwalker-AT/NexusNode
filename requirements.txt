@@ -3,3 +3,5 @@ waitress>=2.1.2
 requests>=2.31.0
 yt-dlp>=2024.3.10
 cryptography>=42.0.0
+python-dotenv>=1.0.0
+psutil>=5.9.0
