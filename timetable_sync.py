@@ -2556,6 +2556,19 @@ class UpesSessionBroker:
 
         return self.execute_with_retry(user_id, _call)
 
+    def get_session(self, user_id: str):
+        """Returns session adapter with access_token and student_unique_id for downstream consumers."""
+        session_tuple, err = self.resolve_session(user_id)
+        if session_tuple:
+            from types import SimpleNamespace
+            return SimpleNamespace(
+                access_token=session_tuple[0],
+                student_unique_id=session_tuple[1],
+                api_url=session_tuple[2],
+                expires_at=session_tuple[3]
+            )
+        return None
+
 
 class TimetableService:
     """Service facade connecting storage, OAuth, parsing, synchronizer, and scheduler."""

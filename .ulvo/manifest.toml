@@ -12,7 +12,7 @@ requirements = ["requirements.txt"]
 [lifecycle]
 policy = "ephemeral"
 lease_timeout_seconds = 300
-allow_reclaim_on_quiescence = false
+allow_reclaim_on_quiescence = true
 
 [execution]
 entry_point = "app.py"
