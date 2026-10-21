@@ -44,12 +44,20 @@ class Phase1ADecouplingTests(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmp_dir, "test_phase1a.db")
+        self.orig_unified_db = config.UNIFIED_DB_FILE
+        self.orig_db_path = config.DB_PATH
+        config.UNIFIED_DB_FILE = self.db_path
+        config.DB_PATH = self.db_path
+        config.DB_FILE = self.db_path
         build_test_db(self.db_path)
         self.conn_factory = lambda: sqlite3.connect(self.db_path)
         self.service = TimetableService(self.conn_factory)
         self.att_service = AttendanceService(self.conn_factory, timetable_service=self.service)
 
     def tearDown(self):
+        config.UNIFIED_DB_FILE = self.orig_unified_db
+        config.DB_PATH = self.orig_db_path
+        config.DB_FILE = self.orig_unified_db
         try:
             if os.path.exists(self.db_path):
                 os.remove(self.db_path)

@@ -9,13 +9,13 @@ import time
 HOST = "192.168.29.21"
 PORT = 8022
 USER = "u0_a208"
-PASS = "anmol2005"
+PASS = os.environ.get("BG6_SSH_PASSWORD", "")
 LAN_URL = f"http://{HOST}:5000"
 PUB_URL = "https://k09oezeyib.localto.net"
 
 def mint_admin_token():
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
     ssh.connect(HOST, port=PORT, username=USER, password=PASS, timeout=10)
 
     verifier = secrets.token_urlsafe(32)
@@ -151,7 +151,7 @@ def main():
     print("3. BG6 PROCESS HYGIENE & CHROMIUM CHECK")
     print("="*70)
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
     ssh.connect(HOST, port=PORT, username=USER, password=PASS, timeout=10)
     stdin, stdout, stderr = ssh.exec_command("pgrep -l chromium || echo 'NO_CHROMIUM'")
     chrom_out = stdout.read().decode().strip()

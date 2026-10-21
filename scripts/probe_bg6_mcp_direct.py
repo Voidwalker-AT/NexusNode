@@ -3,8 +3,8 @@ import os
 
 def run_probe():
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect('192.168.29.21', port=8022, username='u0_a208', password=os.environ.get('BG6_SSH_PASSWORD', 'anmol2005'), timeout=10)
+    client.set_missing_host_key_policy(paramiko.WarningPolicy())
+    client.connect('192.168.29.21', port=8022, username='u0_a208', password=os.environ.get('BG6_SSH_PASSWORD', os.environ.get("BG6_SSH_PASSWORD", "")), timeout=10)
 
     probe_py = """
 import requests, json

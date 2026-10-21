@@ -18,14 +18,14 @@ from selenium.webdriver.support import expected_conditions as EC
 HOST = "192.168.29.21"
 PORT = 8022
 USER = "u0_a208"
-PASS = "anmol2005"
+PASS = os.environ.get("BG6_SSH_PASSWORD", "")
 LAN_URL = f"http://{HOST}:5000"
 PUB_URL = "https://k09oezeyib.localto.net"
 SCREENSHOT_DIR = r"C:\Users\hp\.gemini\antigravity\brain\187f9e84-772b-4ca6-bfe3-d171c31b00f7"
 
 def mint_admin_token():
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
     ssh.connect(HOST, port=PORT, username=USER, password=PASS, timeout=10)
 
     verifier = secrets.token_urlsafe(32)
@@ -69,7 +69,7 @@ print('CODE:' + code)
 
 def check_bg6_chromium():
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
     ssh.connect(HOST, port=PORT, username=USER, password=PASS, timeout=10)
     stdin, stdout, stderr = ssh.exec_command("pgrep -l chromium || echo 'NO_CHROMIUM'")
     chrom = stdout.read().decode().strip()

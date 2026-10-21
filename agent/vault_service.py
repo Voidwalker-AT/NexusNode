@@ -1,3 +1,4 @@
+import re
 """
 NexusNode — Agent Vault Semantic Service
 Enforces strict allowlist root containment, path traversal prevention, symlink escape checks,
@@ -35,39 +36,50 @@ class VaultService:
         self.rag_service = rag_service
         os.makedirs(self.agent_vault_root, exist_ok=True)
 
-    def _resolve_safe_path(self, rel_path: Optional[str]) -> str:
+    def _get_user_vault_root(self, user_id: str = "admin") -> str:
+        """Returns the tenant-isolated vault directory for user_id."""
+        clean_user = (user_id or "admin").strip().lower()
+        if clean_user in ("admin", "spark-agent", "appliance"):
+            return os.path.realpath(self.agent_vault_root)
+        clean_user = re.sub(r'[^a-z0-9_-]', '_', clean_user)
+        user_root = os.path.realpath(os.path.join(self.agent_vault_root, clean_user))
+        os.makedirs(user_root, exist_ok=True)
+        return user_root
+
+    def _resolve_safe_path(self, rel_path: Optional[str], user_id: str = "admin") -> str:
         """
-        Resolves rel_path strictly within self.agent_vault_root.
-        Prevents path traversal, parent escapes (..), absolute escapes, and symlink targets outside root.
+        Resolves rel_path strictly within user's isolated vault root.
+        Prevents path traversal, parent escapes (..), cross-tenant access, and symlinks outside user root.
         """
+        user_root = self._get_user_vault_root(user_id)
         if not rel_path:
-            return self.agent_vault_root
+            return user_root
 
         # Normalize separators
         clean_rel = rel_path.strip().replace("\\", "/").lstrip("/")
         
         # Guard against traversal tokens
         parts = clean_rel.split("/")
-        if ".." in parts:
+        if ".." in parts or any(p.strip() == ".." for p in parts):
             raise VaultPathError("Path traversal elements ('..') are strictly prohibited.")
 
-        resolved_target = os.path.realpath(os.path.join(self.agent_vault_root, clean_rel))
+        resolved_target = os.path.realpath(os.path.join(user_root, clean_rel))
 
         # Strict containment verification
-        root_real = os.path.realpath(self.agent_vault_root)
         try:
-            common = os.path.commonpath([resolved_target, root_real])
+            common = os.path.commonpath([resolved_target, user_root])
         except ValueError:
             raise VaultPathError("Cross-drive or invalid path resolution.")
 
-        if common != root_real:
-            raise VaultAccessError(f"Target path escapes agent-visible vault root.")
+        if common != user_root:
+            raise VaultAccessError("Target path escapes user-isolated vault root.")
 
         return resolved_target
 
-    def _get_relative_path(self, absolute_path: str) -> str:
-        """Returns relative path from agent_vault_root with forward slashes."""
-        rel = os.path.relpath(absolute_path, self.agent_vault_root)
+    def _get_relative_path(self, absolute_path: str, user_id: str = "admin") -> str:
+        """Returns relative path from user's vault root with forward slashes."""
+        user_root = self._get_user_vault_root(user_id)
+        rel = os.path.relpath(absolute_path, user_root)
         return "" if rel == "." else rel.replace("\\", "/")
 
     def _is_binary(self, file_path: str) -> bool:
@@ -92,7 +104,7 @@ class VaultService:
         now = time.time()
 
         try:
-            target_dir = self._resolve_safe_path(subpath)
+            target_dir = self._resolve_safe_path(subpath, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -138,7 +150,7 @@ class VaultService:
                     if os.path.commonpath([real_entry_path, self.agent_vault_root]) != self.agent_vault_root:
                         continue
 
-                    rel = self._get_relative_path(real_entry_path)
+                    rel = self._get_relative_path(real_entry_path, user_id)
                     stat = entry.stat()
                     is_dir = entry.is_dir()
                     mime_type, _ = mimetypes.guess_type(entry.name)
@@ -164,7 +176,7 @@ class VaultService:
                 source="local",
                 provider="local_vault",
                 data={
-                    "current_path": self._get_relative_path(target_dir),
+                    "current_path": self._get_relative_path(target_dir, user_id),
                     "total_items": len(items),
                     "items": items[:100]  # Bound to max 100 items for output budgeting
                 },
@@ -208,7 +220,7 @@ class VaultService:
             )
 
         try:
-            target_file = self._resolve_safe_path(file_rel)
+            target_file = self._resolve_safe_path(file_rel, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -258,7 +270,7 @@ class VaultService:
                 total_chars = len(full_text)
                 chunk = full_text[offset : offset + limit_chars]
                 has_more = (offset + limit_chars) < total_chars
-                rel_path = self._get_relative_path(target_file)
+                rel_path = self._get_relative_path(target_file, user_id)
                 envelope = (
                     f'<untrusted_document_content path="{rel_path}" type="pdf_extracted_text" offset="{offset}" total_chars="{total_chars}">\n'
                     f'{chunk}\n'
@@ -297,7 +309,7 @@ class VaultService:
                 provider="local_vault",
                 data={
                     "content_type": "binary_document_metadata",
-                    "path": self._get_relative_path(target_file),
+                    "path": self._get_relative_path(target_file, user_id),
                     "size_bytes": file_size,
                     "mime_type": mime_type or "application/octet-stream",
                     "is_binary": True,
@@ -313,7 +325,7 @@ class VaultService:
             total_chars = len(full_text)
             chunk = full_text[offset : offset + limit_chars]
             has_more = (offset + limit_chars) < total_chars
-            rel_path = self._get_relative_path(target_file)
+            rel_path = self._get_relative_path(target_file, user_id)
 
             envelope = (
                 f'<untrusted_document_content path="{rel_path}" offset="{offset}" total_chars="{total_chars}">\n'
@@ -386,8 +398,9 @@ class VaultService:
                     # Strict check: is fpath within agent_vault_root?
                     try:
                         abs_hit = os.path.realpath(fpath)
-                        if os.path.commonpath([abs_hit, self.agent_vault_root]) == self.agent_vault_root:
-                            rel = self._get_relative_path(abs_hit)
+                        user_root = self._get_user_vault_root(user_id)
+                        if os.path.commonpath([abs_hit, user_root]) == user_root:
+                            rel = self._get_relative_path(abs_hit, user_id)
                             snippet = hit.get("text", "")[:400]
                             results.append({
                                 "content_type": "untrusted_search_result",
@@ -405,7 +418,8 @@ class VaultService:
         # 2. If no RAG results, perform localized text scan over agent_vault_root
         if not results:
             try:
-                for root, _, files in os.walk(self.agent_vault_root):
+                user_root = self._get_user_vault_root(user_id)
+                for root, _, files in os.walk(user_root):
                     for fname in files:
                         if fname.startswith("."):
                             continue
@@ -417,7 +431,7 @@ class VaultService:
                             with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
                                 content = f.read()
                             if query.lower() in content.lower():
-                                rel = self._get_relative_path(fpath)
+                                rel = self._get_relative_path(fpath, user_id)
                                 idx = content.lower().find(query.lower())
                                 start_idx = max(0, idx - 100)
                                 end_idx = min(len(content), idx + 300)
@@ -474,7 +488,7 @@ class VaultService:
             )
 
         try:
-            target_dir = self._resolve_safe_path(dir_rel)
+            target_dir = self._resolve_safe_path(dir_rel, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -494,7 +508,7 @@ class VaultService:
                     source="local",
                     provider="local_vault",
                     data={
-                        "path": self._get_relative_path(target_dir),
+                        "path": self._get_relative_path(target_dir, user_id),
                         "already_existed": True,
                         "created": False
                     },
@@ -513,7 +527,7 @@ class VaultService:
 
         try:
             os.makedirs(target_dir, exist_ok=parents)
-            rel_created = self._get_relative_path(target_dir)
+            rel_created = self._get_relative_path(target_dir, user_id)
             return ExecutionResult(
                 ok=True,
                 operation="vault.mkdir",
@@ -564,7 +578,7 @@ class VaultService:
             )
 
         try:
-            target_file = self._resolve_safe_path(file_rel)
+            target_file = self._resolve_safe_path(file_rel, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -612,7 +626,7 @@ class VaultService:
             os.replace(temp_path, target_file)
 
             sha256_hash = hashlib.sha256(content_bytes).hexdigest()
-            rel_path = self._get_relative_path(target_file)
+            rel_path = self._get_relative_path(target_file, user_id)
 
             return ExecutionResult(
                 ok=True,
@@ -679,7 +693,7 @@ class VaultService:
             )
 
         try:
-            target_file = self._resolve_safe_path(file_rel)
+            target_file = self._resolve_safe_path(file_rel, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -724,7 +738,7 @@ class VaultService:
             with open(target_file, "rb") as f:
                 sha256_hash = hashlib.sha256(f.read()).hexdigest()
 
-            rel_path = self._get_relative_path(target_file)
+            rel_path = self._get_relative_path(target_file, user_id)
 
             return ExecutionResult(
                 ok=True,
@@ -776,8 +790,8 @@ class VaultService:
             )
 
         try:
-            src_abs = self._resolve_safe_path(src_rel)
-            dst_abs = self._resolve_safe_path(dst_rel)
+            src_abs = self._resolve_safe_path(src_rel, user_id)
+            dst_abs = self._resolve_safe_path(dst_rel, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -822,8 +836,8 @@ class VaultService:
                 source="local",
                 provider="local_vault",
                 data={
-                    "old_path": self._get_relative_path(src_abs),
-                    "new_path": self._get_relative_path(dst_abs),
+                    "old_path": self._get_relative_path(src_abs, user_id),
+                    "new_path": self._get_relative_path(dst_abs, user_id),
                     "renamed_at": now
                 },
                 fetched_at=now
@@ -863,8 +877,8 @@ class VaultService:
             )
 
         try:
-            src_abs = self._resolve_safe_path(src_rel)
-            dst_abs = self._resolve_safe_path(dst_rel)
+            src_abs = self._resolve_safe_path(src_rel, user_id)
+            dst_abs = self._resolve_safe_path(dst_rel, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -898,8 +912,8 @@ class VaultService:
                 source="local",
                 provider="local_vault",
                 data={
-                    "source_path": self._get_relative_path(src_abs),
-                    "destination_path": self._get_relative_path(dst_abs),
+                    "source_path": self._get_relative_path(src_abs, user_id),
+                    "destination_path": self._get_relative_path(dst_abs, user_id),
                     "moved_at": now
                 },
                 fetched_at=now
@@ -939,8 +953,8 @@ class VaultService:
             )
 
         try:
-            src_abs = self._resolve_safe_path(src_rel)
-            dst_abs = self._resolve_safe_path(dst_rel)
+            src_abs = self._resolve_safe_path(src_rel, user_id)
+            dst_abs = self._resolve_safe_path(dst_rel, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -990,8 +1004,8 @@ class VaultService:
                 source="local",
                 provider="local_vault",
                 data={
-                    "source_path": self._get_relative_path(src_abs),
-                    "destination_path": self._get_relative_path(dst_abs),
+                    "source_path": self._get_relative_path(src_abs, user_id),
+                    "destination_path": self._get_relative_path(dst_abs, user_id),
                     "copied_at": now
                 },
                 fetched_at=now
@@ -1036,7 +1050,7 @@ class VaultService:
             )
 
         try:
-            abs_path = self._resolve_safe_path(archive_path)
+            abs_path = self._resolve_safe_path(archive_path, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -1101,7 +1115,7 @@ class VaultService:
                 source="local",
                 provider="local_vault",
                 data={
-                    "archive_path": self._get_relative_path(abs_path),
+                    "archive_path": self._get_relative_path(abs_path, user_id),
                     "total_entries": len(entries),
                     "total_uncompressed_bytes": total_uncompressed_bytes,
                     "entries": entries[:200]
@@ -1151,8 +1165,8 @@ class VaultService:
             )
 
         try:
-            abs_archive = self._resolve_safe_path(archive_path)
-            abs_dest = self._resolve_safe_path(dest_rel)
+            abs_archive = self._resolve_safe_path(archive_path, user_id)
+            abs_dest = self._resolve_safe_path(dest_rel, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -1222,7 +1236,7 @@ class VaultService:
                             os.makedirs(os.path.dirname(target_file), exist_ok=True)
                             with zf.open(info) as src, open(target_file, "wb") as dst:
                                 shutil.copyfileobj(src, dst)
-                            extracted_files.append(self._get_relative_path(target_file))
+                            extracted_files.append(self._get_relative_path(target_file, user_id))
 
             elif tarfile.is_tarfile(abs_archive):
                 with tarfile.open(abs_archive, "r:*") as tf:
@@ -1263,7 +1277,7 @@ class VaultService:
                             if f:
                                 with open(target_file, "wb") as dst:
                                     shutil.copyfileobj(f, dst)
-                                extracted_files.append(self._get_relative_path(target_file))
+                                extracted_files.append(self._get_relative_path(target_file, user_id))
             else:
                 return ExecutionResult(
                     ok=False,
@@ -1281,8 +1295,8 @@ class VaultService:
                 source="local",
                 provider="local_vault",
                 data={
-                    "archive_path": self._get_relative_path(abs_archive),
-                    "destination_dir": self._get_relative_path(abs_dest),
+                    "archive_path": self._get_relative_path(abs_archive, user_id),
+                    "destination_dir": self._get_relative_path(abs_dest, user_id),
                     "files_extracted_count": len(extracted_files),
                     "total_bytes_extracted": total_extracted_bytes,
                     "extracted_files": extracted_files[:100],
@@ -1336,7 +1350,7 @@ class VaultService:
             )
 
         try:
-            abs_path = self._resolve_safe_path(file_path)
+            abs_path = self._resolve_safe_path(file_path, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -1387,7 +1401,7 @@ class VaultService:
                     source="local",
                     provider="local_vault",
                     data={
-                        "path": self._get_relative_path(abs_path),
+                        "path": self._get_relative_path(abs_path, user_id),
                         "content_type": "extracted_pdf_text",
                         "total_pages": total_pages,
                         "extracted_pages": [start_page, min(start_page + len(page_texts) - 1, target_end)],
@@ -1409,7 +1423,7 @@ class VaultService:
                     source="local",
                     provider="local_vault",
                     data={
-                        "path": self._get_relative_path(abs_path),
+                        "path": self._get_relative_path(abs_path, user_id),
                         "content_type": "text/markdown" if ext == ".md" else "text/plain",
                         "character_count": len(text),
                         "offset": offset,
@@ -1456,7 +1470,7 @@ class VaultService:
             )
 
         try:
-            abs_path = self._resolve_safe_path(dest_path)
+            abs_path = self._resolve_safe_path(dest_path, user_id)
         except NexusAgentError as ne:
             return ExecutionResult(
                 ok=False,
@@ -1544,7 +1558,7 @@ class VaultService:
                 source="local",
                 provider="local_vault",
                 data={
-                    "path": self._get_relative_path(abs_path),
+                    "path": self._get_relative_path(abs_path, user_id),
                     "format": doc_format,
                     "size_bytes": file_size,
                     "created_at": now

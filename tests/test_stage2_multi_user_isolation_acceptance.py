@@ -51,6 +51,15 @@ class TestStage2MultiUserIsolationAcceptance(unittest.TestCase):
         self.assertIn("admin", self.baseline_users, "Admin must exist in baseline")
         self.assertIsNotNone(self.baseline_admin, "Admin row must exist in baseline")
 
+        # Ensure results tables exist in isolated test database
+        with app.DB_LOCK:
+            conn = app.get_db_connection()
+            try:
+                from upes.results import init_results_tables
+                init_results_tables(conn)
+            finally:
+                conn.close()
+
         # Clean any preexisting synthetic artifacts
         self._cleanup_synthetic_users()
 
@@ -72,21 +81,20 @@ class TestStage2MultiUserIsolationAcceptance(unittest.TestCase):
             conn = app.get_db_connection()
             try:
                 u_tuple = (self.user_a, self.user_b)
-                conn.execute("DELETE FROM users WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM upes_user_credentials WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM upes_auth_sessions WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM google_oauth_tokens WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM user_timetables WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM timetable_events_map WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM academic_terms WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM academic_modules WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM official_attendance_summaries WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM academic_sessions WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM attendance_sync_history WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM academic_results WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM academic_result_courses WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM academic_result_sync_history WHERE user_id IN (?, ?)", u_tuple)
-                conn.execute("DELETE FROM submission_plans WHERE user_id IN (?, ?)", u_tuple)
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                existing_tables = {r[0] for r in cur.fetchall()}
+                tables = [
+                    "users", "upes_user_credentials", "upes_auth_sessions",
+                    "google_oauth_tokens", "user_timetables", "timetable_events_map",
+                    "academic_terms", "academic_modules", "official_attendance_summaries",
+                    "academic_sessions", "attendance_sync_history", "academic_results",
+                    "academic_result_courses", "academic_result_sync_history",
+                    "submission_plans"
+                ]
+                for t in tables:
+                    if t in existing_tables:
+                        conn.execute(f"DELETE FROM {t} WHERE user_id IN (?, ?)", u_tuple)
                 conn.commit()
             finally:
                 conn.close()

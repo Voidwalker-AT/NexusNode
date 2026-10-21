@@ -8,7 +8,7 @@ import json
 HOST = "192.168.29.21"
 PORT = 8022
 USER = "u0_a208"
-PASS = "anmol2005"
+PASS = os.environ.get("BG6_SSH_PASSWORD", "")
 
 def run_cmd(ssh, cmd):
     stdin, stdout, stderr = ssh.exec_command(cmd)
@@ -16,7 +16,7 @@ def run_cmd(ssh, cmd):
 
 def main():
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
     ssh.connect(HOST, port=PORT, username=USER, password=PASS, timeout=10)
     
     print("=== BG6 HARDWARE & OS ===")

@@ -4,8 +4,8 @@ import json
 import base64
 
 ssh = paramiko.SSHClient()
-ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect("192.168.29.21", port=8022, username="u0_a208", password=os.environ.get("BG6_SSH_PASSWORD", "anmol2005"))
+ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
+ssh.connect("192.168.29.21", port=8022, username="u0_a208", password=os.environ.get("BG6_SSH_PASSWORD", os.environ.get("BG6_SSH_PASSWORD", "")))
 
 py_code = """
 import sqlite3, json, time

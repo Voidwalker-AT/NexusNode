@@ -118,7 +118,7 @@ class OAuthRefreshToken:
 class ResolvedStudentIdentity:
     """Layer 5: Resolved Academic Student Profile."""
     student_id: str  # UUID (e.g. 3a678d8e-8817-41e6-b1a8-5a3ec6ee4948)
-    global_id: str   # SAP ID (e.g. 590011794)
+    global_id: str   # SAP ID (e.g. 590000001)
     user_id: int     # Internal SLCM integer user ID (e.g. 30054)
     email: str
     display_name: str = ""

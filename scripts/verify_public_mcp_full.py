@@ -69,8 +69,8 @@ def run_public_mcp_tests():
 
     # Mint OAuth code for client 'gemini-spark' on BG6
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect('192.168.29.21', port=8022, username='u0_a208', password='anmol2005', timeout=10)
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
+    ssh.connect('192.168.29.21', port=8022, username='u0_a208', key_filename=os.environ.get("BG6_SSH_KEY", os.path.expanduser("~/.ssh/nexusnode_bg6_ed25519")) if os.path.exists(os.path.expanduser("~/.ssh/nexusnode_bg6_ed25519")) else None, password=os.environ.get("BG6_SSH_PASSWORD"), timeout=10)
 
     client_id = "test_pub_acceptance"
     client_secret = "secret_pub_acceptance_999"

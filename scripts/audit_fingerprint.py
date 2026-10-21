@@ -11,7 +11,7 @@ LOCAL_DB = "storage_vault/nexus_unified.db"
 REMOTE_HOST = "192.168.29.21"
 REMOTE_PORT = 8022
 REMOTE_USER = "u0_a208"
-REMOTE_PASS = "anmol2005"
+REMOTE_PASS = os.environ.get("BG6_SSH_PASSWORD", "")
 REMOTE_DB = "/data/data/com.termux/files/home/server/storage_vault/nexus_unified.db"
 
 def get_db_counts(db_path):
@@ -34,7 +34,7 @@ def get_db_counts(db_path):
 
 def get_remote_db_counts():
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
     try:
         ssh.connect(REMOTE_HOST, port=REMOTE_PORT, username=REMOTE_USER, password=REMOTE_PASS, timeout=10)
     except Exception as e:

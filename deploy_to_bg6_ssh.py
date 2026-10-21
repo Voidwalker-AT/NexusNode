@@ -53,16 +53,18 @@ def main():
     host = sys.argv[1] if len(sys.argv) > 1 else "192.168.29.21"
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 8022
     username = sys.argv[3] if len(sys.argv) > 3 else "u0_a208"
-    password = os.environ.get("BG6_SSH_PASSWORD", "anmol2005")
+    key_file = os.environ.get("BG6_SSH_KEY", os.path.expanduser("~/.ssh/nexusnode_bg6_ed25519"))
+    key_filename = key_file if os.path.exists(key_file) else None
+    password = os.environ.get("BG6_SSH_PASSWORD")
     
     local_base = os.path.dirname(os.path.abspath(__file__))
     remote_base = "/data/data/com.termux/files/home/server"
     
     print(f"[*] Connecting to BG6 at {host}:{port} as {username}...")
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
     try:
-        ssh.connect(host, port=port, username=username, password=password, timeout=10)
+        ssh.connect(host, port=port, username=username, key_filename=key_filename, password=password, timeout=10)
         print("[+] BG6 SSH: PASS")
     except Exception as e:
         print(f"[-] BG6 SSH: FAIL ({e})")

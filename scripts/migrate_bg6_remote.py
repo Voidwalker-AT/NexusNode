@@ -11,11 +11,11 @@ def run_remote_migration():
     host = "192.168.29.21"
     port = 8022
     username = "u0_a208"
-    password = os.environ.get("BG6_SSH_PASSWORD", "anmol2005")
+    password = os.environ.get("BG6_SSH_PASSWORD", os.environ.get("BG6_SSH_PASSWORD", ""))
 
     print(f"Connecting to BG6 appliance at {host}:{port}...")
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(paramiko.WarningPolicy())
     client.connect(host, port=port, username=username, password=password, timeout=10)
 
     sftp = client.open_sftp()

@@ -2682,7 +2682,8 @@ class TimetableService:
             conn.close()
 
         try:
-            with open(config.UPES_TIMETABLE_JSON_PATH, "w", encoding="utf-8") as f:
+            user_tt_path = os.path.join(config.STORAGE_DIR, f"upes_timetable_{user_id}.json")
+            with open(user_tt_path, "w", encoding="utf-8") as f:
                 f.write(raw_json_str)
         except Exception:
             pass
@@ -3009,12 +3010,20 @@ class TimetableService:
         finally:
             conn.close()
 
-        if not raw_json and user_id == "admin" and os.path.exists(config.UPES_TIMETABLE_JSON_PATH):
-            try:
-                with open(config.UPES_TIMETABLE_JSON_PATH, "r", encoding="utf-8") as f:
-                    raw_json = f.read()
-            except Exception:
-                pass
+        if not raw_json:
+            user_tt_path = os.path.join(config.STORAGE_DIR, f"upes_timetable_{user_id}.json")
+            if os.path.exists(user_tt_path):
+                try:
+                    with open(user_tt_path, "r", encoding="utf-8") as f:
+                        raw_json = f.read()
+                except Exception:
+                    pass
+            elif user_id == "admin" and os.path.exists(config.UPES_TIMETABLE_JSON_PATH):
+                try:
+                    with open(config.UPES_TIMETABLE_JSON_PATH, "r", encoding="utf-8") as f:
+                        raw_json = f.read()
+                except Exception:
+                    pass
 
         if not raw_json:
             return [], ["No timetable data found. Upload or authenticate UPES timetable first."]

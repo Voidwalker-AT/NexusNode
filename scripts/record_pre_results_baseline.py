@@ -7,10 +7,10 @@ print("=== CHECKING PRE-4.3A BASELINE ===")
 host = "192.168.29.21"
 port = 8022
 username = "u0_a208"
-password = os.environ.get("BG6_SSH_PASSWORD", "anmol2005")
+password = os.environ.get("BG6_SSH_PASSWORD", os.environ.get("BG6_SSH_PASSWORD", ""))
 
 ssh = paramiko.SSHClient()
-ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
 ssh.connect(host, port=port, username=username, password=password, timeout=10)
 
 # Check health

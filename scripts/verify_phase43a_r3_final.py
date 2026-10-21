@@ -13,12 +13,12 @@ PUBLIC_HOST = "k09oezeyib.localto.net"
 LAN_HOST = "192.168.29.21"
 SSH_PORT = 8022
 SSH_USER = "u0_a208"
-SSH_PASS = "anmol2005"
+SSH_PASS = os.environ.get("BG6_SSH_PASSWORD", "")
 SKIP_HDR = {"localtonet-skip-warning": "true"}
 
 def get_ssh_client():
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
     ssh.connect(LAN_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASS, timeout=10)
     return ssh
 

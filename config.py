@@ -37,7 +37,10 @@ STORAGE_DIR = os.environ.get(
     os.path.join(BASE_DIR, "storage_vault")
 )
 
-UNIFIED_DB_FILE = os.path.join(STORAGE_DIR, "nexus_unified.db")
+UNIFIED_DB_FILE = os.environ.get(
+    "NEXUS_UNIFIED_DB",
+    os.path.join(STORAGE_DIR, "nexus_unified.db")
+)
 DB_FILE = UNIFIED_DB_FILE
 DB_PATH = UNIFIED_DB_FILE
 AUDIT_DB_FILE = UNIFIED_DB_FILE
@@ -72,9 +75,14 @@ EMERGENCY_LOG_FILE = os.environ.get(
 
 # Ensure critical storage directories exist.
 
-os.makedirs(STORAGE_DIR, exist_ok=True)
-os.makedirs(BACKUP_DIR, exist_ok=True)
-os.makedirs(AGENT_VAULT_ROOT, exist_ok=True)
+def ensure_directories():
+    """Ensures critical storage directories exist."""
+    os.makedirs(STORAGE_DIR, exist_ok=True)
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    os.makedirs(AGENT_VAULT_ROOT, exist_ok=True)
+
+if os.environ.get("NEXUS_DEFER_INIT") != "1" and not os.environ.get("PYTEST_CURRENT_TEST"):
+    ensure_directories()
 
 
 # ==============================================================================

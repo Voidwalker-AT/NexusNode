@@ -48,13 +48,21 @@ class TestNexusNodeServer(unittest.TestCase):
         server_app.app.config['TESTING'] = True
         cls.client = server_app.app.test_client()
 
-        # Create temporary storage test directory
+        # Create temporary storage test directory with isolated SQLite DB
         cls.test_dir = tempfile.mkdtemp(prefix="nexus_test_")
         cls.orig_storage_dir = config.STORAGE_DIR
+        cls.orig_unified_db = config.UNIFIED_DB_FILE
         config.STORAGE_DIR = os.path.join(cls.test_dir, "storage_vault")
         config.BACKUP_DIR = os.path.join(config.STORAGE_DIR, "backups")
+        config.UNIFIED_DB_FILE = os.path.join(config.STORAGE_DIR, "test_unified.db")
+        config.DB_PATH = config.UNIFIED_DB_FILE
+        config.DB_FILE = config.UNIFIED_DB_FILE
+        config.AUDIT_DB_FILE = config.UNIFIED_DB_FILE
         os.makedirs(config.STORAGE_DIR, exist_ok=True)
         os.makedirs(config.BACKUP_DIR, exist_ok=True)
+
+        # Initialize clean isolated test database
+        server_app.init_unified_db()
 
         # Generate test admin token
         admin_token = secrets.token_hex(32)
@@ -67,23 +75,15 @@ class TestNexusNodeServer(unittest.TestCase):
                 "expires_at": time.time() + 86400
             }
         cls.admin_token = admin_token
-        # Preserve original real admin user record to prevent test overwrites
-        admin_rec = server_app.db_get_user("admin")
-        cls.orig_admin_record = dict(admin_rec) if admin_rec else None
+        cls.orig_admin_record = None
 
     @classmethod
     def tearDownClass(cls):
         config.STORAGE_DIR = cls.orig_storage_dir
-        if cls.orig_admin_record:
-            with server_app.DB_LOCK:
-                conn = server_app.get_db_connection()
-                conn.execute("""
-                    UPDATE users
-                    SET password_hash = ?, salt = ?, failed_attempts = 0, locked_until = 0
-                    WHERE user_id = 'admin'
-                """, (cls.orig_admin_record["password_hash"], cls.orig_admin_record["salt"]))
-                conn.commit()
-                conn.close()
+        config.UNIFIED_DB_FILE = cls.orig_unified_db
+        config.DB_PATH = cls.orig_unified_db
+        config.DB_FILE = cls.orig_unified_db
+        config.AUDIT_DB_FILE = cls.orig_unified_db
         if os.path.exists(cls.test_dir):
             shutil.rmtree(cls.test_dir, ignore_errors=True)
 

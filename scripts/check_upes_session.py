@@ -3,8 +3,8 @@ import os
 import json
 
 ssh = paramiko.SSHClient()
-ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect("192.168.29.21", port=8022, username="u0_a208", password=os.environ.get("BG6_SSH_PASSWORD", "anmol2005"))
+ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
+ssh.connect("192.168.29.21", port=8022, username="u0_a208", password=os.environ.get("BG6_SSH_PASSWORD", os.environ.get("BG6_SSH_PASSWORD", "")))
 
 sftp = ssh.open_sftp()
 sftp.put("scripts/bg6_check_upes.py", "/data/data/com.termux/files/home/server/scripts/bg6_check_upes.py")

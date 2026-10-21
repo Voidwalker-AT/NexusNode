@@ -85,6 +85,7 @@ def init_agent_auth_tables(conn: sqlite3.Connection):
         CREATE TABLE IF NOT EXISTS agent_tokens (
             token_id TEXT PRIMARY KEY,
             principal TEXT NOT NULL,
+            user_id TEXT NOT NULL DEFAULT 'admin',
             token_hash TEXT NOT NULL UNIQUE,
             capabilities TEXT NOT NULL,
             description TEXT,
@@ -94,6 +95,11 @@ def init_agent_auth_tables(conn: sqlite3.Connection):
             last_used_at REAL
         );
     """)
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(agent_tokens);")
+    cols = [c[1] for c in cur.fetchall()]
+    if "user_id" not in cols:
+        conn.execute("ALTER TABLE agent_tokens ADD COLUMN user_id TEXT NOT NULL DEFAULT 'admin';")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_agent_tokens_hash ON agent_tokens(token_hash);")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_agent_tokens_principal ON agent_tokens(principal);")
 
@@ -114,7 +120,8 @@ class AgentTokenManager:
         principal: str = "spark-agent",
         capabilities: Optional[List[str]] = None,
         description: str = "Gemini Spark Agent Credential",
-        ttl_seconds: Optional[float] = None
+        ttl_seconds: Optional[float] = None,
+        user_id: str = "admin"
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Provisions a high-entropy cryptographically random agent token.
@@ -134,11 +141,11 @@ class AgentTokenManager:
             init_agent_auth_tables(conn)
             conn.execute("""
                 INSERT INTO agent_tokens (
-                    token_id, principal, token_hash, capabilities, description,
+                    token_id, principal, user_id, token_hash, capabilities, description,
                     created_at, expires_at, revoked_at, last_used_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
             """, (
-                token_id, principal, tok_hash, json.dumps(caps), description,
+                token_id, principal, user_id, tok_hash, json.dumps(caps), description,
                 now, expires_at
             ))
             conn.commit()
@@ -148,6 +155,7 @@ class AgentTokenManager:
         metadata = {
             "token_id": token_id,
             "principal": principal,
+            "user_id": user_id,
             "capabilities": caps,
             "description": description,
             "created_at": now,
@@ -174,7 +182,7 @@ class AgentTokenManager:
             init_agent_auth_tables(conn)
             cur = conn.cursor()
             cur.execute("""
-                SELECT token_id, principal, token_hash, capabilities, description,
+                SELECT token_id, principal, user_id, token_hash, capabilities, description,
                        created_at, expires_at, revoked_at, last_used_at
                 FROM agent_tokens
                 WHERE token_hash = ?
@@ -202,6 +210,7 @@ class AgentTokenManager:
             return {
                 "token_id": row["token_id"],
                 "principal": row["principal"],
+                "user_id": row["user_id"] if "user_id" in row.keys() else "admin",
                 "capabilities": json.loads(row["capabilities"]),
                 "description": row["description"],
                 "created_at": row["created_at"],

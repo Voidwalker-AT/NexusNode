@@ -5,8 +5,8 @@ import time
 sys.stdout.reconfigure(encoding='utf-8')
 
 s = paramiko.SSHClient()
-s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-s.connect('192.168.29.21', port=8022, username='u0_a208', password='anmol2005', timeout=5)
+s.set_missing_host_key_policy(paramiko.WarningPolicy())
+s.connect('192.168.29.21', port=8022, username='u0_a208', key_filename=os.environ.get("BG6_SSH_KEY", os.path.expanduser("~/.ssh/nexusnode_bg6_ed25519")) if os.path.exists(os.path.expanduser("~/.ssh/nexusnode_bg6_ed25519")) else None, password=os.environ.get("BG6_SSH_PASSWORD"), timeout=5)
 
 def exec_cmd(cmd):
     print(f"\n=== {cmd} ===", flush=True)

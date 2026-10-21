@@ -233,7 +233,7 @@ class TestMultiUserCredentialIsolation(MultiUserIsolationBaseTestCase):
             "/api/upes/auth/credentials",
             headers={"Authorization": f"Bearer {self.token_user_a}"},
             json={
-                "username": "590011794",
+                "username": "590099999",
                 "password": "ValidPassword123!"
             }
         )
@@ -247,7 +247,7 @@ class TestMultiUserCredentialIsolation(MultiUserIsolationBaseTestCase):
             "/api/upes/auth/credentials",
             headers={"Authorization": f"Bearer {self.token_user_a}"},
             json={
-                "username": "alice.590011794@stu.upes.ac.in",
+                "username": "alice.590099999@stu.upes.ac.in",
                 "password": "ValidPassword123!"
             }
         )
@@ -533,7 +533,7 @@ class TestMultiTenantSchedulerIsolation(MultiUserIsolationBaseTestCase):
         self.timetable_service.save_oauth_tokens("user_b", {"access_token": "tok_b"})
 
         # Mock sync_user_timetable so user_a raises an exception but user_b succeeds
-        def mock_sync(user_id, force_calendar_id=None):
+        def mock_sync(user_id, *args, **kwargs):
             if user_id == "user_a":
                 raise RuntimeError("Simulated network crash for user_a")
             return {"user_id": "user_b", "status": "success", "sessions_seen": 5}

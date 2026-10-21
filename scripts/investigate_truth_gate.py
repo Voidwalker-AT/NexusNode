@@ -18,8 +18,8 @@ def investigate_a():
     
     # Check live BG6
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect('192.168.29.21', port=8022, username='u0_a208', password='anmol2005')
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
+    ssh.connect('192.168.29.21', port=8022, username='u0_a208', key_filename=os.environ.get("BG6_SSH_KEY", os.path.expanduser("~/.ssh/nexusnode_bg6_ed25519")) if os.path.exists(os.path.expanduser("~/.ssh/nexusnode_bg6_ed25519")) else None, password=os.environ.get("BG6_SSH_PASSWORD"))
     stdin, stdout, stderr = ssh.exec_command('cd ~/nexusnode && python -c "import agent.semantic_facade as sf; print([t[\'name\'] for t in sf.SEMANTIC_TOOL_DEFINITIONS])"')
     remote_out = stdout.read().decode().strip()
     print(f"Remote BG6 semantic tools: {remote_out}")

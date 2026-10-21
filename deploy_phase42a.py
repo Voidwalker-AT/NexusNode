@@ -9,7 +9,8 @@ import paramiko
 HOST = "192.168.29.21"
 PORT = 8022
 USER = "u0_a208"
-PASS = "anmol2005"
+KEY_FILE = os.environ.get("BG6_SSH_KEY", os.path.expanduser("~/.ssh/nexusnode_bg6_ed25519"))
+PASS = os.environ.get("BG6_SSH_PASSWORD")
 REMOTE_BASE = "/data/data/com.termux/files/home/server"
 LOCAL_BASE = "E:/Workspace/Active/server"
 
@@ -41,8 +42,9 @@ def sha256_file(filepath):
 def main():
     print(f"[1/6] Connecting to BG6 at {HOST}:{PORT}...")
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(HOST, port=PORT, username=USER, password=PASS, timeout=10)
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
+    key_f = KEY_FILE if os.path.exists(KEY_FILE) else None
+    ssh.connect(HOST, port=PORT, username=USER, key_filename=key_f, password=PASS, timeout=10)
     sftp = ssh.open_sftp()
     print("      Connected successfully.")
 

@@ -11,13 +11,13 @@ import hashlib
 HOST = "192.168.29.21"
 PORT = 8022
 USER = "u0_a208"
-PASS = "anmol2005"
+PASS = os.environ.get("BG6_SSH_PASSWORD", "")
 PUBLIC_ORIGIN = "https://k09oezeyib.localto.net"
 SKIP_HDR = {"localtonet-skip-warning": "true"}
 
 def main():
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
     ssh.connect(HOST, port=PORT, username=USER, password=PASS, timeout=10)
 
     # 1. Mint OAuth token on BG6

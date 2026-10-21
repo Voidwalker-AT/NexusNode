@@ -101,7 +101,7 @@ class TestAgentAPIEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertIn("browser", data)
-        self.assertEqual(data["browser"]["provider"], "pinchtab")
+        self.assertIn(data["browser"]["provider"], ["pinchtab", "bg6_ephemeral_cdp"])
 
     def test_agent_execute_api_read_only(self):
         resp = self.client.post(
@@ -113,7 +113,7 @@ class TestAgentAPIEndpoints(unittest.TestCase):
         data = resp.get_json()
         self.assertTrue(data["ok"])
         self.assertEqual(data["operation"], "browser.status")
-        self.assertEqual(data["provenance"]["provider"], "pinchtab")
+        self.assertIn(data["provenance"]["provider"], ["pinchtab", "bg6_ephemeral_cdp"])
 
     def test_agent_execute_api_consequential_flow(self):
         # Register test consequential operation

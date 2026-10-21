@@ -886,8 +886,9 @@ def migrate_storage_casing_if_needed():
                 print(f"[*] Migrated {migrated_files} files from '{legacy_name}' to '{canonical_name}'.")
 
 
-init_unified_db()
-migrate_storage_casing_if_needed()
+if os.environ.get("NEXUS_DEFER_INIT") != "1" and not os.environ.get("PYTEST_CURRENT_TEST"):
+    init_unified_db()
+    migrate_storage_casing_if_needed()
 
 # ==============================================================================
 # 2. SINGLE-THREADED BOUNDED LOG WRITER DAEMON & DURABILITY ENGINE
@@ -7994,7 +7995,7 @@ def resolve_authenticated_principal(raw_token: str | None) -> dict | None:
     if ag_meta:
         return {
             "principal_id": ag_meta.get("principal", "spark-agent"),
-            "user_id": "admin",
+            "user_id": ag_meta.get("user_id", "admin"),
             "auth_method": "agent_token",
             "client_id": None,
             "scopes": ["mcp"],
@@ -8030,14 +8031,38 @@ SSE_CLIENTS_LOCK = threading.RLock()
 @app.route('/sse', methods=['GET'])
 @app.route('/api/mcp/sse', methods=['GET'])
 def mcp_sse_endpoint():
-    """SSE Transport for MCP 2024-11-05 clients."""
+    """Authoritative Authenticated SSE Transport for MCP 2024-11-05 clients."""
+    if not config.MCP_ENABLED:
+        return jsonify({"jsonrpc": "2.0", "error": {"code": -32000, "message": "MCP Gateway is disabled on this server."}}), 503
+
+    raw_token = get_agent_auth_token_from_request()
+    if not raw_token:
+        issuer = get_public_issuer_url()
+        response = jsonify({"jsonrpc": "2.0", "error": {"code": -32000, "message": "Unauthorized: valid agent token required."}})
+        response.headers["WWW-Authenticate"] = f'Bearer resource_metadata="{issuer}/.well-known/oauth-protected-resource/api/mcp"'
+        response.headers["MCP-Protocol-Version"] = config.MCP_PROTOCOL_VERSION
+        return response, 401
+
+    token_meta = resolve_authenticated_principal(raw_token)
+    if not token_meta:
+        issuer = get_public_issuer_url()
+        response = jsonify({"jsonrpc": "2.0", "error": {"code": -32000, "message": "Unauthorized: invalid, expired, or revoked agent token."}})
+        response.headers["WWW-Authenticate"] = f'Bearer error="invalid_token", resource_metadata="{issuer}/.well-known/oauth-protected-resource/api/mcp"'
+        response.headers["MCP-Protocol-Version"] = config.MCP_PROTOCOL_VERSION
+        return response, 401
+
     session_id = str(uuid.uuid4())
     client_q = queue.Queue(maxsize=100)
     with SSE_CLIENTS_LOCK:
-        SSE_CLIENTS[session_id] = client_q
+        SSE_CLIENTS[session_id] = {
+            "queue": client_q,
+            "user_id": token_meta.get("user_id", "admin"),
+            "principal": token_meta.get("principal", "spark-agent"),
+            "created_at": time.time()
+        }
 
     def sse_generator():
-        yield f"event: endpoint\ndata: /messages?session_id={session_id}\n\n"
+        yield f"event: endpoint\ndata: /api/mcp/messages?session_id={session_id}\n\n"
         try:
             while True:
                 try:
@@ -8055,30 +8080,58 @@ def mcp_sse_endpoint():
     resp = Response(stream_with_context(sse_generator()), mimetype="text/event-stream")
     resp.headers["Cache-Control"] = "no-cache"
     resp.headers["X-Accel-Buffering"] = "no"
+    resp.headers["MCP-Protocol-Version"] = config.MCP_PROTOCOL_VERSION
     return resp
 
 
 @app.route('/messages', methods=['POST'])
 @app.route('/api/mcp/messages', methods=['POST'])
 def mcp_messages_endpoint():
-    """Message receiver for MCP SSE sessions."""
-    session_id = request.args.get("session_id", "")
+    """Authenticated Message receiver for MCP SSE sessions with strict tenant binding."""
+    if not config.MCP_ENABLED:
+        return jsonify({"jsonrpc": "2.0", "error": {"code": -32000, "message": "MCP Gateway is disabled on this server."}}), 503
+
+    raw_token = get_agent_auth_token_from_request()
+    if not raw_token:
+        issuer = get_public_issuer_url()
+        response = jsonify({"jsonrpc": "2.0", "error": {"code": -32000, "message": "Unauthorized: valid agent token required."}})
+        response.headers["WWW-Authenticate"] = f'Bearer resource_metadata="{issuer}/.well-known/oauth-protected-resource/api/mcp"'
+        return response, 401
+
+    token_meta = resolve_authenticated_principal(raw_token)
+    if not token_meta:
+        issuer = get_public_issuer_url()
+        response = jsonify({"jsonrpc": "2.0", "error": {"code": -32000, "message": "Unauthorized: invalid, expired, or revoked agent token."}})
+        response.headers["WWW-Authenticate"] = f'Bearer error="invalid_token", resource_metadata="{issuer}/.well-known/oauth-protected-resource/api/mcp"'
+        return response, 401
+
+    session_id = request.args.get("session_id", "").strip()
+    if not session_id:
+        return jsonify({"jsonrpc": "2.0", "error": {"code": -32602, "message": "Missing required session_id parameter."}}), 400
+
+    with SSE_CLIENTS_LOCK:
+        sess_entry = SSE_CLIENTS.get(session_id)
+
+    if not sess_entry:
+        return jsonify({"jsonrpc": "2.0", "error": {"code": -32000, "message": "Session not found or expired."}}), 404
+
+    caller_user_id = token_meta.get("user_id", "admin")
+    owner_user_id = sess_entry.get("user_id", "admin")
+    if caller_user_id != owner_user_id and caller_user_id != "admin":
+        return jsonify({"jsonrpc": "2.0", "error": {"code": -32000, "message": "Forbidden: session belongs to another user principal."}}), 403
+
     req_json = request.get_json(force=True, silent=True)
     if req_json is None:
         return jsonify({"jsonrpc": "2.0", "error": {"code": -32700, "message": "Parse error"}}), 400
 
-    raw_token = get_agent_auth_token_from_request()
-    token_meta = resolve_authenticated_principal(raw_token)
-
     resp = mcp_adapter.handle_json_rpc(req_json, token_meta, headers=dict(request.headers))
 
-    with SSE_CLIENTS_LOCK:
-        client_q = SSE_CLIENTS.get(session_id)
-        if client_q and resp is not None:
-            try:
-                client_q.put_nowait(resp)
-            except queue.Full:
-                pass
+    client_q = sess_entry.get("queue")
+    if client_q and resp is not None:
+        try:
+            client_q.put_nowait(resp)
+        except queue.Full:
+            pass
 
     if resp is None:
         return "", 202

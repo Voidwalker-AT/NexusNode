@@ -1,3 +1,4 @@
+import os
 """
 Verify Live Deployment of NexusNode on TECNO BG6
 """
@@ -10,12 +11,14 @@ BASE_URL = "http://192.168.29.21:5000"
 SSH_HOST = "192.168.29.21"
 SSH_PORT = 8022
 SSH_USER = "u0_a208"
-SSH_PASS = "anmol2005"
+SSH_KEY = os.environ.get("BG6_SSH_KEY", os.path.expanduser("~/.ssh/nexusnode_bg6_ed25519"))
+SSH_PASS = os.environ.get("BG6_SSH_PASSWORD")
 
 def run_remote(cmd):
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASS, timeout=10)
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
+    key_f = SSH_KEY if os.path.exists(SSH_KEY) else None
+    ssh.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, key_filename=key_f, password=SSH_PASS, timeout=10)
     stdin, stdout, stderr = ssh.exec_command(cmd)
     out = stdout.read().decode().strip()
     err = stderr.read().decode().strip()

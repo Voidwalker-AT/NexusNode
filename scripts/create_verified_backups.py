@@ -41,8 +41,8 @@ def backup_local_db():
 def backup_bg6_db():
     print("Connecting to remote BG6 to trigger safe online backup...")
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect('192.168.29.21', port=8022, username='u0_a208', password='anmol2005')
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
+    ssh.connect('192.168.29.21', port=8022, username='u0_a208', key_filename=os.environ.get("BG6_SSH_KEY", os.path.expanduser("~/.ssh/nexusnode_bg6_ed25519")) if os.path.exists(os.path.expanduser("~/.ssh/nexusnode_bg6_ed25519")) else None, password=os.environ.get("BG6_SSH_PASSWORD"))
     
     backup_cmd = """python -c "
 import sqlite3, os, hashlib

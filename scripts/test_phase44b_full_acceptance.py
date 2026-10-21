@@ -24,11 +24,11 @@ HEADERS_SKIP = {"localtonet-skip-warning": "true"}
 BG6_HOST = "192.168.29.21"
 BG6_PORT = 8022
 BG6_USER = "u0_a208"
-BG6_PASS = "anmol2005"
+BG6_PASS = os.environ.get("BG6_SSH_PASSWORD", "")
 
 def get_bg6_ssh() -> paramiko.SSHClient:
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy())
     ssh.connect(BG6_HOST, port=BG6_PORT, username=BG6_USER, password=BG6_PASS, timeout=10)
     return ssh
 

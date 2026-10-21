@@ -142,7 +142,7 @@ class TestUpesZeroTouchAuth(unittest.TestCase):
         self.assertFalse(id_email.mismatch)
 
         # Case B: Numeric SAP ID
-        id_sap = CredentialIdentity.from_hint_or_username("user2", "590011794")
+        id_sap = CredentialIdentity.from_hint_or_username("user2", "590099999")
         self.assertEqual(id_sap.configured_format, IdentifierFormat.NUMERIC_SAP_ID)
         self.assertTrue(id_sap.mismatch)
 
@@ -162,7 +162,7 @@ class TestUpesZeroTouchAuth(unittest.TestCase):
             "StatusCode": 200,
             "Items": [{
                 "StudentId": "3a678d8e-8817-41e6-b1a8-5a3ec6ee4948",
-                "GlobalId": "590011794",
+                "GlobalId": "590099999",
                 "UserId": 30054,
                 "EmailId": "ANMOL.11794@stu.upes.ac.in",
                 "FirstName": "ANMOL",
@@ -592,7 +592,7 @@ class TestUpesZeroTouchAuth(unittest.TestCase):
             "StatusCode": 200,
             "Items": [{
                 "StudentId": "3a678d8e-8817-41e6-b1a8-5a3ec6ee4948",
-                "GlobalId": "590011794",
+                "GlobalId": "590099999",
                 "UserId": 30054,
                 "EmailId": "ANMOL.11794@stu.upes.ac.in",
                 "FirstName": "ANMOL",

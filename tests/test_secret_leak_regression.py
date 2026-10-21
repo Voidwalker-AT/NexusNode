@@ -35,7 +35,12 @@ class TestSecretLeakRegression(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp(prefix="nexus_secret_test_")
         self.db_path = os.path.join(self.temp_dir, "test.db")
+        self.orig_unified_db = config.UNIFIED_DB_FILE
+        self.orig_db_path = config.DB_PATH
+        config.UNIFIED_DB_FILE = self.db_path
         config.DB_PATH = self.db_path
+        config.DB_FILE = self.db_path
+        nexus_app.init_unified_db()
 
         conn = sqlite3.connect(self.db_path)
         init_credential_tables(conn)
