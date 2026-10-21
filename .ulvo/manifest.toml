@@ -1,0 +1,19 @@
+schema_version = 1
+name = "nexusnode-server"
+description = "NexusNode 24/7 Personal Mobile Server Appliance Core"
+
+[runtimes]
+python = ">=3.10,<3.14"
+
+[package_manager]
+name = "uv"
+requirements = ["requirements.txt"]
+
+[lifecycle]
+policy = "ephemeral"
+lease_timeout_seconds = 300
+allow_reclaim_on_quiescence = true
+
+[execution]
+entry_point = "app.py"
+test_command = "-m unittest tests/test_package.py tests/test_startup_order.py tests/test_functionality_pass.py"
