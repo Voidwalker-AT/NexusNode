@@ -222,6 +222,7 @@ def normalize_upes_session(raw_item: Dict[str, Any], default_date: Optional[str]
 
     # 1. Extract course / subject name
     course_name = (
+        raw_item.get("CourseName") or
         raw_item.get("course_name") or
         raw_item.get("courseName") or
         raw_item.get("subject") or
@@ -236,6 +237,7 @@ def normalize_upes_session(raw_item: Dict[str, Any], default_date: Optional[str]
 
     # 2. Extract course code
     course_code = (
+        raw_item.get("CourseCode") or
         raw_item.get("course_code") or
         raw_item.get("courseCode") or
         raw_item.get("subject_code") or
@@ -257,6 +259,8 @@ def normalize_upes_session(raw_item: Dict[str, Any], default_date: Optional[str]
 
     # 3. Extract date (YYYY-MM-DD) or resolve from weekday
     raw_date = (
+        raw_item.get("SessionDate") or
+        raw_item.get("sessionDate") or
         raw_item.get("SlotDate") or
         raw_item.get("slotDate") or
         raw_item.get("slot_date") or
@@ -287,10 +291,11 @@ def normalize_upes_session(raw_item: Dict[str, Any], default_date: Optional[str]
 
     # 4. Extract start & end times
     start_time_raw = (
+        raw_item.get("StartTime") or
+        raw_item.get("startTime") or
         raw_item.get("SlotStartTime") or
         raw_item.get("slotStartTime") or
         raw_item.get("start_time") or
-        raw_item.get("startTime") or
         raw_item.get("time_from") or
         raw_item.get("timeFrom") or
         raw_item.get("from_time") or
@@ -300,10 +305,11 @@ def normalize_upes_session(raw_item: Dict[str, Any], default_date: Optional[str]
     ).strip()
 
     end_time_raw = (
+        raw_item.get("EndTime") or
+        raw_item.get("endTime") or
         raw_item.get("SlotEndTime") or
         raw_item.get("slotEndTime") or
         raw_item.get("end_time") or
-        raw_item.get("endTime") or
         raw_item.get("time_to") or
         raw_item.get("timeTo") or
         raw_item.get("to_time") or
@@ -330,6 +336,8 @@ def normalize_upes_session(raw_item: Dict[str, Any], default_date: Optional[str]
 
     # 5. Extract room / venue
     room = (
+        raw_item.get("RoomNo") or
+        raw_item.get("room_no") or
         raw_item.get("room") or
         raw_item.get("room_no") or
         raw_item.get("roomNo") or
@@ -351,6 +359,8 @@ def normalize_upes_session(raw_item: Dict[str, Any], default_date: Optional[str]
 
     # 6. Extract faculty / instructor
     faculty = (
+        raw_item.get("FacultyName") or
+        raw_item.get("faculty_name") or
         raw_item.get("faculty") or
         raw_item.get("faculty_name") or
         raw_item.get("facultyName") or
@@ -388,7 +398,7 @@ def normalize_upes_session(raw_item: Dict[str, Any], default_date: Optional[str]
         meeting_link = (fp.get("MeetingLink") or fp.get("meetingLink") or fp.get("JoinUrl") or fp.get("joinUrl") or "").strip()
 
     # 8. Extract or derive session ID
-    session_id = (
+    session_id = str(
         raw_item.get("session_id") or
         raw_item.get("sessionId") or
         raw_item.get("SessionId") or
@@ -1458,6 +1468,10 @@ class TimetableSynchronizer:
                     else:
                         ambiguous_events.append(ev)
 
+            except GoogleCalendarError as gce:
+                if ("invalid_grant" in str(gce).lower() or "auth" in str(gce).lower() or getattr(gce, "status_code", None) == 401):
+                    raise
+                logger.warning("Remote event listing not available or failed: %s", gce)
             except Exception as e:
                 logger.warning("Remote event listing not available or failed: %s", e)
                 pass
@@ -3142,15 +3156,21 @@ class TimetableService:
             cal_errors: List[str] = []
             try:
                 recon_res = synchronizer.synchronize(sessions, dry_run=dry_run, allow_deletions=allow_deletions)
-                cal_status = "RECONCILED" if recon_res.get("status") == "success" else "ERROR"
                 cal_errors = recon_res.get("errors", [])
+                has_auth_err = any("invalid_grant" in str(e).lower() or "auth" in str(e).lower() for e in cal_errors)
+                if recon_res.get("status") == "success":
+                    cal_status = "RECONCILED"
+                elif has_auth_err:
+                    cal_status = "CALENDAR_AUTH_REQUIRED"
+                else:
+                    cal_status = "ERROR"
                 created = recon_res.get("created", 0)
                 updated = recon_res.get("updated", 0)
                 deleted = recon_res.get("deleted", 0)
                 unchanged = recon_res.get("unchanged", 0)
             except GoogleCalendarError as gce:
-                is_oauth_invalid = ("invalid_grant" in str(gce).lower() or "auth" in str(gce).lower() or gce.status_code == 401)
-                cal_status = "AUTH_REQUIRED" if is_oauth_invalid else "ERROR"
+                is_oauth_invalid = ("invalid_grant" in str(gce).lower() or "auth" in str(gce).lower() or getattr(gce, "status_code", None) == 401)
+                cal_status = "CALENDAR_AUTH_REQUIRED" if is_oauth_invalid else "ERROR"
                 cal_errors = [str(gce)]
                 created, updated, deleted, unchanged = 0, 0, 0, 0
                 recon_res = {}
@@ -3166,18 +3186,39 @@ class TimetableService:
                 if cal_status == "RECONCILED" and not fetch_success:
                     cal_status = "PRESERVED"
 
-            # Determine overall outcome status
-            if upes_refresh_status in ("FAILED", "AUTH_REQUIRED"):
+            # Determine overall outcome status and message
+            if fetch_success:
+                if cal_status in ("RECONCILED", "PRESERVED") and not cal_errors:
+                    overall_status = "success"
+                    msg = "Timetable and Google Calendar synchronized successfully."
+                elif cal_status in ("CALENDAR_AUTH_REQUIRED", "AUTH_REQUIRED"):
+                    overall_status = "partial"
+                    msg = "Timetable successfully updated from UPES, but Google Calendar authorization is required (CALENDAR_AUTH_REQUIRED)."
+                elif created or updated or unchanged:
+                    overall_status = "partial"
+                    msg = "Timetable updated from UPES with partial Google Calendar synchronization."
+                else:
+                    overall_status = "partial"
+                    msg = f"Timetable successfully updated from UPES; Google Calendar sync failed ({'; '.join(cal_errors)})."
+            elif upes_refresh_status in ("FAILED", "AUTH_REQUIRED"):
                 overall_status = "failed"
-            elif (upes_refresh_status in ("SUCCESS", "SKIPPED") and cal_status in ("RECONCILED", "PRESERVED") and not cal_errors):
+                if cal_status in ("CALENDAR_AUTH_REQUIRED", "AUTH_REQUIRED"):
+                    msg = f"UPES authentication required ({fetch_msg}); Google Calendar authorization is also required."
+                else:
+                    msg = fetch_msg or "UPES authentication or fetch failed."
+            elif not live_fetch and cal_status in ("RECONCILED", "PRESERVED") and not cal_errors:
                 overall_status = "success"
+                msg = "Google Calendar synchronized from cached timetable."
             elif (created or updated or unchanged) and not cal_errors:
                 overall_status = "partial"
+                msg = "Timetable synchronized with partial changes."
             else:
                 overall_status = "failed"
+                msg = fetch_msg or "; ".join(cal_errors) or "Synchronization failed."
 
             result = {
                 "status": overall_status,
+                "message": msg,
                 "source": source,
                 "upes_refresh_status": upes_refresh_status,
                 "upes_fetch_status": fetch_msg or ("OK" if fetch_success else "LKG_FALLBACK"),
