@@ -8742,9 +8742,9 @@ def get_dashboard_summary():
                 att_summary["overall_percentage"] = pct
                 att_summary["total_subjects"] = ov.get("total_subjects", len(subs))
 
-                crit = sum(1 for s in subs if s.get("status_badge") == "critical")
-                warn = sum(1 for s in subs if s.get("status_badge") == "warning")
-                safe = sum(1 for s in subs if s.get("status_badge") == "safe")
+                crit = sum(1 for s in subs if s.get("status") == "critical" or s.get("status_badge") == "critical")
+                warn = sum(1 for s in subs if s.get("status") == "warning" or s.get("status_badge") == "warning")
+                safe = sum(1 for s in subs if s.get("status") == "safe" or s.get("status_badge") == "safe")
 
                 att_summary["critical_count"] = crit if subs else ov.get("critical_subjects", 0)
                 att_summary["warning_count"] = warn if subs else ov.get("warning_count", 0)
