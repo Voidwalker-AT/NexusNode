@@ -202,3 +202,33 @@ async function apiCheckAuth() {
     return authState.isAuthenticated;
   }
 }
+
+
+/**
+ * Initiates Google Calendar OAuth authorization flow via authenticated API fetch.
+ * Uses Bearer token to request Google consent URL, then redirects the browser.
+ */
+async function handleConnectGoogle(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    if (typeof showToast === 'function') {
+      showToast('Initiating Google Calendar authorization...', 'info');
+    }
+    const data = await apiJson('/api/auth/google/authorize');
+    if (data && data.authorization_url) {
+      window.location.href = data.authorization_url;
+    } else {
+      if (typeof showToast === 'function') {
+        showToast('Could not retrieve Google authorization URL', 'error');
+      }
+      if (btn) btn.disabled = false;
+    }
+  } catch (err) {
+    console.error('[OAuth] Google authorization initiation error:', err);
+    if (typeof showToast === 'function') {
+      showToast(`Google connect error: ${err.message}`, 'error');
+    }
+    if (btn) btn.disabled = false;
+  }
+}
+window.handleConnectGoogle = handleConnectGoogle;

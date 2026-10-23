@@ -5352,18 +5352,24 @@ def google_oauth_callback():
     error = request.args.get("error")
     if error:
         log_event("WARNING", "OAUTH", f"Google OAuth returned error: {error}")
-        return jsonify({"error": f"Google authorization failed: {error}"}), 400
+        if request.headers.get("Accept") == "application/json" or request.args.get("format") == "json":
+            return jsonify({"error": f"Google authorization failed: {error}"}), 400
+        return redirect(f"/#tab-accounts?google_auth_error={requests.utils.quote(str(error))}")
 
     code = request.args.get("code")
     state = request.args.get("state")
 
     if not code or not state:
-        return jsonify({"error": "Missing code or state parameter in OAuth callback."}), 400
+        if request.headers.get("Accept") == "application/json" or request.args.get("format") == "json":
+            return jsonify({"error": "Missing code or state parameter in OAuth callback."}), 400
+        return redirect("/#tab-accounts?google_auth_error=missing_code_or_state")
 
     state_user_id = timetable_service.validate_and_consume_state(state)
     if not state_user_id:
         log_event("WARNING", "OAUTH", "Invalid, expired, or replayed OAuth state token during callback.")
-        return jsonify({"error": "Invalid or expired OAuth state token. Possible CSRF attempt."}), 400
+        if request.headers.get("Accept") == "application/json" or request.args.get("format") == "json":
+            return jsonify({"error": "Invalid or expired OAuth state token. Possible CSRF attempt."}), 400
+        return redirect("/#tab-accounts?google_auth_error=invalid_or_expired_state")
 
     # Defense-in-depth: If an active user session is present, it MUST match the state owner
     if g.user and g.user.get("user_id"):
@@ -5383,7 +5389,7 @@ def google_oauth_callback():
         if request.headers.get("Accept") == "application/json" or request.args.get("format") == "json":
             return jsonify({"status": "success", "message": "Google Calendar connected successfully.", "user_id": state_user_id})
 
-        return redirect("/#tab-attendance?google_auth=success")
+        return redirect("/#tab-accounts?google_auth=success")
     except timetable_sync.GoogleCalendarError as e:
         log_event("ERROR", "OAUTH", f"OAuth token exchange error: {str(e)}")
         return jsonify({"error": str(e)}), e.status_code

@@ -78,7 +78,7 @@ function renderStudentSelfServiceView(container, data) {
   } else if (healthState === 'GOOGLE_REQUIRED' || healthState === 'GOOGLE_EXPIRED') {
     bannerClass = 'alert-critical';
     bannerIcon = 'link_off';
-    actionBtnHtml = `<button class="btn btn-primary" onclick="handleConnectGoogle()"><span class="material-symbols-outlined" style="font-size: 14px;">link</span> Connect Google Calendar</button>`;
+    actionBtnHtml = `<button class="btn btn-primary" onclick="handleConnectGoogle(this)"><span class="material-symbols-outlined" style="font-size: 14px;">link</span> Connect Google Calendar</button>`;
   } else if (healthState === 'UPES_REQUIRED' || healthState === 'UPES_EXPIRED') {
     bannerClass = 'alert-warning';
     bannerIcon = 'school';
@@ -242,10 +242,10 @@ function renderStudentSelfServiceView(container, data) {
             <div style="font-size: 13px; color: var(--status-warning); margin-right: 12px;">
               OAuth token expired or revoked. Please re-authorize Google Calendar access.
             </div>
-            <a href="/api/auth/google/authorize?redirect=true" class="btn btn-warning" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 6px 14px;">
+            <button class="btn btn-warning" onclick="handleConnectGoogle(this)" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 6px 14px;">
               <span class="material-symbols-outlined" style="font-size: 14px;">vpn_key</span>
               Re-authorize Google
-            </a>
+            </button>
           ` : google.connected ? `
             <div style="font-size: 13px; color: var(--on-surface); margin-right: 12px;">
               Linked as: <strong>${escapeHtml(google.connected_email || 'Google User')}</strong>
@@ -254,7 +254,7 @@ function renderStudentSelfServiceView(container, data) {
               Disconnect Google
             </button>
           ` : `
-            <button class="btn btn-primary" onclick="handleConnectGoogle()">
+            <button class="btn btn-primary" onclick="handleConnectGoogle(this)">
               <span class="material-symbols-outlined" style="font-size: 14px;">link</span>
               Connect Google Calendar
             </button>
@@ -664,7 +664,7 @@ function getWizardStepContent(step) {
           </div>
         </div>
         <div style="text-align: center; padding: 10px 0;">
-          <button class="btn btn-primary" onclick="handleConnectGoogle()">
+          <button class="btn btn-primary" onclick="handleConnectGoogle(this)">
             <span class="material-symbols-outlined" style="font-size: 16px;">link</span>
             CONNECT GOOGLE CALENDAR
           </button>

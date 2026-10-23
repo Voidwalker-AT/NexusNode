@@ -243,9 +243,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateAuthUI();
 
   if (valid) {
+    // Check URL for Google OAuth callback notifications
+    const fullHash = window.location.hash || '';
+    const fullSearch = window.location.search || '';
+    const hasGoogleSuccess = fullHash.includes('google_auth=success') || fullSearch.includes('google_auth=success');
+    const hasGoogleError = fullHash.includes('google_auth_error') || fullSearch.includes('google_auth_error');
+
+    if (hasGoogleSuccess) {
+      if (typeof showToast === 'function') {
+        showToast('Google Calendar connected successfully!', 'success');
+      }
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname + '#tab-accounts');
+      }
+    } else if (hasGoogleError) {
+      const errMatch = (fullHash + fullSearch).match(/google_auth_error=([^&]+)/);
+      const errMsg = errMatch ? decodeURIComponent(errMatch[1]) : 'Google authorization was cancelled or failed';
+      if (typeof showToast === 'function') {
+        showToast(`Google Calendar error: ${errMsg}`, 'error');
+      }
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname + '#tab-accounts');
+      }
+    }
+
     // Read URL Hash for initial tab
-    const hash = window.location.hash.replace('#tab-', '').toLowerCase();
-    const initialTab = VALID_TABS.includes(hash) ? hash : 'dashboard';
+    let hash = window.location.hash.replace('#tab-', '').toLowerCase();
+    if (hash.includes('?')) {
+      hash = hash.split('?')[0];
+    }
+    const initialTab = VALID_TABS.includes(hash) ? hash : (hasGoogleSuccess || hasGoogleError ? 'accounts' : 'dashboard');
     switchTab(initialTab);
     startSystemPolling();
   } else {

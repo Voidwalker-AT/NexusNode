@@ -978,10 +978,10 @@ async function loadAcademicsCalendar() {
               <span class="material-symbols-outlined" style="font-size: 14px;">cached</span>
               Reconcile from Cache
             </button>
-            <a href="/api/auth/google/authorize?redirect=true" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+            <button class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 4px;" onclick="handleConnectGoogle(this)" title="Re-authorize Google Calendar access">
               <span class="material-symbols-outlined" style="font-size: 14px;">vpn_key</span>
               Re-authorize Google
-            </a>
+            </button>
             <button class="btn btn-primary" style="font-size: 12px;" onclick="triggerCalendarReconcile(this)">
               <span class="material-symbols-outlined" style="font-size: 14px;">sync</span>
               Resync from UPES
