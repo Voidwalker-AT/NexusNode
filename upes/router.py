@@ -186,6 +186,13 @@ class UpesExecutionRouter:
         start_date = params.get("start_date")
         end_date = params.get("end_date")
         limit = min(100, max(1, int(params.get("limit", 20))))
+        upcoming_only = params.get("upcoming_only", False)
+        if upcoming_only and not start_date:
+            try:
+                tz = zoneinfo.ZoneInfo(config.TIMETABLE_TIMEZONE)
+            except Exception:
+                tz = datetime.timezone.utc
+            start_date = datetime.datetime.now(tz).strftime("%Y-%m-%d")
         sync_executed = False
 
         # Attempt reauthentication if auth_manager is present
@@ -324,8 +331,17 @@ class UpesExecutionRouter:
         """
         limit = min(10, max(1, int(params.get("limit", 3))))
 
-        # Ensure timetable is loaded via get_timetable
-        tt_res = self._get_timetable(user_id, {"limit": 100}, now)
+        # Determine current local datetime in configured timezone
+        try:
+            tz = zoneinfo.ZoneInfo(config.TIMETABLE_TIMEZONE)
+        except Exception:
+            tz = datetime.timezone.utc
+        now_dt = datetime.datetime.now(tz)
+        today_str = now_dt.strftime("%Y-%m-%d")
+        now_time_str = now_dt.strftime("%H:%M:%S")
+
+        # Ensure timetable is loaded via get_timetable filtering from today onwards before limit
+        tt_res = self._get_timetable(user_id, {"start_date": today_str, "limit": 100}, now)
         if not tt_res.ok or not tt_res.data:
             return ExecutionResult(
                 ok=False,
@@ -338,15 +354,6 @@ class UpesExecutionRouter:
             )
 
         events = tt_res.data.get("events", [])
-        
-        # Determine current local datetime in configured timezone
-        try:
-            tz = zoneinfo.ZoneInfo(config.TIMETABLE_TIMEZONE)
-        except Exception:
-            tz = datetime.timezone.utc
-        now_dt = datetime.datetime.now(tz)
-        today_str = now_dt.strftime("%Y-%m-%d")
-        now_time_str = now_dt.strftime("%H:%M:%S")
 
         upcoming = []
         for ev in events:

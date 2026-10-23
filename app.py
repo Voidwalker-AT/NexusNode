@@ -184,6 +184,8 @@ upes_auth_manager = upes.UpesAuthManager(
     session_tracker=upes_session_tracker,
     tracker=upes_endurance_tracker
 )
+timetable_service.auth_manager = upes_auth_manager
+attendance_service.auth_manager = upes_auth_manager
 upes_router = upes.UpesExecutionRouter(
     conn_factory=get_db_connection,
     attendance_service=attendance_service,
@@ -2531,15 +2533,43 @@ def run_timetable_sync_job(task_obj: dict = None):
         log_event("ERROR", "RESULTS", res_err_msg)
 
     # 4. LMS Metadata Synchronization (Pillar D, isolated telemetry tracking)
+    lms_failed = False
     try:
         lms_t0 = time.time()
         lms_msg = f"LMS sync telemetry pass completed in {round((time.time() - lms_t0) * 1000, 2)}ms."
         task_obj.setdefault('logs', []).append(lms_msg)
         log_event("INFO", "LMS", lms_msg)
     except Exception as e:
+        lms_failed = True
         lms_err_msg = f"LMS sync job error: {str(e)}"
         task_obj.setdefault('logs', []).append(lms_err_msg)
         log_event("ERROR", "LMS", lms_err_msg)
+
+    # 5. Record actual completion status in scheduled_jobs table
+    try:
+        has_tt_err = ('total_errors' in locals() and total_errors > 0)
+        has_any_err = ('err_msg' in locals()) or ('att_err_msg' in locals()) or ('res_err_msg' in locals()) or lms_failed or has_tt_err
+        all_failed = ('err_msg' in locals()) and ('att_err_msg' in locals()) and ('res_err_msg' in locals())
+
+        if all_failed:
+            final_status = "failed"
+        elif has_any_err:
+            final_status = "partial"
+        else:
+            final_status = "success"
+
+        with DB_LOCK:
+            conn = get_db_connection()
+            try:
+                conn.execute(
+                    "UPDATE scheduled_jobs SET last_status = ? WHERE job_type = 'timetable_sync'",
+                    (final_status,)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+    except Exception as e:
+        logger.warning(f"Failed to record scheduled_jobs status: {e}")
 
 
 scheduler_daemon = SchedulerDaemon()
@@ -5789,9 +5819,7 @@ def get_academics_snapshot():
         if (getattr(s, "date", "") > today_str) or (getattr(s, "date", "") == today_str and getattr(s, "start_time", "") > now_time_str)
     ]
     upcoming.sort(key=lambda s: (getattr(s, "date", ""), getattr(s, "start_time", "")))
-    next_class = _safe_session_to_dict(upcoming[0]) if upcoming else (
-        _safe_session_to_dict(sessions[-1]) if sessions else None
-    )
+    next_class = _safe_session_to_dict(upcoming[0]) if upcoming else None
 
     timetable_snap = {
         "count": len(sessions),
@@ -8691,7 +8719,7 @@ def get_dashboard_summary():
             log_event("WARNING", "DASHBOARD", f"Error getting onboarding status for dashboard: {e}")
             onboarding = {}
 
-        # 3. Attendance stats from local SQLite
+        # 3. Attendance stats from local SQLite (DEF-09 robust field mapping & provenance)
         att_summary = {
             "overall_percentage": None,
             "total_subjects": 0,
@@ -8699,19 +8727,50 @@ def get_dashboard_summary():
             "critical_count": 0,
             "safe_count": 0,
             "warning_count": 0,
-            "subjects": []
+            "subjects": [],
+            "last_synced_at": None,
+            "provenance": "NONE",
+            "sync_status": "NONE"
         }
         try:
             analytics = attendance_service.get_attendance_analytics(user_id)
-            if analytics and analytics.get("summary"):
-                s = analytics["summary"]
-                att_summary["overall_percentage"] = s.get("overall_percentage")
-                att_summary["total_subjects"] = s.get("total_subjects", 0)
-                att_summary["critical_count"] = s.get("critical_count", 0)
-                att_summary["warning_count"] = s.get("warning_count", 0)
-                att_summary["safe_count"] = s.get("safe_count", 0)
-                att_summary["at_risk_subjects"] = s.get("critical_count", 0) + s.get("warning_count", 0)
-                att_summary["subjects"] = analytics.get("subject_reports", [])[:6]
+            if analytics:
+                ov = analytics.get("overall") or analytics.get("summary") or {}
+                subs = analytics.get("subjects") or analytics.get("subject_reports") or []
+
+                pct = ov.get("attendance_percentage") if ov.get("attendance_percentage") is not None else ov.get("overall_percentage")
+                att_summary["overall_percentage"] = pct
+                att_summary["total_subjects"] = ov.get("total_subjects", len(subs))
+
+                crit = sum(1 for s in subs if s.get("status_badge") == "critical")
+                warn = sum(1 for s in subs if s.get("status_badge") == "warning")
+                safe = sum(1 for s in subs if s.get("status_badge") == "safe")
+
+                att_summary["critical_count"] = crit if subs else ov.get("critical_subjects", 0)
+                att_summary["warning_count"] = warn if subs else ov.get("warning_count", 0)
+                att_summary["safe_count"] = safe if subs else ov.get("safe_count", 0)
+                att_summary["at_risk_subjects"] = att_summary["critical_count"] + att_summary["warning_count"]
+                att_summary["subjects"] = subs[:6]
+
+            att_status = attendance_service.get_attendance_status(user_id)
+            if att_status:
+                sync_st = att_status.get("sync_status", "UNKNOWN")
+                att_summary["sync_status"] = sync_st
+                last_sync = att_status.get("last_sync") or {}
+                att_summary["last_synced_at"] = last_sync.get("timestamp")
+
+                if sync_st == "AUTH_REQUIRED":
+                    att_summary["provenance"] = "AUTH_REQUIRED"
+                elif sync_st == "STALE":
+                    att_summary["provenance"] = "STALE"
+                elif sync_st in ("ACTIVE", "SUCCESS", "OK"):
+                    ts = last_sync.get("timestamp")
+                    if ts and (time.time() - ts) < 10800:
+                        att_summary["provenance"] = "LIVE"
+                    else:
+                        att_summary["provenance"] = "CACHED"
+                else:
+                    att_summary["provenance"] = "CACHED" if att_summary["total_subjects"] > 0 else "NONE"
         except Exception as e:
             logger.warning(f"Error computing attendance analytics for dashboard: {e}")
             log_event("WARNING", "DASHBOARD", f"Error computing attendance analytics for dashboard: {e}")
@@ -9062,7 +9121,7 @@ def api_academics_refresh_all():
 
     # 2. Attendance
     try:
-        att_res = attendance_service.sync_attendance(user_id)
+        att_res = attendance_service.sync_user_attendance(user_id)
         results_summary["attendance"] = {"ok": True, "details": att_res}
     except Exception as e:
         results_summary["attendance"] = {"ok": False, "error": str(e)}

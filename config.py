@@ -611,7 +611,7 @@ TIMETABLE_MAX_UPLOAD_BYTES = int(
 TIMETABLE_MAX_SESSIONS = int(
     os.environ.get(
         "NEXUS_TIMETABLE_MAX_SESSIONS",
-        500
+        2000
     )
 )
 

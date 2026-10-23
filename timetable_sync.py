@@ -1640,7 +1640,14 @@ class TimetableSynchronizer:
             plan_duplicate_removals = []
             proposed_duplicate_removals = 0
 
+        def _is_calendar_auth_error(exc: Exception) -> bool:
+            if isinstance(exc, GoogleCalendarError) and getattr(exc, "status_code", 0) == 401:
+                return True
+            s = str(exc).lower()
+            return "invalid_grant" in s or "unauthorized" in s or "reauth_required" in s or "token may be revoked" in s
+
         # 6. Execute Plan (if not dry_run)
+        auth_failed = False
         if not dry_run:
             for session in plan_creates:
                 try:
@@ -1659,52 +1666,67 @@ class TimetableSynchronizer:
                         c.close()
                 except Exception as e:
                     errors.append(f"Failed to create event for session '{session.course_name}' on {session.date}: {str(e)}")
+                    if _is_calendar_auth_error(e):
+                        auth_failed = True
+                        break
 
-            for ev, session in plan_updates:
-                ev_id = ev.get("id") or ev.get("event_id")
-                cal_id = ev.get("calendar_id", self.calendar_id)
-                try:
-                    self.calendar_client.update_event(cal_id, ev_id, session, self.user_id)
-                    map_id = f"{self.user_id}:{session.canonical_slot_key}:{session.date}"
-                    c = self.conn_factory()
+            if not auth_failed:
+                for ev, session in plan_updates:
+                    ev_id = ev.get("id") or ev.get("event_id")
+                    cal_id = ev.get("calendar_id", self.calendar_id)
                     try:
-                        c.execute("""
-                            INSERT OR REPLACE INTO timetable_events_map
-                            (id, user_id, source_session_id, source_date, google_calendar_id, google_event_id, source_hash, summary, start_time, end_time, last_synced_at, status)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced')
-                        """, (map_id, self.user_id, session.canonical_slot_key, session.date, cal_id, ev_id, session.deterministic_hash, session.course_name, session.start_time, session.end_time, now))
-                        c.commit()
-                    finally:
-                        c.close()
-                except Exception as e:
-                    errors.append(f"Failed to update event for session '{session.course_name}' on {session.date}: {str(e)}")
+                        self.calendar_client.update_event(cal_id, ev_id, session, self.user_id)
+                        map_id = f"{self.user_id}:{session.canonical_slot_key}:{session.date}"
+                        c = self.conn_factory()
+                        try:
+                            c.execute("""
+                                INSERT OR REPLACE INTO timetable_events_map
+                                (id, user_id, source_session_id, source_date, google_calendar_id, google_event_id, source_hash, summary, start_time, end_time, last_synced_at, status)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced')
+                            """, (map_id, self.user_id, session.canonical_slot_key, session.date, cal_id, ev_id, session.deterministic_hash, session.course_name, session.start_time, session.end_time, now))
+                            c.commit()
+                        finally:
+                            c.close()
+                    except Exception as e:
+                        errors.append(f"Failed to update event for session '{session.course_name}' on {session.date}: {str(e)}")
+                        if _is_calendar_auth_error(e):
+                            auth_failed = True
+                            break
 
-            for ev in plan_duplicate_removals:
-                ev_id = ev.get("id")
-                try:
-                    self.calendar_client.delete_event(self.calendar_id, ev_id)
-                    c = self.conn_factory()
+            if not auth_failed:
+                for ev in plan_duplicate_removals:
+                    ev_id = ev.get("id")
                     try:
-                        c.execute("DELETE FROM timetable_events_map WHERE google_event_id = ?", (ev_id,))
-                        c.commit()
-                    finally:
-                        c.close()
-                except Exception as e:
-                    errors.append(f"Failed to delete duplicate event '{ev_id}': {str(e)}")
+                        self.calendar_client.delete_event(self.calendar_id, ev_id)
+                        c = self.conn_factory()
+                        try:
+                            c.execute("DELETE FROM timetable_events_map WHERE google_event_id = ?", (ev_id,))
+                            c.commit()
+                        finally:
+                            c.close()
+                    except Exception as e:
+                        errors.append(f"Failed to delete duplicate event '{ev_id}': {str(e)}")
+                        if _is_calendar_auth_error(e):
+                            auth_failed = True
+                            break
 
-            for ev in plan_stale_deletions:
-                g_event_id = ev.get("event_id") or ev.get("id")
-                cal_id = ev.get("calendar_id", self.calendar_id)
-                try:
-                    self.calendar_client.delete_event(cal_id, g_event_id)
-                    c = self.conn_factory()
+            if not auth_failed:
+                for ev in plan_stale_deletions:
+                    g_event_id = ev.get("event_id") or ev.get("id")
+                    cal_id = ev.get("calendar_id", self.calendar_id)
                     try:
-                        c.execute("UPDATE timetable_events_map SET status = 'cancelled', last_synced_at = ? WHERE google_event_id = ? OR id = ?", (now, g_event_id, ev.get("id")))
-                        c.commit()
-                    finally:
-                        c.close()
-                except Exception as e:
-                    errors.append(f"Failed to delete stale event '{g_event_id}': {str(e)}")
+                        self.calendar_client.delete_event(cal_id, g_event_id)
+                        c = self.conn_factory()
+                        try:
+                            c.execute("UPDATE timetable_events_map SET status = 'cancelled', last_synced_at = ? WHERE google_event_id = ? OR id = ?", (now, g_event_id, ev.get("id")))
+                            c.commit()
+                        finally:
+                            c.close()
+                    except Exception as e:
+                        errors.append(f"Failed to delete stale event '{g_event_id}': {str(e)}")
+                        if _is_calendar_auth_error(e):
+                            auth_failed = True
+                            break
 
             status_label = "success" if not errors else ("partial" if (creates_count or patches_count or noops_count or stale_removals_count or proposed_duplicate_removals) else "failed")
             history_id = f"sync_{int(now * 1000)}_{secrets.token_hex(4)}"
@@ -2528,6 +2550,11 @@ class UpesSessionBroker:
 
         if err and "auth_required" in err:
             logger.info(f"[AUTH_BROKER] Received auth_required from API. Attempting single refresh/reacquisition retry...")
+            if hasattr(self.service, "auth_manager") and self.service.auth_manager:
+                try:
+                    self.service.auth_manager.ensure_authenticated(user_id, force_login=True)
+                except Exception as e:
+                    logger.debug(f"[AUTH_BROKER] auth_manager force_login retry failed: {e}")
             full = self.service.get_full_upes_session(user_id)
             if full and full.get("refresh_token") and (full.get("cookies") or {}).get("idp_session_info"):
                 succ, _, _ = self.refresh_upes_session_headless(user_id)
@@ -2573,8 +2600,9 @@ class UpesSessionBroker:
 class TimetableService:
     """Service facade connecting storage, OAuth, parsing, synchronizer, and scheduler."""
 
-    def __init__(self, conn_factory):
+    def __init__(self, conn_factory, auth_manager=None):
         self.conn_factory = conn_factory
+        self.auth_manager = auth_manager
         self.session_broker = UpesSessionBroker(self)
         self._sessions_cache: Dict[str, Tuple[List[Any], List[str], float, str]] = {}
 
@@ -3170,7 +3198,7 @@ class TimetableService:
             def on_refresh(u_id, new_tokens):
                 self.save_oauth_tokens(u_id, new_tokens, calendar_id, email)
 
-            client = GoogleCalendarClient(token_data, user_id, on_token_refresh=on_refresh)
+            client = GoogleCalendarClient(token_data, user_id, on_token_refresh=on_refresh, conn_factory=self.conn_factory)
 
             # 6. Synchronize with Google Calendar
             synchronizer = TimetableSynchronizer(self.conn_factory, user_id, client, calendar_id)

@@ -188,6 +188,9 @@ class TestUpesAuthManagerComprehensive(unittest.TestCase):
         self.client = nexus_app.app.test_client()
 
         # Wire app singletons to isolated test database instances
+        self._orig_cred_provider = getattr(nexus_app, 'upes_credential_provider', None)
+        self._orig_auth_manager = getattr(nexus_app, 'upes_auth_manager', None)
+        self._orig_session_tracker = getattr(nexus_app, 'upes_session_tracker', None)
         nexus_app.upes_credential_provider = self.cred_provider
         nexus_app.upes_auth_manager = self.auth_manager
         nexus_app.upes_session_tracker = self.session_tracker
@@ -204,6 +207,12 @@ class TestUpesAuthManagerComprehensive(unittest.TestCase):
         })
 
     def tearDown(self):
+        if hasattr(self, '_orig_cred_provider') and self._orig_cred_provider is not None:
+            nexus_app.upes_credential_provider = self._orig_cred_provider
+        if hasattr(self, '_orig_auth_manager') and self._orig_auth_manager is not None:
+            nexus_app.upes_auth_manager = self._orig_auth_manager
+        if hasattr(self, '_orig_session_tracker') and self._orig_session_tracker is not None:
+            nexus_app.upes_session_tracker = self._orig_session_tracker
         try:
             for f in os.listdir(self.temp_dir):
                 os.remove(os.path.join(self.temp_dir, f))

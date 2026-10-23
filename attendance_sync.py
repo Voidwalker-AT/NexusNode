@@ -335,10 +335,11 @@ class AttendanceService:
     classroom card-punch tracking, and safe bunk analytics.
     """
 
-    def __init__(self, conn_factory, session_broker=None, timetable_service=None):
+    def __init__(self, conn_factory, session_broker=None, timetable_service=None, auth_manager=None):
         self.conn_factory = conn_factory
         self.session_broker = session_broker
         self.timetable_service = timetable_service
+        self.auth_manager = auth_manager
 
     def get_attendance_status(self, user_id: str) -> Dict[str, Any]:
         """Returns non-sensitive health and synchronization status for a user."""
@@ -437,12 +438,13 @@ class AttendanceService:
                 try:
                     tok, code, api_url, exp = self.auth_manager.ensure_authenticated(user_id)
                     session_tuple = (tok, code, api_url, exp)
+                    auth_err = None
                 except Exception as e:
                     auth_err = str(e)
             elif not self.session_broker:
                 return {"status": "ERROR", "message": "UpesSessionBroker not configured on service."}
 
-            if hasattr(self.session_broker, "resolve_session"):
+            if not session_tuple and hasattr(self.session_broker, "resolve_session"):
                 try:
                     res = self.session_broker.resolve_session(user_id)
                     if isinstance(res, tuple) and len(res) == 2:
@@ -480,9 +482,18 @@ class AttendanceService:
                 student_uuid
             )
 
-            # If token was invalidated server-side, attempt one reacquisition via broker
+            # If token was invalidated server-side, attempt one reacquisition via auth_manager or broker
             if dd_err and "auth_required" in dd_err:
-                session_tuple, auth_err = self.session_broker.resolve_session(user_id)
+                session_tuple = None
+                if hasattr(self, "auth_manager") and self.auth_manager:
+                    try:
+                        tok, code, api_url, exp = self.auth_manager.ensure_authenticated(user_id, force_login=True)
+                        session_tuple = (tok, code, api_url, exp)
+                        auth_err = None
+                    except Exception as e:
+                        auth_err = str(e)
+                if not session_tuple and hasattr(self.session_broker, "resolve_session"):
+                    session_tuple, auth_err = self.session_broker.resolve_session(user_id)
                 if session_tuple:
                     token, student_uuid, _, expires_at = session_tuple
                     dd_data, dd_err = execute_upes_attendance_request(
@@ -1058,6 +1069,8 @@ class AttendanceService:
             ]
         finally:
             conn.close()
+
+    sync_attendance = sync_user_attendance
 
     def sync_all_active_users(self) -> Dict[str, Any]:
         """Synchronizes attendance for all active users having configured UPES sessions."""
