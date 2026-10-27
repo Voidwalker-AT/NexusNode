@@ -105,6 +105,54 @@ class LMSService:
             conn.close()
 
 
+
+    def _get_cached_courses(self, user_id: str, query: Optional[str] = None, active_only: bool = True) -> Optional[Dict[str, Any]]:
+        """Loads cached courses from academic_modules SQLite table or storage_vault fallback."""
+        from lms.models import LMSCourse
+        courses = []
+        conn = self.conn_factory()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT module_id, module_name FROM academic_modules WHERE user_id = ? ORDER BY module_name ASC", (user_id,))
+            rows = cur.fetchall()
+            for r in rows:
+                mid = r[0] if isinstance(r, (tuple, list)) else r["module_id"]
+                mname = r[1] if isinstance(r, (tuple, list)) else r["module_name"]
+                courses.append(LMSCourse(
+                    course_id=f"lmscourse_{mid}",
+                    name=mname,
+                    short_name=mname[:20],
+                    provider_id=str(mid),
+                    url=f"https://lms.upes.ac.in/course/view.php?id={mid}",
+                    semester="Sem5",
+                    provider="moodle",
+                    is_active=True
+                ))
+        except Exception:
+            pass
+        finally:
+            conn.close()
+
+        if not courses:
+            return None
+
+        # Filter by query if supplied
+        if query:
+            q_norm = query.strip().lower()
+            filtered = []
+            for c in courses:
+                if q_norm in c.name.lower() or q_norm in c.short_name.lower() or q_norm in c.course_id.lower() or q_norm == c.provider_id:
+                    filtered.append(c)
+            courses = filtered
+
+        return {
+            "data": {
+                "total_courses": len(courses),
+                "courses": [c.to_dict() for c in courses]
+            },
+            "fetched_at": time.time()
+        }
+
     def list_courses(self, user_id: str, params: Dict[str, Any]) -> ExecutionResult:
         """
         Lists enrolled academic courses with disambiguation and provenance tracking.
@@ -193,6 +241,18 @@ class LMSService:
                 metadata={"transport": transport, "cache_age_seconds": round(now - fetched_ts, 1)}
             )
         except LMSAuthRequiredError as are:
+            cached_courses = self._get_cached_courses(user_id, query=query, active_only=active_only)
+            if cached_courses is not None:
+                return ExecutionResult(
+                    ok=True,
+                    operation="lms.list_courses",
+                    source="local",
+                    provider=self.provider.provider_name,
+                    data=cached_courses["data"],
+                    fetched_at=cached_courses["fetched_at"],
+                    stale=True,
+                    metadata={"transport": "cached_storage", "warning": are.message}
+                )
             return ExecutionResult(
                 ok=False,
                 operation="lms.list_courses",
