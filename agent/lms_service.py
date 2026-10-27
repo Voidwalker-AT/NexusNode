@@ -434,6 +434,68 @@ class LMSService:
                 fetched_at=now
             )
 
+
+    def _get_cached_assignments(self, user_id: str, course_target: Optional[str] = None, upcoming_only: bool = False) -> Optional[Dict[str, Any]]:
+        """Loads cached LMS assignments from storage_vault fallback files."""
+        candidates = [
+            os.path.join(getattr(config, "STORAGE_VAULT_ROOT", "storage_vault"), "authoritative_lms_assignments.json"),
+            os.path.join(getattr(config, "STORAGE_VAULT_ROOT", "storage_vault"), "lms_assignments.json"),
+            os.path.join("storage_vault", "authoritative_lms_assignments.json"),
+            os.path.join("storage_vault", "lms_assignments.json")
+        ]
+        data_list = None
+        mtime = time.time()
+        for cand in candidates:
+            if os.path.exists(cand):
+                try:
+                    with open(cand, "r", encoding="utf-8") as f:
+                        data_list = json.load(f)
+                    mtime = os.path.getmtime(cand)
+                    break
+                except Exception:
+                    pass
+        if not data_list or not isinstance(data_list, list):
+            return None
+
+        from lms.models import LMSAssignment
+        results = []
+        for i, item in enumerate(data_list):
+            title = (item.get("name") or item.get("title") or f"Assignment {i+1}").strip()
+            c_name = (item.get("course") or item.get("course_name") or "General").strip()
+            due_str = item.get("due_date") or item.get("due_at") or None
+            status = item.get("status", "OPEN")
+            desc = item.get("description") or item.get("instructions") or "Assignment instructions available on LMS."
+            c_id = f"lmscourse_{abs(hash(c_name)) % 100000}"
+            a_id = f"lmsassign_{abs(hash(title + c_name)) % 100000}"
+            
+            if course_target:
+                ct = course_target.lower()
+                if ct not in c_id.lower() and ct not in c_name.lower():
+                    continue
+
+            assign = LMSAssignment(
+                assignment_id=a_id,
+                course_id=c_id,
+                title=title,
+                instructions=desc,
+                due_at=due_str,
+                status=status,
+                submitted=status == "SUBMITTED",
+                submission_allowed=status != "SUBMITTED",
+                url=item.get("url", "https://lms.upes.ac.in"),
+                provider_id=str(abs(hash(title)) % 100000),
+                metadata={"course_name": c_name, "raw_due": item.get("due_date_raw", "")}
+            )
+            results.append(assign.to_dict())
+
+        return {
+            "data": {
+                "total_assignments": len(results),
+                "assignments": results
+            },
+            "fetched_at": mtime
+        }
+
     def list_assignments(self, user_id: str, params: Dict[str, Any]) -> ExecutionResult:
         """
         Lists assignments for a specific course or across all enrolled courses.
@@ -463,6 +525,18 @@ class LMSService:
                 metadata={"transport": transport}
             )
         except LMSAuthRequiredError as are:
+            cached_res = self._get_cached_assignments(user_id, course_target, upcoming_only=params.get("upcoming_only", False))
+            if cached_res is not None:
+                return ExecutionResult(
+                    ok=True,
+                    operation="lms.list_assignments",
+                    source="local",
+                    provider=self.provider.provider_name,
+                    data=cached_res["data"],
+                    fetched_at=cached_res["fetched_at"],
+                    stale=True,
+                    metadata={"transport": "cached_storage", "warning": are.message}
+                )
             return ExecutionResult(
                 ok=False,
                 operation="lms.list_assignments",

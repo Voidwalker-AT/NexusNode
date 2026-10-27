@@ -589,7 +589,7 @@ def decode_jwt_expiration(token: str) -> Optional[float]:
     return None
 
 
-def fetch_upes_timetable(token: str, student_code: str, api_url: Optional[str] = None) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+def fetch_upes_timetable(token: str, student_code: str, api_url: Optional[str] = None, cookies: Optional[Dict[str, str]] = None) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
     """
     Executes authenticated HTTP POST to UPES Curriculum Scheduling API.
     Returns (raw_items_list, error_message).
@@ -606,6 +606,7 @@ def fetch_upes_timetable(token: str, student_code: str, api_url: Optional[str] =
         "Content-Type": "application/json",
         "Accept": "application/json, text/plain, */*",
         "x-applicationname": "connectportal",
+        "x-appsecret": getattr(config, "UPES_SSO_CLIENT_SECRET", "ku7GUMtyT8er51rTfTc7HC"),
         "x-requestfrom": "web",
         "x-studentuniqueid": student_code_clean,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -618,7 +619,7 @@ def fetch_upes_timetable(token: str, student_code: str, api_url: Optional[str] =
     }
 
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=config.UPES_REQUEST_TIMEOUT_SECONDS)
+        resp = requests.post(url, headers=headers, json=payload, cookies=cookies, timeout=config.UPES_REQUEST_TIMEOUT_SECONDS)
         if resp.status_code in (401, 403):
             return None, "auth_required: UPES authentication expired / login required."
         if resp.status_code != 200:
@@ -2579,7 +2580,8 @@ class UpesSessionBroker:
         def _call(token, student_code):
             full = self.service.get_full_upes_session(user_id)
             api_url = full.get("api_url") if full else config.UPES_TIMETABLE_API_URL
-            return fetch_upes_timetable(token, student_code, api_url)
+            cookies = full.get("cookies") if full else None
+            return fetch_upes_timetable(token, student_code, api_url, cookies=cookies)
 
         return self.execute_with_retry(user_id, _call)
 

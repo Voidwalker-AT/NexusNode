@@ -622,7 +622,7 @@ class TestFlaskTimetableRoutes(unittest.TestCase):
         self.assertEqual(res.status_code, 413)
 
     def test_oauth_callback_invalid_state_rejected(self):
-        res = self.client.get("/api/auth/google/callback?code=mock_code&state=invalid_csrf_state")
+        res = self.client.get("/api/auth/google/callback?code=mock_code&state=invalid_csrf_state", headers={"Accept": "application/json"})
         self.assertEqual(res.status_code, 400)
         data = res.get_json()
         self.assertIn("Invalid or expired", data["error"])

@@ -147,7 +147,8 @@ def init_attendance_tables(conn):
 # ==============================================================================
 
 UPES_ATTENDANCE_DROPDOWN_URL = "https://myupes-beta.upes.ac.in/apigateway/student-attendance/attendancedropdown"
-UPES_ATTENDANCE_SUMMARY_URL = "https://myupes-beta.upes.ac.in/apigateway/student-attendance/studentattendancesummary"
+UPES_ATTENDANCE_SUMMARY_URL = "https://myupes-beta.upes.ac.in/apigateway/attendance/api/attendance/summary"
+UPES_ATTENDANCE_LEGACY_SUMMARY_URL = "https://myupes-beta.upes.ac.in/apigateway/student-attendance/studentattendancesummary"
 UPES_CLIENT_SECRET_DEFAULT = "ku7GUMtyT8er51rTfTc7HC"
 
 # Subtype Mappings
@@ -229,6 +230,7 @@ def execute_upes_attendance_request(
     access_token: str,
     student_uuid: str,
     client_secret: str = UPES_CLIENT_SECRET_DEFAULT,
+    cookies: Optional[Dict[str, str]] = None,
     timeout: int = 15
 ) -> Tuple[Optional[Any], Optional[str]]:
     """
@@ -242,8 +244,13 @@ def execute_upes_attendance_request(
         "x-applicationname": "connectportal",
         "x-requestfrom": "web",
         "x-appsecret": client_secret,
-        "x-studentUniqueId": student_uuid
+        "x-studentUniqueId": student_uuid,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
+    if cookies and isinstance(cookies, dict):
+        cookie_parts = [f"{k}={v}" for k, v in cookies.items() if v]
+        if cookie_parts:
+            req_headers["Cookie"] = "; ".join(cookie_parts)
 
     try:
         body_bytes = json.dumps(payload).encode("utf-8")
@@ -474,13 +481,131 @@ class AttendanceService:
 
             token, student_uuid, _, expires_at = session_tuple
 
-            # 2. Fetch Academic Hierarchy & Dropdown
-            dd_data, dd_err = execute_upes_attendance_request(
-                UPES_ATTENDANCE_DROPDOWN_URL,
-                {"StudentUniqueID": student_uuid},
+            # Resolve cookies if available
+            cookies = None
+            if hasattr(self, "timetable_service") and self.timetable_service:
+                try:
+                    full = self.timetable_service.get_full_upes_session(user_id)
+                    if full:
+                        cookies = full.get("cookies")
+                except Exception:
+                    pass
+            if not cookies and hasattr(self, "session_broker") and getattr(self.session_broker, "service", None):
+                try:
+                    full = self.session_broker.service.get_full_upes_session(user_id)
+                    if full:
+                        cookies = full.get("cookies")
+                except Exception:
+                    pass
+
+            # 2. Attempt modern authoritative UPES attendance summary
+            today_str = datetime.date.today().strftime("%Y-%m-%d")
+            modern_payload = {
+                "StartDate": None,
+                "EndDate": today_str,
+                "ModeName": "term",
+                "StudentUniqueId": student_uuid
+            }
+            summary_data, summary_err = execute_upes_attendance_request(
+                UPES_ATTENDANCE_SUMMARY_URL,
+                modern_payload,
                 token,
-                student_uuid
+                student_uuid,
+                cookies=cookies
             )
+
+            # If token was invalidated server-side, attempt one reacquisition
+            if summary_err and "auth_required" in summary_err:
+                session_tuple = None
+                if hasattr(self, "auth_manager") and self.auth_manager:
+                    try:
+                        tok, code, api_url, exp = self.auth_manager.ensure_authenticated(user_id, force_login=True)
+                        session_tuple = (tok, code, api_url, exp)
+                    except Exception:
+                        pass
+                if not session_tuple and hasattr(self.session_broker, "resolve_session"):
+                    session_tuple, _ = self.session_broker.resolve_session(user_id)
+                if session_tuple:
+                    token, student_uuid, _, expires_at = session_tuple
+                    summary_data, summary_err = execute_upes_attendance_request(
+                        UPES_ATTENDANCE_SUMMARY_URL,
+                        modern_payload,
+                        token,
+                        student_uuid,
+                        cookies=cookies
+                    )
+
+            if summary_data and isinstance(summary_data, list) and len(summary_data) > 0 and "TotalSessions" in summary_data[0]:
+                # Authoritative modern UPES attendance response
+                modules_synced = 0
+                conn = self.conn_factory()
+                try:
+                    for item in summary_data:
+                        m_id = item.get("ModuleId")
+                        m_name = (item.get("ModuleName") or "").strip()
+                        if not m_id:
+                            continue
+                        tot_conducted = int(item.get("TotalSessions", 0))
+                        tot_attended = int(item.get("PresentCount", 0))
+                        tot_condoned = int(item.get("CondonedAttendanceCount", 0))
+                        att_pct = float(item.get("AttendancePercentage", 0.0))
+                        term_pct = att_pct
+
+                        # Upsert module
+                        conn.execute("""
+                            INSERT INTO academic_modules (
+                                user_id, module_id, term_code_id, module_name, module_code, course_family_id, last_synced_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(user_id, module_id) DO UPDATE SET
+                                module_name = excluded.module_name,
+                                last_synced_at = excluded.last_synced_at
+                        """, (user_id, m_id, 0, m_name, "", 0, now))
+
+                        # Upsert official summary
+                        conn.execute("""
+                            INSERT INTO official_attendance_summaries (
+                                user_id, module_id, total_sessions, total_attended, total_condoned,
+                                attendance_percentage, term_attendance_percentage, last_synced_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(user_id, module_id) DO UPDATE SET
+                                total_sessions = excluded.total_sessions,
+                                total_attended = excluded.total_attended,
+                                total_condoned = excluded.total_condoned,
+                                attendance_percentage = excluded.attendance_percentage,
+                                term_attendance_percentage = excluded.term_attendance_percentage,
+                                last_synced_at = excluded.last_synced_at
+                        """, (user_id, m_id, tot_conducted, tot_attended, tot_condoned, att_pct, term_pct, now))
+                        modules_synced += 1
+
+                    conn.commit()
+                finally:
+                    conn.close()
+
+                self._record_sync_history(user_id, now, modules_synced, 0, "SUCCESS", {
+                    "modules_synced": modules_synced,
+                    "sessions_synced": 0,
+                    "failed_count": 0,
+                    "api_mode": "modern_summary"
+                })
+                return {
+                    "status": "SUCCESS",
+                    "message": f"Successfully synchronized {modules_synced} academic modules from UPES.",
+                    "modules_synced": modules_synced,
+                    "sessions_synced": 0,
+                    "failed_modules": []
+                }
+
+            # 2. Fetch Academic Hierarchy & Dropdown
+            # If summary_data already contains dropdown data (from mock or hybrid response), reuse it
+            if summary_data and (isinstance(summary_data, dict) and "CourseFamilyDropdownList" in summary_data or isinstance(summary_data, list)):
+                dd_data, dd_err = summary_data, None
+            else:
+                dd_data, dd_err = execute_upes_attendance_request(
+                    UPES_ATTENDANCE_DROPDOWN_URL,
+                    {"StudentUniqueID": student_uuid},
+                    token,
+                    student_uuid
+                )
 
             # If token was invalidated server-side, attempt one reacquisition via auth_manager or broker
             if dd_err and "auth_required" in dd_err:
@@ -595,7 +720,7 @@ class AttendanceService:
                 }
 
                 att_data, att_err = execute_upes_attendance_request(
-                    UPES_ATTENDANCE_SUMMARY_URL,
+                    UPES_ATTENDANCE_LEGACY_SUMMARY_URL,
                     mod_payload,
                     token,
                     student_uuid
