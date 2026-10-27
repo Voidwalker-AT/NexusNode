@@ -416,7 +416,8 @@ class AttendanceService:
                 "sessions_count": sessions_count,
                 "punches_count": punches_count,
                 "current_term": current_term,
-                "last_sync": last_sync
+                "last_sync": last_sync,
+                "has_data": modules_count > 0
             }
         finally:
             conn.close()
