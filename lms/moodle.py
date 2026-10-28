@@ -461,6 +461,9 @@ class MoodleProvider(LMSProvider):
 
     def list_assignments(self, course_id: Optional[str] = None, upcoming_only: bool = False) -> Tuple[List[LMSAssignment], str]:
         """Lists assignments in a given course or across all active courses."""
+        cookie_header = self._get_active_session_cookie()
+        if not cookie_header or "MoodleSession" not in cookie_header:
+            raise LMSAuthRequiredError("Moodle session cookie not found. Authentication required.")
         assignments: List[LMSAssignment] = []
         courses_to_scan = []
 
